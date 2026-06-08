@@ -4,11 +4,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import pandas as pd
 
 from app.db.session import get_db
 from app.models.contact import Contact
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
+from app.services.contact_import import parse_csv, parse_excel
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
@@ -63,18 +63,23 @@ async def delete_contact(contact_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/import", response_model=List[ContactResponse], status_code=201)
 async def import_contacts(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
-    if not file.filename or not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
     contents = await file.read()
     try:
-        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
+        if file.filename.endswith(".csv"):
+            records = parse_csv(contents)
+        elif file.filename.endswith((".xlsx", ".xls")):
+            records = parse_excel(contents)
+        else:
+            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     created = []
-    for _, row in df.iterrows():
-        data = {k: v for k, v in row.to_dict().items() if pd.notna(v)}
-        contact = Contact(**data)
+    for record in records:
+        contact = Contact(**record)
         db.add(contact)
         created.append(contact)
     await db.commit()
