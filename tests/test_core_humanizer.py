@@ -8,6 +8,7 @@ from app.core.humanizer import (
     calculate_thinking_delay,
     maybe_self_correct,
     add_casual_markers,
+    maybe_double_take,
 )
 
 
@@ -76,20 +77,20 @@ class TestAddCasualMarkers:
     def test_marker_injected_when_rate_is_one(self):
         text = "Hello. How are you?"
         result = add_casual_markers(text, rate=1.0)
-        assert any(marker in result for marker in ["кстати", "слушайте", "если честно"])
+        assert any(marker.lower() in result.lower() for marker in ["кстати", "слушайте", "если честно"])
 
     def test_single_sentence_gets_marker(self):
         text = "This is a single sentence."
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = add_casual_markers(text, rate=0.15)
-        assert any(marker in result for marker in ["кстати", "слушайте", "если честно"])
+        assert any(marker.lower() in result.lower() for marker in ["кстати", "слушайте", "если честно"])
 
     def test_multiple_sentences_only_one_marker(self):
         text = "First sentence. Second sentence. Third sentence."
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = add_casual_markers(text, rate=0.15)
         # Should have exactly one marker added
-        count = sum(result.count(marker) for marker in ["кстати", "слушайте", "если честно"])
+        count = sum(result.lower().count(marker) for marker in ["кстати", "слушайте", "если честно"])
         assert count == 1
 
     def test_no_change_when_random_above_rate(self):
@@ -97,3 +98,20 @@ class TestAddCasualMarkers:
         with patch("app.core.humanizer.random.random", return_value=0.99):
             result = add_casual_markers(text, rate=0.15)
         assert result == text
+
+
+class TestMaybeDoubleTake:
+    def test_no_city_returns_original(self):
+        text = "Hello there"
+        assert maybe_double_take(text, city=None, rate=1.0) == text
+
+    def test_no_injection_when_rate_zero(self):
+        text = "Hello there"
+        assert maybe_double_take(text, city="Moscow", rate=0.0) == text
+
+    def test_injects_city_question_when_rate_one(self):
+        text = "Hello there"
+        result = maybe_double_take(text, city="Moscow", rate=1.0)
+        assert "Moscow" in result
+        assert "приоритеты" in result
+        assert result.startswith(text)

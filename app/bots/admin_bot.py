@@ -12,9 +12,16 @@ from app.models import Script, Campaign, Conversation, Contact
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-bot = Bot(token=settings.admin_bot_token)
+_bot: Bot | None = None
 dp = Dispatcher()
 router = Router()
+
+
+def _get_bot() -> Bot:
+    global _bot
+    if _bot is None:
+        _bot = Bot(token=settings.admin_bot_token)
+    return _bot
 
 
 def _format_scripts(scripts: List[Script]) -> str:
@@ -192,8 +199,10 @@ async def start_bot():
     if not settings.admin_bot_token:
         logger.warning("ADMIN_BOT_TOKEN is not set, bot will not start.")
         return
+    bot = _get_bot()
     await dp.start_polling(bot)
 
 
 async def stop_bot():
-    await bot.session.close()
+    if _bot is not None:
+        await _bot.session.close()

@@ -58,8 +58,8 @@ async def test_classify_intent_prompt_structure():
 
     await classify_intent("Сколько стоит?", engine)
 
-    _, kwargs = engine.generate_with_fallback.call_args
-    messages = kwargs["messages"]
+    args, kwargs = engine.generate_with_fallback.call_args
+    messages = args[0]
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"

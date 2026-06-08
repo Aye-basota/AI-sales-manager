@@ -48,6 +48,18 @@ def build_mock_session(results: List[Any] = None, scalar_value: Any = None):
     session = AsyncMock()
     result = MockResult(results, scalar_value)
     session.execute.return_value = result
+
+    async def refresh_side_effect(obj):
+        if hasattr(obj, 'id') and obj.id is None:
+            obj.id = uuid.uuid4()
+        if hasattr(obj, 'created_at') and obj.created_at is None:
+            obj.created_at = datetime.now()
+        if hasattr(obj, 'updated_at') and obj.updated_at is None:
+            obj.updated_at = datetime.now()
+        if hasattr(obj, 'source') and obj.source is None:
+            obj.source = 'csv_import'
+
+    session.refresh.side_effect = refresh_side_effect
     return session
 
 

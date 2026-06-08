@@ -35,7 +35,7 @@ async def test_generate_success(engine):
     mock_client.post.return_value = mock_response
     mock_client.is_closed = False
 
-    with patch.object(engine, "client", mock_client):
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         result = await engine.generate(
             messages=[{"role": "user", "content": "Hi"}],
             model="qwen-2.5-72b-instruct",
@@ -58,7 +58,7 @@ async def test_generate_uses_default_model(engine):
     mock_client = AsyncMock()
     mock_client.post.return_value = mock_response
 
-    with patch.object(engine, "client", mock_client):
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         result = await engine.generate([{"role": "user", "content": "Hi"}])
 
     _, kwargs = mock_client.post.call_args
@@ -79,7 +79,7 @@ async def test_generate_with_fallback_primary_succeeds(engine):
     mock_client = AsyncMock()
     mock_client.post.return_value = mock_response
 
-    with patch.object(engine, "client", mock_client):
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
 
     assert result["text"] == "Primary ok"
@@ -105,7 +105,7 @@ async def test_generate_with_fallback_retries_on_failure(engine):
     mock_client = AsyncMock()
     mock_client.post.side_effect = [fail_response, ok_response]
 
-    with patch.object(engine, "client", mock_client):
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
 
     assert result["text"] == "Fallback ok"
@@ -124,7 +124,7 @@ async def test_generate_with_fallback_all_fail(engine):
     mock_client = AsyncMock()
     mock_client.post.return_value = fail_response
 
-    with patch.object(engine, "client", mock_client):
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(httpx.HTTPStatusError):
             await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
 

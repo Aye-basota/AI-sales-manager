@@ -71,7 +71,7 @@ def parse_csv(file_bytes: bytes) -> list[dict[str, Any]]:
         ValueError: If the file cannot be parsed or contains invalid columns.
     """
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes))
+        df = pd.read_csv(io.BytesIO(file_bytes), dtype=str)
     except Exception as exc:
         raise ValueError(f"Failed to parse CSV file: {exc}") from exc
 
@@ -91,7 +91,7 @@ def parse_excel(file_bytes: bytes) -> list[dict[str, Any]]:
         ValueError: If the file cannot be parsed or contains invalid columns.
     """
     try:
-        df = pd.read_excel(io.BytesIO(file_bytes))
+        df = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
     except Exception as exc:
         raise ValueError(f"Failed to parse Excel file: {exc}") from exc
 

@@ -72,3 +72,10 @@ def add_casual_markers(text: str, rate: float = 0.15) -> str:
     sentences[idx] = f"{leading_ws}{capitalised_marker}, {sentence[0].lower() if sentence else ''}{sentence[1:] if len(sentence) > 1 else ''}"
 
     return " ".join(sentences)
+
+
+def maybe_double_take(text: str, city: str | None, rate: float = 0.1) -> str:
+    """Append a double-take question about city with probability rate."""
+    if not city or random.random() > rate:
+        return text
+    return f"{text}\n\nХотя подождите, вы же говорите из {city}, там у вас, наверное, уже другие приоритеты?"

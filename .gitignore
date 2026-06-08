@@ -47,3 +47,7 @@ redis_data/
 # Pyrogram
 *.session
 *.session-journal
+
+# Temporary fix scripts
+fix_*.py
+
