@@ -1,0 +1,83 @@
+import io
+from typing import List
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+import pandas as pd
+
+from app.db.session import get_db
+from app.models.contact import Contact
+from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
+
+router = APIRouter(prefix="/contacts", tags=["contacts"])
+
+
+@router.get("", response_model=List[ContactResponse])
+async def list_contacts(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Contact))
+    return result.scalars().all()
+
+
+@router.get("/{contact_id}", response_model=ContactResponse)
+async def get_contact(contact_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Contact).where(Contact.id == contact_id))
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return contact
+
+
+@router.post("", response_model=ContactResponse, status_code=201)
+async def create_contact(payload: ContactCreate, db: AsyncSession = Depends(get_db)):
+    contact = Contact(**payload.model_dump())
+    db.add(contact)
+    await db.commit()
+    await db.refresh(contact)
+    return contact
+
+
+@router.put("/{contact_id}", response_model=ContactResponse)
+async def update_contact(contact_id: UUID, payload: ContactUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Contact).where(Contact.id == contact_id))
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(contact, key, value)
+    await db.commit()
+    await db.refresh(contact)
+    return contact
+
+
+@router.delete("/{contact_id}", status_code=204)
+async def delete_contact(contact_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Contact).where(Contact.id == contact_id))
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    await db.delete(contact)
+    await db.commit()
+    return None
+
+
+@router.post("/import", response_model=List[ContactResponse], status_code=201)
+async def import_contacts(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    contents = await file.read()
+    try:
+        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
+
+    created = []
+    for _, row in df.iterrows():
+        data = {k: v for k, v in row.to_dict().items() if pd.notna(v)}
+        contact = Contact(**data)
+        db.add(contact)
+        created.append(contact)
+    await db.commit()
+    for contact in created:
+        await db.refresh(contact)
+    return created
