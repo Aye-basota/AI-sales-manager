@@ -1,0 +1,109 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-sales-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salespass}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_sales}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sales} -d ${POSTGRES_DB:-ai_sales}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-sales-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-sales-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sales:salespass@postgres:5432/ai_sales}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-changeme}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-sales-scheduler
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sales:salespass@postgres:5432/ai_sales}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-changeme}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+    command: python -m app.core.scheduler
+
+  admin-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-sales-admin-bot
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sales:salespass@postgres:5432/ai_sales}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ADMIN_BOT_TOKEN=${ADMIN_BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-changeme}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+    command: python -m app.bots.admin_bot
+
+volumes:
+  postgres_data:
+  redis_data:
