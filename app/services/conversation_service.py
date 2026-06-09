@@ -1,5 +1,6 @@
 """Business logic for conversations and messages."""
 
+import types
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -7,6 +8,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.redis import (
+    get_redis,
+    cache_conversation_context,
+    get_cached_conversation_context,
+    invalidate_conversation_cache,
+)
 from app.models.conversation import Conversation, Message
 
 
@@ -29,6 +36,15 @@ async def get_conversation_context(
         A dictionary with keys ``messages`` (list of ``Message``) and
         ``facts`` (dict of extracted facts).
     """
+    try:
+        redis = await get_redis()
+        cached = await get_cached_conversation_context(redis, conversation_id)
+        if cached is not None:
+            messages = [types.SimpleNamespace(**m) for m in cached["messages"]]
+            return {"messages": messages, "facts": cached.get("facts", {})}
+    except Exception:
+        pass
+
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
@@ -43,7 +59,15 @@ async def get_conversation_context(
     conversation = conv_result.scalar_one_or_none()
     facts = conversation.facts_extracted if conversation else {}
 
-    return {"messages": messages, "facts": facts}
+    result = {"messages": messages, "facts": facts}
+
+    try:
+        redis = await get_redis()
+        await cache_conversation_context(redis, conversation_id, result["messages"], result["facts"])
+    except Exception:
+        pass
+
+    return result
 
 
 async def add_message(
@@ -82,6 +106,13 @@ async def add_message(
 
     await db.commit()
     await db.refresh(message)
+
+    try:
+        redis = await get_redis()
+        await invalidate_conversation_cache(redis, conversation_id)
+    except Exception:
+        pass
+
     return message
 
 
@@ -116,4 +147,11 @@ async def update_lead_facts(
 
     await db.commit()
     await db.refresh(conversation)
+
+    try:
+        redis = await get_redis()
+        await invalidate_conversation_cache(redis, conversation_id)
+    except Exception:
+        pass
+
     return conversation

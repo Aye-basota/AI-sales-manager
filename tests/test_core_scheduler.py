@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -8,6 +9,10 @@ from app.core.scheduler import (
     should_send_to_contact,
     is_within_working_hours,
     next_contact_to_process,
+    process_campaigns,
+    send_initial_message,
+    send_follow_up_message,
+    CampaignScheduler,
 )
 
 
@@ -179,3 +184,364 @@ class TestNextContactToProcess:
         ]
         result = next_contact_to_process(contacts, FakeScript(), now)
         assert result == contacts
+
+
+# Simple mock helpers for async DB tests
+class _SimpleMockScalarResult:
+    def __init__(self, items):
+        self._items = items
+
+    def all(self):
+        return self._items
+
+    def first(self):
+        return self._items[0] if self._items else None
+
+
+class _SimpleMockResult:
+    def __init__(self, items=None, scalar_value=None):
+        self._items = items or []
+        self._scalar_value = scalar_value
+
+    def scalars(self):
+        return _SimpleMockScalarResult(self._items)
+
+    def scalar_one_or_none(self):
+        return self._items[0] if self._items else None
+
+    def scalar(self):
+        return self._scalar_value
+
+    def all(self):
+        return self._items
+
+
+@dataclass
+class MockTelegramAccount:
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
+    status: str = "ready"
+    daily_messages_sent: int = 0
+    last_message_at: datetime | None = None
+    session_string: str | None = "test_session"
+    proxy_url: str | None = None
+
+
+@pytest.mark.asyncio
+class TestProcessCampaigns:
+    async def test_no_running_campaigns(self, mock_db):
+        mock_db.execute.return_value = _SimpleMockResult([])
+        await process_campaigns(mock_db)
+        assert mock_db.commit.called is False
+
+    async def test_campaign_outside_working_hours(self, mock_db, sample_campaign, sample_script):
+        sample_campaign.status = "running"
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),  # campaigns
+            _SimpleMockResult([sample_script]),     # script
+        ]
+        with patch("app.core.scheduler.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, 20, 0, 0)
+            await process_campaigns(mock_db)
+        assert mock_db.execute.call_count == 2
+
+    async def test_ready_contact_initial_sent(self, mock_db, sample_campaign, sample_script, sample_contact):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        sample_contact.telegram_user_id = 123456
+
+        account = MockTelegramAccount()
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),  # campaigns
+            _SimpleMockResult([sample_script]),     # script
+            _SimpleMockResult([cc]),                # campaign contacts
+            _SimpleMockResult([sample_contact]),    # contact
+            _SimpleMockResult([]),                  # conversation (not found)
+            _SimpleMockResult([account]),           # accounts
+        ]
+
+        with patch("app.core.scheduler.send_initial_message", new_callable=AsyncMock) as mock_send:
+            await process_campaigns(mock_db)
+            mock_send.assert_awaited_once()
+            assert mock_db.commit.called is True
+
+    async def test_rate_limited_account_skips(self, mock_db, sample_campaign, sample_script, sample_contact):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        sample_contact.telegram_user_id = 123456
+
+        account = MockTelegramAccount(last_message_at=datetime.now())
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+        ]
+
+        with patch("app.core.scheduler.send_initial_message", new_callable=AsyncMock) as mock_send:
+            await process_campaigns(mock_db)
+            mock_send.assert_not_awaited()
+
+    async def test_contact_without_telegram_user_id_skipped(self, mock_db, sample_campaign, sample_script, sample_contact):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        sample_contact.telegram_user_id = None
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+        ]
+
+        with patch("app.core.scheduler.send_initial_message", new_callable=AsyncMock) as mock_send:
+            await process_campaigns(mock_db)
+            mock_send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestSendInitialMessage:
+    async def test_successful_send(self, mock_db):
+        from app.models.campaign import CampaignContact
+        from app.models.contact import Contact
+        from app.models.conversation import Conversation
+        from app.models.script import Script
+        from app.models.telegram_account import TelegramAccount
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=uuid.uuid4(),
+            contact_id=uuid.uuid4(),
+            status="pending",
+            message_count=0,
+        )
+        contact = Contact(
+            id=cc.contact_id,
+            telegram_user_id=123456,
+            first_name="John",
+            city="New York",
+        )
+        conversation = Conversation(
+            id=uuid.uuid4(),
+            contact_id=contact.id,
+            campaign_id=cc.campaign_id,
+            current_state="cold",
+        )
+        script = Script(
+            id=uuid.uuid4(),
+            name="Test",
+            role_prompt="Sales",
+            goal="Book",
+            max_messages=3,
+            follow_up_delay_hours=24,
+            working_hours_start=time(9, 0),
+            working_hours_end=time(18, 0),
+            timezone="Europe/Moscow",
+        )
+        account = TelegramAccount(
+            id=uuid.uuid4(),
+            phone="+123",
+            status="ready",
+            daily_messages_sent=0,
+            session_string="sess",
+        )
+
+        mock_llm_response = {"text": "Hello!", "model": "gpt-4", "tokens_used": 10}
+
+        with patch("app.llm.engine.LLMEngine") as MockEngine:
+            engine_inst = MockEngine.return_value
+            engine_inst.generate_with_fallback = AsyncMock(return_value=mock_llm_response)
+
+            with patch("app.bots.seller_client.SellerClient") as MockClient:
+                client_inst = MockClient.return_value
+                client_inst.start = AsyncMock()
+                client_inst.send_message = AsyncMock(return_value={"message_id": 1})
+                client_inst.stop = AsyncMock()
+
+                await send_initial_message(
+                    db_session=mock_db,
+                    campaign_contact=cc,
+                    contact=contact,
+                    conversation=conversation,
+                    script=script,
+                    account=account,
+                )
+
+                assert cc.status == "initial_sent"
+                assert cc.message_count == 1
+                assert account.daily_messages_sent == 1
+                assert conversation.current_state == "warm"
+                mock_db.add.assert_called()
+                client_inst.start.assert_awaited_once()
+                client_inst.send_message.assert_awaited_once()
+                client_inst.stop.assert_awaited_once()
+
+    async def test_guardrails_block_message(self, mock_db):
+        from app.models.campaign import CampaignContact
+        from app.models.contact import Contact
+        from app.models.conversation import Conversation
+        from app.models.script import Script
+        from app.models.telegram_account import TelegramAccount
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=uuid.uuid4(),
+            contact_id=uuid.uuid4(),
+            status="pending",
+            message_count=0,
+        )
+        contact = Contact(id=cc.contact_id, telegram_user_id=123456)
+        conversation = Conversation(id=uuid.uuid4(), contact_id=contact.id, campaign_id=cc.campaign_id, current_state="cold")
+        script = Script(id=uuid.uuid4(), name="Test", role_prompt="Sales", goal="Book")
+        account = TelegramAccount(id=uuid.uuid4(), phone="+123", status="ready", daily_messages_sent=0, session_string="sess")
+
+        mock_llm_response = {"text": "bad text", "model": "gpt-4", "tokens_used": 2}
+
+        with patch("app.llm.engine.LLMEngine") as MockEngine:
+            engine_inst = MockEngine.return_value
+            engine_inst.generate_with_fallback = AsyncMock(return_value=mock_llm_response)
+
+            with patch("app.llm.guardrails.apply_guardrails", return_value=None):
+                with pytest.raises(RuntimeError, match="Guardrails blocked"):
+                    await send_initial_message(
+                        db_session=mock_db,
+                        campaign_contact=cc,
+                        contact=contact,
+                        conversation=conversation,
+                        script=script,
+                        account=account,
+                    )
+
+
+@pytest.mark.asyncio
+class TestSendFollowUpMessage:
+    async def test_successful_send(self, mock_db):
+        from app.models.campaign import CampaignContact
+        from app.models.contact import Contact
+        from app.models.conversation import Conversation
+        from app.models.script import Script
+        from app.models.telegram_account import TelegramAccount
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=uuid.uuid4(),
+            contact_id=uuid.uuid4(),
+            status="initial_sent",
+            message_count=1,
+            initial_sent_at=datetime.now() - timedelta(hours=25),
+        )
+        contact = Contact(id=cc.contact_id, telegram_user_id=123456, first_name="John")
+        conversation = Conversation(
+            id=uuid.uuid4(),
+            contact_id=contact.id,
+            campaign_id=cc.campaign_id,
+            current_state="warm",
+        )
+        script = Script(
+            id=uuid.uuid4(),
+            name="Test",
+            role_prompt="Sales",
+            goal="Book",
+            max_messages=3,
+            follow_up_delay_hours=24,
+        )
+        account = TelegramAccount(
+            id=uuid.uuid4(),
+            phone="+123",
+            status="ready",
+            daily_messages_sent=0,
+            session_string="sess",
+        )
+
+        mock_llm_response = {"text": "Follow up!", "model": "gpt-4", "tokens_used": 5}
+
+        with patch("app.llm.engine.LLMEngine") as MockEngine:
+            engine_inst = MockEngine.return_value
+            engine_inst.generate_with_fallback = AsyncMock(return_value=mock_llm_response)
+
+            with patch("app.services.conversation_service.get_conversation_context", new_callable=AsyncMock) as mock_ctx:
+                mock_ctx.return_value = {"messages": [], "facts": {}}
+
+                with patch("app.bots.seller_client.SellerClient") as MockClient:
+                    client_inst = MockClient.return_value
+                    client_inst.start = AsyncMock()
+                    client_inst.send_message = AsyncMock(return_value={"message_id": 2})
+                    client_inst.stop = AsyncMock()
+
+                    await send_follow_up_message(
+                        db_session=mock_db,
+                        campaign_contact=cc,
+                        contact=contact,
+                        conversation=conversation,
+                        script=script,
+                        account=account,
+                    )
+
+                    assert cc.status == "follow_up_sent"
+                    assert cc.message_count == 2
+                    assert account.daily_messages_sent == 1
+                    assert conversation.current_state == "follow_up"
+                    mock_db.add.assert_called()
+                    client_inst.send_message.assert_awaited_once()
+
+
+class TestCampaignScheduler:
+    def test_start_shutdown(self):
+        sched = CampaignScheduler()
+        with patch.object(sched._scheduler, "start") as mock_start:
+            with patch.object(sched._scheduler, "add_job") as mock_add_job:
+                sched.start()
+                mock_add_job.assert_called_once()
+                mock_start.assert_called_once()
+
+        with patch.object(sched._scheduler, "shutdown") as mock_shutdown:
+            sched.shutdown()
+            mock_shutdown.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_process_campaigns(self):
+        sched = CampaignScheduler()
+        with patch("app.core.scheduler.process_campaigns", new_callable=AsyncMock) as mock_process:
+            with patch("app.db.session.AsyncSessionLocal") as MockSession:
+                session_inst = AsyncMock()
+                MockSession.return_value.__aenter__ = AsyncMock(return_value=session_inst)
+                MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await sched._run_process_campaigns()
+                mock_process.assert_awaited_once()

@@ -16,6 +16,7 @@ from app.schemas.campaign import (
     CampaignUpdateStatus,
     CampaignResponse,
 )
+from app.core.scheduler import process_campaigns
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -103,6 +104,14 @@ async def start_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
     campaign.started_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(campaign)
+
+    # Immediate campaign check (best-effort)
+    try:
+        await process_campaigns(db)
+    except Exception:
+        logger = __import__("logging").getLogger(__name__)
+        logger.exception("Immediate process_campaigns failed after campaign start")
+
     return campaign
 
 

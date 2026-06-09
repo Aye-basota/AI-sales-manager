@@ -1,10 +1,14 @@
 import pytest
 
 from app.llm.guardrails import (
+    GuardrailsResult,
     apply_guardrails,
     check_anti_repetition,
     check_length,
+    check_no_bot_words,
     check_no_forbidden_topics,
+    check_no_markdown,
+    evaluate_guardrails,
 )
 
 
@@ -62,3 +66,85 @@ def test_apply_guardrails_fails_forbidden():
 def test_apply_guardrails_fails_repetition():
     result = apply_guardrails("Same text", ["Same text"])
     assert result is None
+
+
+class TestCheckNoBotWords:
+    def test_clean_text(self):
+        assert check_no_bot_words("Здравствуйте, хотел уточнить детали.") is True
+
+    def test_detects_bot(self):
+        assert check_no_bot_words("Я бот и помогу вам") is False
+
+    def test_detects_assistant(self):
+        assert check_no_bot_words("Я ваш ассистент") is False
+
+    def test_detects_ai(self):
+        assert check_no_bot_words("Я искусственный интеллект") is False
+
+    def test_detects_neural_network(self):
+        assert check_no_bot_words("Я нейросеть") is False
+
+    def test_detects_ya_ii(self):
+        assert check_no_bot_words("я ИИ") is False
+
+
+class TestCheckNoMarkdown:
+    def test_plain_text_passes(self):
+        assert check_no_markdown("Просто текст без форматирования.") is True
+
+    def test_hash_fails(self):
+        assert check_no_markdown("# Заголовок") is False
+
+    def test_asterisk_fails(self):
+        assert check_no_markdown("**жирный**") is False
+
+    def test_underscore_fails(self):
+        assert check_no_markdown("_курсив_") is False
+
+    def test_backtick_fails(self):
+        assert check_no_markdown("`код`") is False
+
+
+class TestGuardrailsResult:
+    def test_eq_with_str_when_approved(self):
+        gr = GuardrailsResult(approved=True, text="hello", violations=[])
+        assert gr == "hello"
+
+    def test_eq_with_none_when_rejected(self):
+        gr = GuardrailsResult(approved=False, text=None, violations=["length"])
+        assert gr == None  # noqa: E711
+
+    def test_eq_with_guardrails_result(self):
+        gr1 = GuardrailsResult(approved=True, text="ok", violations=[])
+        gr2 = GuardrailsResult(approved=True, text="ok", violations=[])
+        assert gr1 == gr2
+
+
+class TestEvaluateGuardrails:
+    def test_approved(self):
+        result = evaluate_guardrails("Valid message", ["Previous"])
+        assert result.approved is True
+        assert result.text == "Valid message"
+        assert result.violations == []
+
+    def test_rejected_length(self):
+        long_text = "word " * 301
+        result = evaluate_guardrails(long_text, [])
+        assert result.approved is False
+        assert "length" in result.violations
+
+    def test_rejected_bot_words(self):
+        result = evaluate_guardrails("Я бот, чем могу помочь?", [])
+        assert result.approved is False
+        assert "bot_words" in result.violations
+
+    def test_rejected_markdown(self):
+        result = evaluate_guardrails("**жирный текст**", [])
+        assert result.approved is False
+        assert "markdown" in result.violations
+
+    def test_multiple_violations(self):
+        bad_text = "# политика и я бот"
+        result = evaluate_guardrails(bad_text, [])
+        assert result.approved is False
+        assert set(result.violations) >= {"forbidden_topic", "bot_words", "markdown"}

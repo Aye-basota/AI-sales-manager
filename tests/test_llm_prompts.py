@@ -72,3 +72,28 @@ def test_build_intent_classification_prompt():
     assert "informational" in prompt
     assert 'Сообщение: "Я заинтересован"' in prompt
     assert "Метка:" in prompt
+
+
+def test_system_prompt_no_markdown_rule():
+    script = MagicMock()
+    script.role_prompt = None
+    script.target_audience = None
+    script.goal = None
+    script.success_criteria = None
+    script.tone = None
+
+    prompt = build_system_prompt(script)
+    assert "Никогда не используй markdown" in prompt
+    assert "Пиши plain text" in prompt
+
+
+def test_system_prompt_no_bot_rule():
+    script = MagicMock()
+    script.role_prompt = None
+    script.target_audience = None
+    script.goal = None
+    script.success_criteria = None
+    script.tone = None
+
+    prompt = build_system_prompt(script)
+    assert "Никогда не признавайся что ты бот или ИИ" in prompt

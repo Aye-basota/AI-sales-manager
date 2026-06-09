@@ -69,7 +69,12 @@ def add_casual_markers(text: str, rate: float = 0.15) -> str:
 
     # Capitalise marker when it starts the text or follows another sentence
     capitalised_marker = marker.capitalize() if idx == 0 else marker
-    sentences[idx] = f"{leading_ws}{capitalised_marker}, {sentence[0].lower() if sentence else ''}{sentence[1:] if len(sentence) > 1 else ''}"
+    if sentence:
+        first_char = sentence[0].lower()
+        rest = sentence[1:] if len(sentence) > 1 else ""
+        sentences[idx] = f"{leading_ws}{capitalised_marker}, {first_char}{rest}"
+    else:
+        sentences[idx] = f"{leading_ws}{capitalised_marker}, "
 
     return " ".join(sentences)
 
@@ -79,3 +84,40 @@ def maybe_double_take(text: str, city: str | None, rate: float = 0.1) -> str:
     if not city or random.random() > rate:
         return text
     return f"{text}\n\nХотя подождите, вы же говорите из {city}, там у вас, наверное, уже другие приоритеты?"
+
+
+def contains_markdown(text: str) -> bool:
+    """Return True if *text* contains markdown characters."""
+    return any(ch in text for ch in ("#", "*", "_", "`"))
+
+
+def remove_markdown(text: str) -> str:
+    """Remove common markdown formatting from *text*."""
+    # Remove bold/italic markers around text
+    text = re.sub(r"\*{1,2}(.*?)\*{1,2}", r"\1", text)
+    text = re.sub(r"_{1,2}(.*?)_{1,2}", r"\1", text)
+    # Remove inline code/backticks
+    text = re.sub(r"`+([^`]*?)`+", r"\1", text)
+    # Remove headers
+    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+    # Remove stray leading asterisks (e.g. from self-corrections)
+    text = re.sub(r"^\*+", "", text)
+    text = re.sub(r"\s\*+", " ", text)
+    return text
+
+
+def format_message(text: str, city: str | None = None) -> str:
+    """Apply casual markers, self-correction, double-take and ensure plain text.
+
+    The message is humanized and stripped of any markdown formatting.
+    """
+    if not text:
+        return text
+
+    if contains_markdown(text):
+        text = remove_markdown(text)
+
+    text = maybe_self_correct(text)
+    text = add_casual_markers(text)
+    text = maybe_double_take(text, city)
+    return text

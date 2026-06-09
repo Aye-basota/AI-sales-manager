@@ -20,3 +20,5 @@ class TelegramAccount(Base):
     daily_messages_sent = Column(Integer, default=0)
     last_message_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    cooldown_until = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(Text, nullable=True)

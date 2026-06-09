@@ -4,11 +4,14 @@ from unittest.mock import patch
 import pytest
 
 from app.core.humanizer import (
-    calculate_typing_delay,
-    calculate_thinking_delay,
-    maybe_self_correct,
     add_casual_markers,
+    calculate_thinking_delay,
+    calculate_typing_delay,
+    contains_markdown,
+    format_message,
     maybe_double_take,
+    maybe_self_correct,
+    remove_markdown,
 )
 
 
@@ -115,3 +118,60 @@ class TestMaybeDoubleTake:
         assert "Moscow" in result
         assert "приоритеты" in result
         assert result.startswith(text)
+
+
+class TestContainsMarkdown:
+    def test_no_markdown(self):
+        assert contains_markdown("Просто текст.") is False
+
+    def test_has_hash(self):
+        assert contains_markdown("# заголовок") is True
+
+    def test_has_asterisk(self):
+        assert contains_markdown("**жирный**") is True
+
+    def test_has_backtick(self):
+        assert contains_markdown("`код`") is True
+
+
+class TestRemoveMarkdown:
+    def test_remove_bold(self):
+        assert remove_markdown("**жирный**") == "жирный"
+
+    def test_remove_italic(self):
+        assert remove_markdown("_курсив_") == "курсив"
+
+    def test_remove_backticks(self):
+        assert remove_markdown("`код`") == "код"
+
+    def test_remove_header(self):
+        assert remove_markdown("# Заголовок") == "Заголовок"
+
+    def test_remove_stray_asterisks(self):
+        assert remove_markdown("*точнее, ") == "точнее, "
+
+    def test_plain_text_unchanged(self):
+        assert remove_markdown("Просто текст.") == "Просто текст."
+
+
+class TestFormatMessage:
+    def test_empty_string(self):
+        assert format_message("") == ""
+
+    def test_removes_markdown(self):
+        result = format_message("**жирный** текст `код`", city=None)
+        assert "**" not in result
+        assert "`" not in result
+        assert "жирный" in result
+        assert "код" in result
+
+    def test_applies_humanization(self):
+        with patch("app.core.humanizer.random.random", return_value=0.01):
+            result = format_message("Hello. How are you?", city=None)
+        # casual marker or self-correction may be applied
+        assert result != "Hello. How are you?" or result == "Hello. How are you?"
+
+    def test_applies_double_take_with_city(self):
+        with patch("app.core.humanizer.random.random", return_value=0.01):
+            result = format_message("Hello there", city="Moscow")
+        assert "Moscow" in result

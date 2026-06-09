@@ -1,5 +1,6 @@
 import logging
 from typing import List
+from uuid import UUID
 
 from aiogram import Bot, Dispatcher, Router, types
 from aiogram.filters import Command
@@ -7,7 +8,7 @@ from sqlalchemy import select, func
 
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
-from app.models import Script, Campaign, Conversation, Contact
+from app.models import Script, Campaign, Conversation, Contact, Message
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +51,11 @@ def _format_campaigns(campaigns: List[Campaign]) -> str:
 
 def _format_hotleads(rows: List) -> str:
     lines = []
-    for conv, contact in rows:
+    for idx, (conv, contact) in enumerate(rows, 1):
         name = contact.telegram_username or contact.phone or str(contact.id)[:8]
         state_emoji = "🔥" if conv.current_state == "hot" else "📅"
         lines.append(
-            f"{state_emoji} <b>{name}</b>\n"
+            f"{idx}. {state_emoji} <b>{name}</b>\n"
             f"State: {conv.current_state}\n"
             f"Sentiment: {conv.sentiment or 'N/A'}"
         )
@@ -178,11 +179,17 @@ async def cmd_hotleads(message: types.Message):
         return
 
     text = _format_hotleads(rows)
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_hotleads")]
-        ]
-    )
+    kb_rows = []
+    for conv, contact in rows:
+        kb_rows.append(
+            [
+                types.InlineKeyboardButton(text="✅ Qualified", callback_data=f"qualify:{conv.id}"),
+                types.InlineKeyboardButton(text="❌ Rejected", callback_data=f"reject:{conv.id}"),
+                types.InlineKeyboardButton(text="📋 Диалог", callback_data=f"dialog:{conv.id}"),
+            ]
+        )
+    kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_hotleads")])
+    kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
@@ -190,6 +197,122 @@ async def cmd_hotleads(message: types.Message):
 async def refresh_hotleads(callback: types.CallbackQuery):
     await cmd_hotleads(callback.message)
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("qualify:"))
+async def handle_qualify(callback: types.CallbackQuery):
+    conv_id_str = callback.data.split(":", 1)[1]
+    try:
+        conv_id = UUID(conv_id_str)
+    except ValueError:
+        await callback.answer("❌ Неверный ID диалога")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
+        conversation = result.scalar_one_or_none()
+        if conversation:
+            conversation.operator_status = "qualified"
+            await session.commit()
+            await callback.answer("✅ Статус обновлен: Qualified")
+        else:
+            await callback.answer("❌ Диалог не найден")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("reject:"))
+async def handle_reject(callback: types.CallbackQuery):
+    conv_id_str = callback.data.split(":", 1)[1]
+    try:
+        conv_id = UUID(conv_id_str)
+    except ValueError:
+        await callback.answer("❌ Неверный ID диалога")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
+        conversation = result.scalar_one_or_none()
+        if conversation:
+            conversation.operator_status = "rejected"
+            await session.commit()
+            await callback.answer("❌ Статус обновлен: Rejected")
+        else:
+            await callback.answer("❌ Диалог не найден")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("dialog:"))
+async def handle_dialog(callback: types.CallbackQuery):
+    conv_id_str = callback.data.split(":", 1)[1]
+    try:
+        conv_id = UUID(conv_id_str)
+    except ValueError:
+        await callback.answer("❌ Неверный ID диалога")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.conversation_id == conv_id)
+            .order_by(Message.sent_at.desc())
+            .limit(10)
+        )
+        messages = list(reversed(result.scalars().all()))
+
+    if not messages:
+        await callback.message.answer("Сообщений в диалоге не найдено.")
+        await callback.answer()
+        return
+
+    lines = []
+    for msg in messages:
+        sender = "👤" if msg.direction == "inbound" else "🤖"
+        lines.append(f"{sender} {msg.content}")
+
+    text = "\n\n".join(lines)
+    await callback.message.answer(text)
+    await callback.answer()
+
+
+@router.message(Command("conversations"))
+async def cmd_conversations(message: types.Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Usage: /conversations <contact_id>")
+        return
+
+    try:
+        contact_id = UUID(args[1].strip())
+    except ValueError:
+        await message.answer("Неверный формат contact_id. Ожидается UUID.")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Conversation).where(Conversation.contact_id == contact_id)
+        )
+        conversation = result.scalar_one_or_none()
+
+        if not conversation:
+            await message.answer("Диалог для данного контакта не найден.")
+            return
+
+        result = await session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation.id)
+            .order_by(Message.sent_at.asc())
+        )
+        messages = result.scalars().all()
+
+    if not messages:
+        await message.answer("В диалоге пока нет сообщений.")
+        return
+
+    lines = []
+    for msg in messages:
+        sender = "👤" if msg.direction == "inbound" else "🤖"
+        lines.append(f"{sender} {msg.content}")
+
+    text = "\n\n".join(lines)
+    await message.answer(text)
 
 
 dp.include_router(router)

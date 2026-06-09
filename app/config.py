@@ -7,7 +7,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     openrouter_api_key: str = ""
     admin_bot_token: str = ""
+    admin_notification_chat_id: str = ""
     secret_key: str = "changeme"
+    session_encryption_key: str = ""
+    telegram_api_id: int = 0
+    telegram_api_hash: str = ""
+    daily_message_limit: int = 50
     debug: bool = True
 
     class Config:

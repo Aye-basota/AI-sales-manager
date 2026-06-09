@@ -14,10 +14,14 @@ from app.bots.admin_bot import (
     cmd_campaigns,
     cmd_analytics,
     cmd_hotleads,
+    cmd_conversations,
+    handle_qualify,
+    handle_reject,
+    handle_dialog,
     start_bot,
     stop_bot,
 )
-from app.models import Script, Campaign, Conversation, Contact
+from app.models import Script, Campaign, Conversation, Contact, Message
 
 
 @pytest.fixture
@@ -25,6 +29,15 @@ def mock_message():
     msg = AsyncMock(spec=types.Message)
     msg.answer = AsyncMock()
     return msg
+
+
+@pytest.fixture
+def mock_callback():
+    callback = AsyncMock(spec=types.CallbackQuery)
+    callback.answer = AsyncMock()
+    callback.message = AsyncMock(spec=types.Message)
+    callback.message.answer = AsyncMock()
+    return callback
 
 
 class TestFormatScripts:
@@ -255,3 +268,175 @@ class TestStopBot:
         with patch.dict("app.bots.admin_bot.__dict__", {"_bot": mock_bot_instance}):
             await stop_bot()
         mock_bot_instance.session.close.assert_awaited_once()
+
+
+class TestCmdConversations:
+    async def test_missing_args(self, mock_message):
+        mock_message.text = "/conversations"
+        await cmd_conversations(mock_message)
+        mock_message.answer.assert_called_once_with("Usage: /conversations <contact_id>")
+
+    async def test_invalid_uuid(self, mock_message):
+        mock_message.text = "/conversations invalid"
+        await cmd_conversations(mock_message)
+        mock_message.answer.assert_called_once_with("Неверный формат contact_id. Ожидается UUID.")
+
+    async def test_conversation_not_found(self, mock_message):
+        mock_message.text = f"/conversations {uuid.uuid4()}"
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once_with("Диалог для данного контакта не найден.")
+
+    async def test_returns_messages(self, mock_message):
+        contact_id = uuid.uuid4()
+        conv_id = uuid.uuid4()
+        mock_message.text = f"/conversations {contact_id}"
+
+        conv = Conversation(id=conv_id, contact_id=contact_id, current_state="hot")
+        msg = Message(id=uuid.uuid4(), conversation_id=conv_id, direction="inbound", content="Hello")
+
+        session = AsyncMock()
+        result1 = MagicMock()
+        result1.scalar_one_or_none.return_value = conv
+        result2 = MagicMock()
+        result2.scalars.return_value.all.return_value = [msg]
+        session.execute.side_effect = [result1, result2]
+
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "Hello" in text
+
+    async def test_no_messages(self, mock_message):
+        contact_id = uuid.uuid4()
+        conv_id = uuid.uuid4()
+        mock_message.text = f"/conversations {contact_id}"
+
+        conv = Conversation(id=conv_id, contact_id=contact_id, current_state="hot")
+
+        session = AsyncMock()
+        result1 = MagicMock()
+        result1.scalar_one_or_none.return_value = conv
+        result2 = MagicMock()
+        result2.scalars.return_value.all.return_value = []
+        session.execute.side_effect = [result1, result2]
+
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once_with("В диалоге пока нет сообщений.")
+
+
+class TestHandleQualify:
+    async def test_qualifies_conversation(self, mock_callback):
+        conv = Conversation(id=uuid.uuid4(), current_state="hot")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = conv
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"qualify:{conv.id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_qualify(mock_callback)
+
+        assert conv.operator_status == "qualified"
+        mock_callback.answer.assert_awaited_once_with("✅ Статус обновлен: Qualified")
+
+    async def test_conversation_not_found(self, mock_callback):
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"qualify:{uuid.uuid4()}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_qualify(mock_callback)
+
+        mock_callback.answer.assert_awaited_once_with("❌ Диалог не найден")
+
+    async def test_invalid_uuid(self, mock_callback):
+        mock_callback.data = "qualify:invalid"
+        await handle_qualify(mock_callback)
+        mock_callback.answer.assert_awaited_once_with("❌ Неверный ID диалога")
+
+
+class TestHandleReject:
+    async def test_rejects_conversation(self, mock_callback):
+        conv = Conversation(id=uuid.uuid4(), current_state="hot")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = conv
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"reject:{conv.id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_reject(mock_callback)
+
+        assert conv.operator_status == "rejected"
+        mock_callback.answer.assert_awaited_once_with("❌ Статус обновлен: Rejected")
+
+    async def test_conversation_not_found(self, mock_callback):
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = None
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"reject:{uuid.uuid4()}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_reject(mock_callback)
+
+        mock_callback.answer.assert_awaited_once_with("❌ Диалог не найден")
+
+    async def test_invalid_uuid(self, mock_callback):
+        mock_callback.data = "reject:invalid"
+        await handle_reject(mock_callback)
+        mock_callback.answer.assert_awaited_once_with("❌ Неверный ID диалога")
+
+
+class TestHandleDialog:
+    async def test_shows_last_10_messages(self, mock_callback):
+        conv_id = uuid.uuid4()
+        msg1 = Message(id=uuid.uuid4(), conversation_id=conv_id, direction="outbound", content="Hello")
+        msg2 = Message(id=uuid.uuid4(), conversation_id=conv_id, direction="inbound", content="Hi there")
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [msg2, msg1]
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"dialog:{conv_id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_dialog(mock_callback)
+
+        mock_callback.message.answer.assert_called_once()
+        text = mock_callback.message.answer.call_args[0][0]
+        assert "🤖 Hello" in text
+        assert "👤 Hi there" in text
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_no_messages(self, mock_callback):
+        conv_id = uuid.uuid4()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"dialog:{conv_id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_dialog(mock_callback)
+
+        mock_callback.message.answer.assert_called_once_with("Сообщений в диалоге не найдено.")
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_invalid_uuid(self, mock_callback):
+        mock_callback.data = "dialog:invalid"
+        await handle_dialog(mock_callback)
+        mock_callback.answer.assert_awaited_once_with("❌ Неверный ID диалога")

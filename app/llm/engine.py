@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.llm.guardrails import evaluate_guardrails
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,8 @@ DEFAULT_MODELS = [
 ]
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+FALLBACK_TEXT = "Извините, не совсем понял, могу ли я уточнить..."
 
 
 class LLMEngine:
@@ -73,6 +76,50 @@ class LLMEngine:
                 logger.warning("LLM call failed for model %s: %s", model, exc)
                 last_exception = exc
         raise last_exception or RuntimeError("All LLM models failed")
+
+    async def generate_response_with_guardrails(
+        self,
+        messages: list[dict[str, str]],
+        last_messages: list[str],
+        max_retries: int = 2,
+    ) -> dict[str, Any]:
+        current_messages = list(messages)
+        strict_reminder = {
+            "role": "system",
+            "content": (
+                "ВАЖНО: Не используй markdown, списки, жирный шрифт. "
+                "Пиши plain text. Не признавайся, что ты бот или ИИ."
+            ),
+        }
+
+        for attempt in range(max_retries + 1):
+            result = await self.generate_with_fallback(current_messages)
+            text = result["text"]
+            gr = evaluate_guardrails(text, last_messages)
+
+            if gr.approved:
+                return result
+
+            logger.warning(
+                "Guardrails rejected response (attempt %d/%d): violations=%s",
+                attempt + 1,
+                max_retries + 1,
+                gr.violations,
+            )
+
+            if attempt < max_retries:
+                # Inject strict reminder only once
+                if not any(
+                    m.get("content") == strict_reminder["content"]
+                    for m in current_messages
+                ):
+                    current_messages = current_messages + [strict_reminder]
+
+        return {
+            "text": FALLBACK_TEXT,
+            "model": "fallback",
+            "tokens_used": 0,
+        }
 
     async def close(self) -> None:
         if self._client is not None and not self._client.is_closed:

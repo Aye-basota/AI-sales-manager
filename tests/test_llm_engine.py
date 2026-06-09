@@ -139,3 +139,80 @@ async def test_close_client(engine):
 
     await engine.close()
     mock_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_response_with_guardrails_approved_first_try(engine):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "Approved text"}}],
+        "usage": {"total_tokens": 5},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_response
+
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
+        result = await engine.generate_response_with_guardrails(
+            messages=[{"role": "user", "content": "Hi"}],
+            last_messages=[],
+        )
+
+    assert result["text"] == "Approved text"
+    assert mock_client.post.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_response_with_guardrails_fallback_after_retries(engine):
+    bad_response = MagicMock()
+    bad_response.json.return_value = {
+        "choices": [{"message": {"content": "Я бот"}}],
+        "usage": {"total_tokens": 2},
+    }
+    bad_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = bad_response
+
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
+        result = await engine.generate_response_with_guardrails(
+            messages=[{"role": "user", "content": "Hi"}],
+            last_messages=[],
+            max_retries=1,
+        )
+
+    assert result["text"] == "Извините, не совсем понял, могу ли я уточнить..."
+    assert result["model"] == "fallback"
+    # initial + 1 retry = 2 calls
+    assert mock_client.post.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_response_with_guardrails_approved_on_retry(engine):
+    bad_response = MagicMock()
+    bad_response.json.return_value = {
+        "choices": [{"message": {"content": "**markdown**"}}],
+        "usage": {"total_tokens": 2},
+    }
+    bad_response.raise_for_status = MagicMock()
+
+    good_response = MagicMock()
+    good_response.json.return_value = {
+        "choices": [{"message": {"content": "Plain text reply"}}],
+        "usage": {"total_tokens": 3},
+    }
+    good_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post.side_effect = [bad_response, good_response]
+
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
+        result = await engine.generate_response_with_guardrails(
+            messages=[{"role": "user", "content": "Hi"}],
+            last_messages=[],
+            max_retries=1,
+        )
+
+    assert result["text"] == "Plain text reply"
+    assert mock_client.post.call_count == 2
