@@ -9,10 +9,10 @@ class CampaignBase(BaseModel):
     name: str
     status: str = "draft"
     total_contacts: int = 0
-    processed_contacts: int = 0
-    replied_count: int = 0
-    qualified_count: int = 0
-    meeting_booked_count: int = 0
+    processed_contacts: Optional[int] = 0
+    replied_count: Optional[int] = 0
+    qualified_count: Optional[int] = 0
+    meeting_booked_count: Optional[int] = 0
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -75,6 +74,12 @@ class SellerClient:
         self._api_hash = api_hash
         self.no_updates = no_updates
 
+        # Heartbeat / reconnect state
+        self._heartbeat_task: asyncio.Task | None = None
+        self._heartbeat_interval = 30
+        self._max_backoff = 30
+        self._stop_event = asyncio.Event()
+
         # Initialise Fernet for session encryption only when a key is available.
         self._fernet = None
         if _PYROGRAM_AVAILABLE:
@@ -122,25 +127,101 @@ class SellerClient:
             no_updates=self.no_updates,
         )
 
+    def _is_connected(self) -> bool:
+        """Return True if the underlying Pyrogram client is connected."""
+        if self._client is None:
+            return False
+        if not _PYROGRAM_AVAILABLE:
+            return False
+        return getattr(self._client, "is_connected", True)
+
+    async def _ensure_connected(self) -> None:
+        """Connect with exponential backoff until success or stop requested."""
+        if not _PYROGRAM_AVAILABLE:
+            return
+        backoff = 1.0
+        while not self._stop_event.is_set():
+            try:
+                if self._client is None:
+                    self._client = self._init_client()
+                if self._client is not None:
+                    if self._is_connected():
+                        logger.debug("SellerClient %s: already connected", self.account_id)
+                        return
+                    await self._client.start()
+                    logger.info("SellerClient %s: connected", self.account_id)
+                    return
+            except Exception as exc:
+                logger.warning(
+                    "SellerClient %s: connection attempt failed: %s", self.account_id, exc
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, self._max_backoff)
+
+    async def _heartbeat_loop(self) -> None:
+        """Background task that checks connection every 30 seconds."""
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(), timeout=self._heartbeat_interval
+                )
+            except asyncio.TimeoutError:
+                pass
+            if self._stop_event.is_set():
+                break
+            try:
+                if not self._is_connected():
+                    logger.warning(
+                        "SellerClient %s: heartbeat detected disconnect, reconnecting",
+                        self.account_id,
+                    )
+                    await self._ensure_connected()
+            except Exception as exc:
+                logger.warning("SellerClient %s: heartbeat error: %s", self.account_id, exc)
+
     async def start(self) -> None:
-        """Initialise the client session."""
+        """Initialise the client session and start heartbeat."""
+        self._stop_event.clear()
         if _PYROGRAM_AVAILABLE and self._api_id and self._api_hash:
-            self._client = self._init_client()
-            if self._client:
-                await self._client.start()
+            await self._ensure_connected()
         self._started = True
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         logger.info("SellerClient %s: started", self.account_id)
 
     async def stop(self) -> None:
-        """Terminate the client session."""
+        """Terminate the client session and stop heartbeat."""
+        self._stop_event.set()
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
         if self._client is not None:
             try:
                 await self._client.stop()
             except Exception as exc:
-                logger.warning("SellerClient %s: error stopping client: %s", self.account_id, exc)
+                logger.warning(
+                    "SellerClient %s: error stopping client: %s", self.account_id, exc
+                )
             self._client = None
         self._started = False
         logger.info("SellerClient %s: stopped", self.account_id)
+
+    async def _with_reconnect(self, coro_factory):
+        """Execute *coro_factory*, reconnecting once on ConnectionError then retrying."""
+        try:
+            return await coro_factory()
+        except (ConnectionError, OSError) as exc:
+            logger.warning(
+                "SellerClient %s: connection error during operation: %s",
+                self.account_id,
+                exc,
+            )
+            await self._ensure_connected()
+            return await coro_factory()
 
     async def send_message(
         self, user_id: int, text: str, typing_delay_ms: int = 0
@@ -161,7 +242,7 @@ class SellerClient:
             await asyncio.sleep(typing_delay_ms / 1000.0)
 
         if self._client is not None:
-            try:
+            async def _send():
                 msg = await self._client.send_message(chat_id=user_id, text=text)
                 return {
                     "message_id": msg.id,
@@ -172,6 +253,9 @@ class SellerClient:
                     "date": msg.date,
                     "text": msg.text,
                 }
+
+            try:
+                return await self._with_reconnect(_send)
             except FloodWait:
                 logger.warning(
                     "SellerClient %s: FloodWait for user %s", self.account_id, user_id
@@ -183,30 +267,19 @@ class SellerClient:
                 )
                 raise
 
-        # Fallback stub behaviour when no real MTProto client is active.
-        mock_msg_id = int(time.time() * 1000)
-        logger.info(
-            "SellerClient %s: sent message to user %s (msg_id=%s, len=%d)",
-            self.account_id,
-            user_id,
-            mock_msg_id,
-            len(text),
-        )
-        return {
-            "message_id": mock_msg_id,
-            "chat": {"id": user_id, "type": "private"},
-            "date": int(time.time()),
-            "text": text,
-        }
+        raise RuntimeError("SellerClient not initialized")
 
     async def set_typing(self, user_id: int) -> None:
         """Notify that the account is typing in a chat."""
         if self._client is not None:
-            try:
+            async def _do_set_typing():
                 peer = InputPeerUser(user_id=user_id, access_hash=0)
                 await self._client.invoke(
                     SendChatAction(peer=peer, action=SendMessageTypingAction())
                 )
+
+            try:
+                await self._with_reconnect(_do_set_typing)
             except Exception as exc:
                 logger.warning("SellerClient %s: set_typing error %s", self.account_id, exc)
         logger.debug("SellerClient %s: set_typing for user %s", self.account_id, user_id)
@@ -214,8 +287,11 @@ class SellerClient:
     async def set_online(self) -> None:
         """Set the account status to online."""
         if self._client is not None:
-            try:
+            async def _do_set_online():
                 await self._client.invoke(SendStatusOnline())
+
+            try:
+                await self._with_reconnect(_do_set_online)
             except Exception as exc:
                 logger.warning("SellerClient %s: set_online error %s", self.account_id, exc)
         logger.debug("SellerClient %s: set_online", self.account_id)
@@ -223,9 +299,12 @@ class SellerClient:
     async def read_history(self, user_id: int) -> None:
         """Mark messages in the chat as read."""
         if self._client is not None:
-            try:
+            async def _do_read_history():
                 peer = InputPeerUser(user_id=user_id, access_hash=0)
                 await self._client.invoke(ReadHistory(peer=peer, max_id=0))
+
+            try:
+                await self._with_reconnect(_do_read_history)
             except Exception as exc:
                 logger.warning("SellerClient %s: read_history error %s", self.account_id, exc)
         logger.debug("SellerClient %s: read_history for user %s", self.account_id, user_id)
@@ -235,7 +314,7 @@ class SellerClient:
         if self._client is None:
             return None
         try:
-            return await self._client.get_me()
+            return await self._with_reconnect(self._client.get_me)
         except Exception as exc:
             logger.warning("SellerClient %s: get_me error %s", self.account_id, exc)
             return None

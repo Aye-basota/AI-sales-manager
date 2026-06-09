@@ -1,16 +1,30 @@
 import io
-from typing import List
+from typing import Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.contact import Contact
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
-from app.services.contact_import import parse_csv, parse_excel
+from app.services.contact_import import parse_csv, parse_excel, upsert_contacts
+from app.services.lead_discovery import LeadCriteria, DiscoveredContact, discover_leads, enrich_contact
+from app.services.lead_validation import validate_and_enrich
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
+
+
+class DiscoverRequest(BaseModel):
+    query: str
+    source: str = "telegram_search"
+    limit: int = 20
+    criteria: dict[str, Any] = {}
+
+
+class DiscoverConfirmRequest(BaseModel):
+    contacts: List[dict[str, Any]]
 
 
 @router.get("", response_model=List[ContactResponse])
@@ -77,12 +91,63 @@ async def import_contacts(file: UploadFile = File(...), db: AsyncSession = Depen
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    created = []
-    for record in records:
-        contact = Contact(**record)
-        db.add(contact)
-        created.append(contact)
-    await db.commit()
-    for contact in created:
-        await db.refresh(contact)
-    return created
+    created, updated = await upsert_contacts(db, records, source="csv_import")
+    return created + updated
+
+
+@router.post("/discover", response_model=List[dict[str, Any]])
+async def discover_contacts(payload: DiscoverRequest):
+    """Preview discovered contacts without saving them."""
+    criteria = LeadCriteria(
+        query=payload.query,
+        limit=payload.limit,
+        keywords=payload.criteria.get("keywords", []),
+        job_title=payload.criteria.get("job_title", ""),
+        company=payload.criteria.get("company", ""),
+    )
+    discovered = await discover_leads(criteria, source=payload.source)
+
+    # Enrich and validate in background (best effort)
+    usernames = [d.telegram_username for d in discovered if d.telegram_username]
+    valid_map = {}
+    if usernames:
+        try:
+            valid_map = await validate_and_enrich(usernames)
+        except Exception:
+            pass
+
+    results = []
+    for d in discovered:
+        entry = {
+            "telegram_username": d.telegram_username,
+            "telegram_user_id": d.telegram_user_id,
+            "first_name": d.first_name,
+            "last_name": d.last_name,
+            "company_name": d.company_name,
+            "position": d.position,
+            "city": d.city,
+            "industry": d.industry,
+            "bio": d.bio,
+            "source": d.source,
+            "is_valid": d.telegram_username in valid_map,
+        }
+        if d.telegram_username in valid_map:
+            info = valid_map[d.telegram_username]
+            entry["telegram_user_id"] = info.get("user_id")
+            entry["first_name"] = entry["first_name"] or info.get("first_name")
+            entry["last_name"] = entry["last_name"] or info.get("last_name")
+        results.append(entry)
+
+    return results
+
+
+@router.post("/discover/confirm", response_model=List[ContactResponse], status_code=201)
+async def confirm_discovered_contacts(payload: DiscoverConfirmRequest, db: AsyncSession = Depends(get_db)):
+    """Save discovered contacts to the database with deduplication."""
+    records = []
+    for item in payload.contacts:
+        record = {k: v for k, v in item.items() if k in ContactCreate.model_fields}
+        records.append(record)
+
+    created, updated = await upsert_contacts(db, records, source="discover")
+    return created + updated

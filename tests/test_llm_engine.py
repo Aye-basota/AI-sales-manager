@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.llm.engine import DEFAULT_MODELS, LLMEngine, OPENROUTER_BASE_URL
+from app.llm.engine import DEFAULT_MODELS, FALLBACK_TEXT, LLMEngine, OPENROUTER_BASE_URL
 
 
 @pytest.fixture
@@ -216,3 +216,59 @@ async def test_generate_response_with_guardrails_approved_on_retry(engine):
 
     assert result["text"] == "Plain text reply"
     assert mock_client.post.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_with_fallback_retry_429_then_success(engine):
+    fail_response = MagicMock()
+    fail_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Rate limited",
+        request=MagicMock(),
+        response=MagicMock(status_code=429),
+    )
+
+    ok_response = MagicMock()
+    ok_response.json.return_value = {
+        "choices": [{"message": {"content": "Retry success"}}],
+        "usage": {"total_tokens": 3},
+    }
+    ok_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post.side_effect = [fail_response, ok_response]
+
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.llm.engine.asyncio.sleep") as mock_sleep:
+            result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
+
+    assert result["text"] == "Retry success"
+    assert mock_client.post.call_count == 2
+    mock_sleep.assert_awaited_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_generate_with_fallback_all_retryable_exhausted_returns_fallback(engine):
+    fail_response = MagicMock()
+    fail_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Bad Gateway",
+        request=MagicMock(),
+        response=MagicMock(status_code=502),
+    )
+
+    mock_client = AsyncMock()
+    # First model: 4 failures (1 initial + 3 retries)
+    # Second model: 1 failure (no retries left)
+    # Third model: 1 failure (no retries left)
+    mock_client.post.side_effect = [fail_response] * 6
+
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.llm.engine.asyncio.sleep") as mock_sleep:
+            result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
+
+    assert result["text"] == FALLBACK_TEXT
+    assert result["model"] == "fallback"
+    assert mock_client.post.call_count == 6
+    assert mock_sleep.await_count == 3
+    mock_sleep.assert_any_await(1)
+    mock_sleep.assert_any_await(2)
+    mock_sleep.assert_any_await(4)

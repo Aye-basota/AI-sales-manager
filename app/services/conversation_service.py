@@ -1,5 +1,7 @@
 """Business logic for conversations and messages."""
 
+import json
+import logging
 import types
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +17,13 @@ from app.db.redis import (
     invalidate_conversation_cache,
 )
 from app.models.conversation import Conversation, Message
+
+try:
+    from app.llm.engine import LLMEngine
+except Exception:  # pragma: no cover
+    LLMEngine = None  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 async def get_conversation_context(
@@ -155,3 +164,61 @@ async def update_lead_facts(
         pass
 
     return conversation
+
+
+_FACT_EXTRACTION_PROMPT = (
+    "Ты — ассистент по извлечению фактов из переписки менеджера по продажам с потенциальным клиентом.\n"
+    "Извлеки из следующего сообщения клиента ВСЕ, что можно понять о клиенте.\n"
+    "Верни ТОЛЬКО JSON объект с полями (используй пустую строку, если не удалось определить):\n"
+    "{{\n"
+    '  "company": "название компании или пусто",\n'
+    '  "role": "должность или пусто",\n'
+    '  "pain": "проблема/потребность или пусто",\n'
+    '  "budget": "упоминание бюджета или пусто",\n'
+    '  "city": "город или пусто",\n'
+    '  "industry": "сфера деятельности или пусто"\n'
+    "}}\n\n"
+    "Сообщение клиента:\n{message}\n\n"
+    "JSON:"
+)
+
+
+async def extract_facts_from_message(message_text: str) -> dict[str, Any]:
+    """Extract structured facts from a lead's inbound message.
+
+    Uses the configured LLM engine.  If the call fails or the response is not
+    valid JSON, an empty dictionary is returned.
+    """
+    if not message_text or not message_text.strip():
+        return {}
+
+    if LLMEngine is None:
+        return {}
+
+    engine = LLMEngine()
+    prompt = _FACT_EXTRACTION_PROMPT.format(message=message_text)
+    messages = [
+        {"role": "system", "content": "Ты возвращаешь только JSON."},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        result = await engine.generate_with_fallback(messages)
+        text = result.get("text", "")
+        if not text:
+            return {}
+
+        # Strip markdown code fences if present
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+
+        facts = json.loads(text)
+        if not isinstance(facts, dict):
+            return {}
+        return {k: v for k, v in facts.items() if v}
+    except Exception as exc:
+        logger.debug("Fact extraction failed: %s", exc)
+        return {}

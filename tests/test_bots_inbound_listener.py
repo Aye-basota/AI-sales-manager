@@ -99,7 +99,7 @@ async def test_handle_inbound_message_existing_conversation():
         ):
             with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
                 engine_inst = MockEngine.return_value
-                engine_inst.generate_with_fallback = AsyncMock(
+                engine_inst.generate_response_with_guardrails = AsyncMock(
                     return_value={
                         "text": "Hi there",
                         "model": "gpt-4",
@@ -108,8 +108,9 @@ async def test_handle_inbound_message_existing_conversation():
                 )
 
                 with patch(
-                    "app.bots.inbound_listener.apply_guardrails",
-                    return_value="Hi there",
+                    "app.bots.inbound_listener.extract_facts_from_message",
+                    new_callable=AsyncMock,
+                    return_value={},
                 ):
                     with patch(
                         "app.bots.inbound_listener.get_conversation_context",
@@ -186,7 +187,7 @@ async def test_handle_inbound_message_new_conversation():
         ):
             with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
                 engine_inst = MockEngine.return_value
-                engine_inst.generate_with_fallback = AsyncMock(
+                engine_inst.generate_response_with_guardrails = AsyncMock(
                     return_value={
                         "text": "Sure",
                         "model": "gpt-4",
@@ -195,8 +196,9 @@ async def test_handle_inbound_message_new_conversation():
                 )
 
                 with patch(
-                    "app.bots.inbound_listener.apply_guardrails",
-                    return_value="Sure",
+                    "app.bots.inbound_listener.extract_facts_from_message",
+                    new_callable=AsyncMock,
+                    return_value={},
                 ):
                     with patch(
                         "app.bots.inbound_listener.get_conversation_context",
@@ -290,17 +292,18 @@ async def test_handle_inbound_message_guardrails_block():
         ):
             with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
                 engine_inst = MockEngine.return_value
-                engine_inst.generate_with_fallback = AsyncMock(
+                engine_inst.generate_response_with_guardrails = AsyncMock(
                     return_value={
-                        "text": "bad text",
-                        "model": "gpt-4",
-                        "tokens_used": 2,
+                        "text": "",
+                        "model": "fallback",
+                        "tokens_used": 0,
                     }
                 )
 
                 with patch(
-                    "app.bots.inbound_listener.apply_guardrails",
-                    return_value=None,
+                    "app.bots.inbound_listener.extract_facts_from_message",
+                    new_callable=AsyncMock,
+                    return_value={},
                 ):
                     with patch(
                         "app.bots.inbound_listener.get_conversation_context",
@@ -319,5 +322,8 @@ async def test_handle_inbound_message_guardrails_block():
                                     account, client, message
                                 )
 
-                                client.send_message.assert_not_awaited()
+                                # Fallback text should still be sent
+                                client.send_message.assert_awaited_once()
+                                args, kwargs = client.send_message.call_args
+                                assert "Извините, не совсем понял" in kwargs["text"]
                                 mock_notif.assert_not_awaited()

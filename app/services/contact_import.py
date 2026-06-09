@@ -4,7 +4,10 @@ import io
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.contact import Contact
 from app.schemas.contact import ContactCreate
 
 _ALLOWED_COLUMNS = set(ContactCreate.model_fields.keys())
@@ -96,3 +99,89 @@ def parse_excel(file_bytes: bytes) -> list[dict[str, Any]]:
         raise ValueError(f"Failed to parse Excel file: {exc}") from exc
 
     return _process_dataframe(df)
+
+
+async def upsert_contacts(
+    db: AsyncSession,
+    records: list[dict[str, Any]],
+    source: str = "csv_import",
+) -> tuple[list[Contact], list[Contact]]:
+    """Insert or update contacts, deduplicating by telegram_username and phone.
+
+    Args:
+        db: Active SQLAlchemy async session.
+        records: List of contact dicts.
+        source: The source tag (e.g. ``csv_import``, ``telegram_search``).
+
+    Returns:
+        Tuple of (created contacts, updated contacts).
+    """
+    created: list[Contact] = []
+    updated: list[Contact] = []
+
+    # Pre-load existing contacts by username and phone to avoid N+1 queries
+    usernames = [
+        r["telegram_username"].lower()
+        for r in records
+        if r.get("telegram_username")
+    ]
+    phones = [r["phone"] for r in records if r.get("phone")]
+
+    existing_by_username: dict[str, Contact] = {}
+    existing_by_phone: dict[str, Contact] = {}
+
+    if usernames:
+        result = await db.execute(
+            select(Contact).where(
+                Contact.telegram_username.in_(usernames)
+            )
+        )
+        for contact in result.scalars().all():
+            if contact.telegram_username:
+                existing_by_username[contact.telegram_username.lower()] = contact
+
+    if phones:
+        result = await db.execute(
+            select(Contact).where(Contact.phone.in_(phones))
+        )
+        for contact in result.scalars().all():
+            if contact.phone:
+                existing_by_phone[contact.phone] = contact
+
+    for record in records:
+        username = record.get("telegram_username")
+        phone = record.get("phone")
+        existing: Contact | None = None
+
+        if username:
+            existing = existing_by_username.get(username.lower())
+        if not existing and phone:
+            existing = existing_by_phone.get(phone)
+
+        if existing:
+            # Update only empty fields (don't overwrite existing data with blanks)
+            for key, value in record.items():
+                if value and not getattr(existing, key, None):
+                    setattr(existing, key, value)
+            existing.last_source = source
+            existing.is_valid = "unknown"
+            updated.append(existing)
+        else:
+            record["source"] = source
+            record["last_source"] = source
+            record["is_valid"] = "unknown"
+            contact = Contact(**record)
+            db.add(contact)
+            created.append(contact)
+            if username:
+                existing_by_username[username.lower()] = contact
+            if phone:
+                existing_by_phone[phone] = contact
+
+    await db.commit()
+    for contact in created:
+        await db.refresh(contact)
+    for contact in updated:
+        await db.refresh(contact)
+
+    return created, updated

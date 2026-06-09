@@ -45,9 +45,11 @@ class MockResult:
 
 
 def build_mock_session(results: List[Any] = None, scalar_value: Any = None):
+    from unittest.mock import MagicMock
     session = AsyncMock()
     result = MockResult(results, scalar_value)
     session.execute.return_value = result
+    session.add = MagicMock()
 
     async def refresh_side_effect(obj):
         if hasattr(obj, 'id') and obj.id is None:

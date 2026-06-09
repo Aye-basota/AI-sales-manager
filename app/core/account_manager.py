@@ -53,14 +53,16 @@ async def select_account_with_db(
     return result.scalar_one_or_none()
 
 
-async def mark_account_cooldown(account_id, session: AsyncSession) -> None:
-    """Mark account as ``cooldown`` for 24 hours."""
+async def mark_account_cooldown(
+    account_id, session: AsyncSession, wait_seconds: int = 24 * 3600
+) -> None:
+    """Mark account as ``cooldown`` for the specified duration."""
     await session.execute(
         update(TelegramAccount)
         .where(TelegramAccount.id == account_id)
         .values(
             status="cooldown",
-            cooldown_until=datetime.utcnow() + timedelta(hours=24),
+            cooldown_until=datetime.utcnow() + timedelta(seconds=wait_seconds),
         )
     )
     await session.commit()

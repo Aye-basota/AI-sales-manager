@@ -386,7 +386,7 @@ class TestSendInitialMessage:
 
         with patch("app.llm.engine.LLMEngine") as MockEngine:
             engine_inst = MockEngine.return_value
-            engine_inst.generate_with_fallback = AsyncMock(return_value=mock_llm_response)
+            engine_inst.generate_response_with_guardrails = AsyncMock(return_value=mock_llm_response)
 
             with patch("app.bots.seller_client.SellerClient") as MockClient:
                 client_inst = MockClient.return_value
@@ -431,22 +431,21 @@ class TestSendInitialMessage:
         script = Script(id=uuid.uuid4(), name="Test", role_prompt="Sales", goal="Book")
         account = TelegramAccount(id=uuid.uuid4(), phone="+123", status="ready", daily_messages_sent=0, session_string="sess")
 
-        mock_llm_response = {"text": "bad text", "model": "gpt-4", "tokens_used": 2}
+        mock_llm_response = {"text": "", "model": "fallback", "tokens_used": 0}
 
         with patch("app.llm.engine.LLMEngine") as MockEngine:
             engine_inst = MockEngine.return_value
-            engine_inst.generate_with_fallback = AsyncMock(return_value=mock_llm_response)
+            engine_inst.generate_response_with_guardrails = AsyncMock(return_value=mock_llm_response)
 
-            with patch("app.llm.guardrails.apply_guardrails", return_value=None):
-                with pytest.raises(RuntimeError, match="Guardrails blocked"):
-                    await send_initial_message(
-                        db_session=mock_db,
-                        campaign_contact=cc,
-                        contact=contact,
-                        conversation=conversation,
-                        script=script,
-                        account=account,
-                    )
+            with pytest.raises(RuntimeError, match="LLM returned empty text"):
+                await send_initial_message(
+                    db_session=mock_db,
+                    campaign_contact=cc,
+                    contact=contact,
+                    conversation=conversation,
+                    script=script,
+                    account=account,
+                )
 
 
 @pytest.mark.asyncio
@@ -493,7 +492,7 @@ class TestSendFollowUpMessage:
 
         with patch("app.llm.engine.LLMEngine") as MockEngine:
             engine_inst = MockEngine.return_value
-            engine_inst.generate_with_fallback = AsyncMock(return_value=mock_llm_response)
+            engine_inst.generate_response_with_guardrails = AsyncMock(return_value=mock_llm_response)
 
             with patch("app.services.conversation_service.get_conversation_context", new_callable=AsyncMock) as mock_ctx:
                 mock_ctx.return_value = {"messages": [], "facts": {}}
@@ -527,12 +526,19 @@ class TestCampaignScheduler:
         with patch.object(sched._scheduler, "start") as mock_start:
             with patch.object(sched._scheduler, "add_job") as mock_add_job:
                 sched.start()
-                mock_add_job.assert_called_once()
+                assert mock_add_job.call_count == 4
                 mock_start.assert_called_once()
 
         with patch.object(sched._scheduler, "shutdown") as mock_shutdown:
             sched.shutdown()
             mock_shutdown.assert_called_once()
+
+    def test_is_running(self):
+        sched = CampaignScheduler()
+        with patch.object(type(sched._scheduler), "running", new=True):
+            assert sched.is_running() is True
+        with patch.object(type(sched._scheduler), "running", new=False):
+            assert sched.is_running() is False
 
     @pytest.mark.asyncio
     async def test_run_process_campaigns(self):

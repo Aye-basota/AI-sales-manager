@@ -5,6 +5,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
 
 from app.models.contact import Contact
 from app.models.conversation import Conversation
@@ -75,7 +76,7 @@ class TestNotificationService:
         mock_bot.send_message.assert_awaited_once()
         call_kwargs = mock_bot.send_message.call_args.kwargs
         assert call_kwargs["chat_id"] == "12345"
-        assert "🔥 Hot Lead" in call_kwargs["text"]
+        assert "🔥 Новый Hot Lead!" in call_kwargs["text"]
         assert "Last msg" in call_kwargs["text"]
         assert call_kwargs["reply_markup"] is not None
 
@@ -86,7 +87,7 @@ class TestNotificationService:
 
         mock_bot.send_message.assert_awaited_once()
         call_kwargs = mock_bot.send_message.call_args.kwargs
-        assert "📅 Meeting Booked" in call_kwargs["text"]
+        assert "📅 Meeting Booked\n" in call_kwargs["text"]
         assert call_kwargs["reply_markup"] is not None
 
     async def test_send_hot_lead_alert_handles_exception(self, dummy_contact, dummy_conversation, caplog):
@@ -103,4 +104,58 @@ class TestNotificationService:
         service = NotificationService(bot=mock_bot, chat_id="12345")
         with caplog.at_level("ERROR"):
             await service.send_meeting_booked_alert(dummy_contact, dummy_conversation)
+        assert "Failed to send meeting booked alert" in caplog.text
+
+    async def test_send_hot_lead_alert_retries_on_telegram_retry_after(self, dummy_contact, dummy_conversation):
+        mock_bot = AsyncMock()
+        mock_bot.send_message.side_effect = [
+            TelegramRetryAfter(method="send_message", message="Retry after", retry_after=1),
+            None,
+        ]
+        service = NotificationService(bot=mock_bot, chat_id="12345")
+        with patch("app.services.notification_service.asyncio.sleep") as mock_sleep:
+            await service.send_hot_lead_alert(dummy_contact, dummy_conversation, "msg")
+        assert mock_bot.send_message.await_count == 2
+        mock_sleep.assert_awaited_once_with(1)
+
+    async def test_send_hot_lead_alert_retries_on_telegram_api_error(self, dummy_contact, dummy_conversation):
+        mock_bot = AsyncMock()
+        mock_bot.send_message.side_effect = [
+            TelegramAPIError(method="send_message", message="API error"),
+            None,
+        ]
+        service = NotificationService(bot=mock_bot, chat_id="12345")
+        with patch("app.services.notification_service.asyncio.sleep") as mock_sleep:
+            await service.send_hot_lead_alert(dummy_contact, dummy_conversation, "msg")
+        assert mock_bot.send_message.await_count == 2
+        mock_sleep.assert_awaited_once_with(1)
+
+    async def test_send_hot_lead_alert_exhausted_retries_on_retry_after(self, dummy_contact, dummy_conversation, caplog):
+        mock_bot = AsyncMock()
+        mock_bot.send_message.side_effect = TelegramRetryAfter(
+            method="send_message", message="Retry after", retry_after=2
+        )
+        service = NotificationService(bot=mock_bot, chat_id="12345")
+        with caplog.at_level("ERROR"):
+            with patch("app.services.notification_service.asyncio.sleep") as mock_sleep:
+                await service.send_hot_lead_alert(dummy_contact, dummy_conversation, "msg")
+        assert mock_bot.send_message.await_count == 4  # initial + 3 retries
+        assert mock_sleep.await_count == 3
+        mock_sleep.assert_any_await(2)
+        assert "Failed to send hot lead alert" in caplog.text
+
+    async def test_send_meeting_booked_alert_exhausted_retries_on_api_error(self, dummy_contact, dummy_conversation, caplog):
+        mock_bot = AsyncMock()
+        mock_bot.send_message.side_effect = TelegramAPIError(
+            method="send_message", message="API error"
+        )
+        service = NotificationService(bot=mock_bot, chat_id="12345")
+        with caplog.at_level("ERROR"):
+            with patch("app.services.notification_service.asyncio.sleep") as mock_sleep:
+                await service.send_meeting_booked_alert(dummy_contact, dummy_conversation)
+        assert mock_bot.send_message.await_count == 4  # initial + 3 retries
+        assert mock_sleep.await_count == 3
+        mock_sleep.assert_any_await(1)
+        mock_sleep.assert_any_await(2)
+        mock_sleep.assert_any_await(4)
         assert "Failed to send meeting booked alert" in caplog.text

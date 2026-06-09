@@ -15,6 +15,8 @@ class ContactBase(BaseModel):
     city: Optional[str] = None
     industry: Optional[str] = None
     source: str = "csv_import"
+    last_source: Optional[str] = None
+    is_valid: Optional[str] = "unknown"
     icp_score: Optional[int] = None
     status: str = "new"
     assigned_script_id: Optional[UUID] = None
@@ -36,6 +38,8 @@ class ContactUpdate(BaseModel):
     city: Optional[str] = None
     industry: Optional[str] = None
     source: Optional[str] = None
+    last_source: Optional[str] = None
+    is_valid: Optional[str] = None
     icp_score: Optional[int] = None
     status: Optional[str] = None
     assigned_script_id: Optional[UUID] = None

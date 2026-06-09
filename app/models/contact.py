@@ -19,6 +19,8 @@ class Contact(Base):
     city = Column(String(100))
     industry = Column(String(100))
     source = Column(String(50), default="csv_import")
+    last_source = Column(String(50), default="csv_import")
+    is_valid = Column(String(20), default="unknown")
     icp_score = Column(Integer)
     status = Column(String(20), default="new")
     assigned_script_id = Column(UUID(as_uuid=True), ForeignKey("scripts.id"))

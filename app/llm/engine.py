@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -17,6 +18,17 @@ DEFAULT_MODELS = [
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 FALLBACK_TEXT = "Извините, не совсем понял, могу ли я уточнить..."
+
+_RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+_MAX_RETRIES = 3
+
+
+def _is_retryable_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _RETRYABLE_STATUS_CODES
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException)):
+        return True
+    return False
 
 
 class LLMEngine:
@@ -69,12 +81,38 @@ class LLMEngine:
         messages: list[dict[str, str]],
     ) -> dict[str, Any]:
         last_exception: Exception | None = None
-        for model in DEFAULT_MODELS:
+        retries_done = 0
+        model_idx = 0
+
+        while model_idx < len(DEFAULT_MODELS):
+            model = DEFAULT_MODELS[model_idx]
             try:
                 return await self.generate(messages, model=model)
             except Exception as exc:
-                logger.warning("LLM call failed for model %s: %s", model, exc)
                 last_exception = exc
+                if _is_retryable_error(exc) and retries_done < _MAX_RETRIES:
+                    wait = min(2 ** retries_done, 8)
+                    logger.warning(
+                        "LLM call failed for model %s (attempt %d/%d), retrying in %ss: %s",
+                        model,
+                        retries_done + 1,
+                        _MAX_RETRIES,
+                        wait,
+                        exc,
+                    )
+                    await asyncio.sleep(wait)
+                    retries_done += 1
+                else:
+                    logger.warning("LLM call failed for model %s: %s", model, exc)
+                    model_idx += 1
+
+        if last_exception is not None and _is_retryable_error(last_exception):
+            return {
+                "text": FALLBACK_TEXT,
+                "model": "fallback",
+                "tokens_used": 0,
+            }
+
         raise last_exception or RuntimeError("All LLM models failed")
 
     async def generate_response_with_guardrails(

@@ -26,16 +26,22 @@ from app.models.script import Script
 from app.bots.seller_client import SellerClient
 from app.llm.engine import LLMEngine
 from app.llm.intent_classifier import classify_intent
-from app.llm.guardrails import apply_guardrails
 from app.llm.prompts import build_system_prompt, build_user_prompt
 from app.core.humanizer import calculate_typing_delay, calculate_thinking_delay
 from app.core.state_machine import transition
 from app.services.notification_service import NotificationService
-from app.services.conversation_service import get_conversation_context, add_message
+from app.services.conversation_service import (
+    get_conversation_context,
+    add_message,
+    extract_facts_from_message,
+    update_lead_facts,
+)
 
 logger = logging.getLogger(__name__)
 
 _inbound_clients: dict[str, SellerClient] = {}
+
+FALLBACK_TEXT = "Извините, не совсем понял. Могу ли я уточнить — вас интересует {goal}?"
 
 
 async def start_inbound_listeners(db_session: AsyncSession) -> None:
@@ -173,7 +179,19 @@ async def _handle_inbound_message(
             # 4. Save inbound message
             await add_message(db, conversation.id, "inbound", text, message_type="text")
 
-            # 5. Load script
+            # 5. Mark message as read immediately (double-checks for lead)
+            user_id = int(contact.telegram_user_id)
+            await client.read_history(user_id)
+
+            # 6. Extract facts from inbound message
+            try:
+                facts = await extract_facts_from_message(text)
+                if facts:
+                    await update_lead_facts(db, conversation.id, facts)
+            except Exception as exc:
+                logger.debug("Failed to extract facts: %s", exc)
+
+            # 7. Load script
             result = await db.execute(
                 select(Script).where(Script.id == campaign.script_id)
             )
@@ -182,15 +200,16 @@ async def _handle_inbound_message(
                 logger.warning("No script for campaign %s", campaign.id)
                 return
 
-            # 6. Classify intent
+            # 8. Classify intent
             engine = LLMEngine()
             intent = await classify_intent(text, engine)
 
-            # 7. Build context
+            # 9. Build context
             context = await get_conversation_context(db, conversation.id, limit=10)
 
-            # 8. Generate response
+            # 10. Generate response
             system_prompt = build_system_prompt(script)
+
             history = [
                 {
                     "role": "agent" if msg.direction == "outbound" else "lead",
@@ -217,33 +236,34 @@ async def _handle_inbound_message(
                 {"role": "user", "content": user_prompt},
             ]
 
-            try:
-                response = await engine.generate_with_fallback(messages)
-            except Exception as exc:
-                logger.exception("LLM generation failed: %s", exc)
-                return
+            # Show "online" before generation so the lead sees we are active
+            await client.set_online()
 
-            response_text = response.get("text", "")
-            if not response_text:
-                logger.warning("Empty LLM response for conversation %s", conversation.id)
-                return
-
-            # 9. Guardrails
             last_outbound = [
                 msg.content for msg in context["messages"] if msg.direction == "outbound"
             ]
-            response_text = apply_guardrails(response_text, last_outbound)
-            if response_text is None:
-                logger.warning("Guardrails blocked response for conversation %s", conversation.id)
-                return
 
-            # 10. Humanizer
+            try:
+                response = await engine.generate_response_with_guardrails(
+                    messages, last_messages=last_outbound, max_retries=1
+                )
+            except Exception as exc:
+                logger.exception("LLM generation failed: %s", exc)
+                response = {"text": "", "model": None, "tokens_used": 0}
+
+            response_text = response.get("text", "")
+
+            # If guardrails blocked even the retry, use fallback text
+            if not response_text or response.get("model") == "fallback":
+                goal = script.goal or "наше предложение"
+                response_text = FALLBACK_TEXT.format(goal=goal)
+
+            # 11. Humanizer delays
             typing_delay = calculate_typing_delay(response_text)
             thinking_delay = calculate_thinking_delay()
 
-            # 11. Send with human-like delays
-            user_id = int(contact.telegram_user_id)
-            await client.set_online()
+            # 12. Send with human-like delays
+            # "typing" indicator should appear right before the typing delay
             await client.set_typing(user_id)
             await asyncio.sleep(thinking_delay / 1000.0)
             await client.send_message(
@@ -251,9 +271,8 @@ async def _handle_inbound_message(
                 text=response_text,
                 typing_delay_ms=typing_delay,
             )
-            await client.read_history(user_id)
 
-            # 12. Save outbound message
+            # 13. Save outbound message
             await add_message(
                 db,
                 conversation.id,
@@ -266,7 +285,7 @@ async def _handle_inbound_message(
                 intent_classification=intent,
             )
 
-            # 13. Update conversation state / facts / sentiment
+            # 14. Update conversation state / facts / sentiment
             event_map = {
                 "meeting_intent": "meeting_intent",
                 "positive": "positive_reply",
@@ -286,7 +305,7 @@ async def _handle_inbound_message(
             conversation.facts_extracted = current_facts
             await db.commit()
 
-            # 14. Notify if hot lead
+            # 15. Notify if hot lead
             if intent == "meeting_intent" or new_state in ("hot", "meeting_booked"):
                 notif = NotificationService()
                 await notif.send_hot_lead_alert(contact, conversation, last_message_text=text)
