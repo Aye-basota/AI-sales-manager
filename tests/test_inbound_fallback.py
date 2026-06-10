@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.bots.inbound_listener import _handle_inbound_message
-from app.models.campaign import Campaign
+from app.models.campaign import Campaign, CampaignContact
 from app.models.contact import Contact
 from app.models.conversation import Conversation
 from app.models.script import Script
@@ -45,11 +45,19 @@ async def test_guardrails_reject_fallback_sent():
         goal="book a demo",
     )
 
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
+
     mock_db = build_mock_session()
     mock_db.execute.side_effect = [
         MockResult([contact]),
         MockResult([conversation]),
         MockResult([campaign]),
+        MockResult([cc]),
         MockResult([script]),
     ]
 

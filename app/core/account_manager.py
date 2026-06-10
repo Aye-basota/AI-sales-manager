@@ -1,6 +1,6 @@
 """Simple Telegram account rotation logic."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from sqlalchemy import select, update
@@ -62,7 +62,7 @@ async def mark_account_cooldown(
         .where(TelegramAccount.id == account_id)
         .values(
             status="cooldown",
-            cooldown_until=datetime.utcnow() + timedelta(seconds=wait_seconds),
+            cooldown_until=datetime.now(timezone.utc) + timedelta(seconds=wait_seconds),
         )
     )
 
@@ -90,7 +90,7 @@ async def reset_daily_counters_db(session: AsyncSession) -> None:
 
 async def recover_cooldown_accounts(session: AsyncSession, hours: int = 24) -> None:
     """Recover accounts from ``cooldown`` to ``ready`` if enough time has passed."""
-    threshold = datetime.utcnow()
+    threshold = datetime.now(timezone.utc)
     await session.execute(
         update(TelegramAccount)
         .where(

@@ -20,6 +20,7 @@ Event = Literal[
     "no_reply_48h",
     "meeting_intent",
     "objection",
+    "informational",
 ]
 
 _TRANSITIONS: dict[State, dict[Event, State]] = {
@@ -31,6 +32,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "no_reply_48h": "closed",
         "meeting_intent": "meeting_booked",
         "objection": "objection_handler",
+        "informational": "cold",
     },
     "warm": {
         "positive_reply": "hot",
@@ -39,6 +41,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "no_reply_48h": "closed",
         "meeting_intent": "meeting_booked",
         "objection": "objection_handler",
+        "informational": "warm",
     },
     "hot": {
         "positive_reply": "hot",
@@ -47,6 +50,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "no_reply_48h": "closed",
         "meeting_intent": "meeting_booked",
         "objection": "objection_handler",
+        "informational": "hot",
     },
     "follow_up": {
         "positive_reply": "hot",
@@ -55,6 +59,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "no_reply_48h": "closed",
         "meeting_intent": "meeting_booked",
         "objection": "objection_handler",
+        "informational": "follow_up",
     },
     "objection_handler": {
         "positive_reply": "hot",
@@ -63,6 +68,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "no_reply_48h": "closed",
         "meeting_intent": "meeting_booked",
         "objection": "objection_handler",
+        "informational": "objection_handler",
     },
     "meeting_booked": {},
     "closed": {},

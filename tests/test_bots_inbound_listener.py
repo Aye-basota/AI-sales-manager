@@ -79,12 +79,19 @@ async def test_handle_inbound_message_existing_conversation():
     script = Script(
         id=campaign.script_id, name="Test", role_prompt="Sales", goal="Book"
     )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
 
     mock_db = build_mock_session()
     mock_db.execute.side_effect = [
         MockResult([contact]),
         MockResult([conversation]),
         MockResult([campaign]),
+        MockResult([cc]),
         MockResult([script]),
     ]
 
@@ -173,6 +180,7 @@ async def test_handle_inbound_message_new_conversation():
         MockResult([]),  # no conversation
         MockResult([cc]),
         MockResult([campaign]),
+        MockResult([cc]),  # campaign contact for analytics update
         MockResult([script]),
     ]
 
@@ -274,12 +282,19 @@ async def test_handle_inbound_message_guardrails_block():
     script = Script(
         id=campaign.script_id, name="Test", role_prompt="Sales", goal="Book"
     )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
 
     mock_db = build_mock_session()
     mock_db.execute.side_effect = [
         MockResult([contact]),
         MockResult([conversation]),
         MockResult([campaign]),
+        MockResult([cc]),
         MockResult([script]),
     ]
 

@@ -201,11 +201,19 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
         current_state="warm",
     )
 
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign_id,
+        contact_id=target_contact.id,
+        status="initial_sent",
+    )
+
     inbound_db = build_mock_session()
     inbound_db.execute.side_effect = [
         MockResult([target_contact]),     # find contact by telegram_user_id
         MockResult([conversation]),       # find latest conversation
         MockResult([campaign]),           # find campaign
+        MockResult([cc]),                 # find campaign contact for analytics
         MockResult([e2e_script]),         # find script
     ]
 

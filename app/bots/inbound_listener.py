@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -197,6 +198,27 @@ async def _handle_inbound_message(
             # 4. Save inbound message
             await add_message(db, conversation.id, "inbound", text, message_type="text")
 
+            # 4.5 Update campaign contact status and analytics
+            cc_result = await db.execute(
+                select(CampaignContact)
+                .where(CampaignContact.contact_id == contact.id)
+                .where(CampaignContact.campaign_id == campaign.id)
+            )
+            campaign_contact = cc_result.scalar_one_or_none()
+            if campaign_contact and campaign_contact.status in ("pending", "initial_sent", "follow_up_sent"):
+                campaign_contact.status = "replied"
+                campaign_contact.reply_received_at = datetime.now(timezone.utc)
+                campaign.replied_count = (campaign.replied_count or 0) + 1
+                await db.commit()
+
+            if campaign.status not in ("running",):
+                logger.info(
+                    "Campaign %s is not running (%s), skipping automated reply",
+                    campaign.id,
+                    campaign.status,
+                )
+                return
+
             # 5. Mark message as read immediately (double-checks for lead)
             user_id = int(contact.telegram_user_id)
             await client.read_history(user_id)
@@ -309,6 +331,7 @@ async def _handle_inbound_message(
                 "positive": "positive_reply",
                 "negative": "negative_reply",
                 "objection": "objection",
+                "informational": "informational",
             }
             event = event_map.get(intent, "positive_reply")
             new_state = transition(conversation.current_state or "cold", event)

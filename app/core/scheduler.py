@@ -1,7 +1,7 @@
 """Campaign scheduling and anti-spam logic."""
 
 import logging
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -87,7 +87,12 @@ def is_within_working_hours(
     except Exception:
         tz = ZoneInfo("UTC")
 
-    localized_now = now.astimezone(tz) if now.tzinfo else now.replace(tzinfo=tz)
+    if now.tzinfo is None:
+        # Naive datetime: assume it is already in the target timezone
+        # (backward-compatible for unit tests and legacy callers)
+        localized_now = now.replace(tzinfo=tz)
+    else:
+        localized_now = now.astimezone(tz)
     current_time = localized_now.time()
 
     if working_start <= working_end:
@@ -189,7 +194,9 @@ async def process_campaigns(db_session: AsyncSession) -> None:
         if not script:
             continue
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
 
         if not is_within_working_hours(
             script.timezone,
@@ -209,7 +216,9 @@ async def process_campaigns(db_session: AsyncSession) -> None:
         ready_contacts = next_contact_to_process(campaign_contacts, script, now)
 
         for cc in ready_contacts:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
 
             contact_result = await db_session.execute(
                 select(Contact).where(Contact.id == cc.contact_id)
@@ -237,6 +246,13 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     current_state="cold",
                 )
                 db_session.add(conversation)
+            elif conversation.current_state in ("hot", "meeting_booked", "closed"):
+                logger.debug(
+                    "Skipping contact %s: conversation already in terminal state %s",
+                    contact.id,
+                    conversation.current_state,
+                )
+                continue
 
             # Select account
             if contact.assigned_account_id:
@@ -249,7 +265,8 @@ async def process_campaigns(db_session: AsyncSession) -> None:
             else:
                 acc_result = await db_session.execute(
                     select(TelegramAccount).where(
-                        TelegramAccount.status.in_(["ready", "active"])
+                        TelegramAccount.status.in_(["ready", "active"]),
+                        TelegramAccount.session_string.isnot(None),
                     )
                 )
                 accounts = acc_result.scalars().all()
@@ -263,7 +280,10 @@ async def process_campaigns(db_session: AsyncSession) -> None:
 
             # Rate limit: 1 message per 30 seconds per account
             if account.last_message_at is not None:
-                elapsed = (now - account.last_message_at).total_seconds()
+                last_at = account.last_message_at
+                if last_at.tzinfo is None:
+                    last_at = last_at.replace(tzinfo=timezone.utc)
+                elapsed = (now - last_at).total_seconds()
                 if elapsed < 30:
                     logger.debug(
                         "Account %s rate limited (%.1f s since last msg)",
@@ -326,6 +346,7 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     await mark_account_cooldown(
                         exc2.account_id, db_session, wait_seconds=exc2.wait_seconds
                     )
+                    await db_session.commit()
                     continue
             except AccountPeerFloodError as exc:
                 logger.warning(
@@ -356,13 +377,16 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     await mark_account_cooldown(
                         exc2.account_id, db_session, wait_seconds=24 * 3600
                     )
+                    await db_session.commit()
                     continue
             except Exception as exc:
                 logger.exception(
                     "Error sending message to contact %s: %s", contact.id, exc
                 )
+                await db_session.rollback()
                 continue
 
+            campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
             await db_session.commit()
 
 
@@ -460,19 +484,19 @@ async def send_initial_message(
 
     # Update campaign contact
     campaign_contact.status = "initial_sent"
-    campaign_contact.initial_sent_at = datetime.now()
-    campaign_contact.last_message_at = datetime.now()
+    campaign_contact.initial_sent_at = datetime.now(timezone.utc)
+    campaign_contact.last_message_at = datetime.now(timezone.utc)
     campaign_contact.message_count = (campaign_contact.message_count or 0) + 1
 
     # Update account
     mark_message_sent(account)
-    account.last_message_at = datetime.now()
+    account.last_message_at = datetime.now(timezone.utc)
 
     # Update conversation state
     conversation.current_state = transition(
         conversation.current_state or "cold", "initial_message"
     )
-    conversation.last_message_at = datetime.now()
+    conversation.last_message_at = datetime.now(timezone.utc)
 
     # Persist outbound message
     message = Message(
@@ -613,19 +637,19 @@ async def send_follow_up_message(
 
     # Update campaign contact
     campaign_contact.status = "follow_up_sent"
-    campaign_contact.follow_up_sent_at = datetime.now()
-    campaign_contact.last_message_at = datetime.now()
+    campaign_contact.follow_up_sent_at = datetime.now(timezone.utc)
+    campaign_contact.last_message_at = datetime.now(timezone.utc)
     campaign_contact.message_count = (campaign_contact.message_count or 0) + 1
 
     # Update account
     mark_message_sent(account)
-    account.last_message_at = datetime.now()
+    account.last_message_at = datetime.now(timezone.utc)
 
     # Update conversation state
     conversation.current_state = transition(
         conversation.current_state or "cold", "no_reply_24h"
     )
-    conversation.last_message_at = datetime.now()
+    conversation.last_message_at = datetime.now(timezone.utc)
 
     # Persist outbound message
     message = Message(
@@ -664,7 +688,7 @@ async def auto_close_conversations(db_session: AsyncSession) -> None:
     from app.models.conversation import Conversation
     from app.core.state_machine import transition
 
-    cutoff = datetime.now() - timedelta(hours=48)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
 
     result = await db_session.execute(
         select(CampaignContact)
@@ -687,7 +711,7 @@ async def auto_close_conversations(db_session: AsyncSession) -> None:
             conversation.current_state = transition(
                 conversation.current_state or "cold", "no_reply_48h"
             )
-            conversation.last_message_at = datetime.now()
+            conversation.last_message_at = datetime.now(timezone.utc)
 
     await db_session.commit()
 
