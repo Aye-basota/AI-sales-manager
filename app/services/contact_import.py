@@ -164,12 +164,14 @@ async def upsert_contacts(
                 if value and not getattr(existing, key, None):
                     setattr(existing, key, value)
             existing.last_source = source
-            existing.is_valid = "unknown"
+            if "is_valid" in record:
+                existing.is_valid = record["is_valid"]
             updated.append(existing)
         else:
             record["source"] = source
             record["last_source"] = source
-            record["is_valid"] = "unknown"
+            if "is_valid" not in record:
+                record["is_valid"] = "unknown"
             contact = Contact(**record)
             db.add(contact)
             created.append(contact)

@@ -431,11 +431,13 @@ async def send_initial_message(
     total_delay = typing_delay + thinking_delay
 
     from app.bots.seller_client import SellerClient
-    from app.bots.seller_client import SellerClient
+    settings = get_settings()
     client = SellerClient(
         account_id=str(account.id),
         session_string=account.session_string or "",
         proxy_url=account.proxy_url,
+        api_id=settings.telegram_api_id,
+        api_hash=settings.telegram_api_hash,
     )
     try:
         await client.start()
@@ -459,6 +461,7 @@ async def send_initial_message(
     # Update campaign contact
     campaign_contact.status = "initial_sent"
     campaign_contact.initial_sent_at = datetime.now()
+    campaign_contact.last_message_at = datetime.now()
     campaign_contact.message_count = (campaign_contact.message_count or 0) + 1
 
     # Update account
@@ -581,10 +584,13 @@ async def send_follow_up_message(
     total_delay = typing_delay + thinking_delay
 
     from app.bots.seller_client import SellerClient
+    settings = get_settings()
     client = SellerClient(
         account_id=str(account.id),
         session_string=account.session_string or "",
         proxy_url=account.proxy_url,
+        api_id=settings.telegram_api_id,
+        api_hash=settings.telegram_api_hash,
     )
     try:
         await client.start()
@@ -608,6 +614,7 @@ async def send_follow_up_message(
     # Update campaign contact
     campaign_contact.status = "follow_up_sent"
     campaign_contact.follow_up_sent_at = datetime.now()
+    campaign_contact.last_message_at = datetime.now()
     campaign_contact.message_count = (campaign_contact.message_count or 0) + 1
 
     # Update account

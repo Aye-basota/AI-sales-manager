@@ -78,7 +78,7 @@ async def validate_telegram_usernames(
             try:
                 await client.stop()
             except Exception:
-                pass
+                logger.warning("Failed to stop validation client", exc_info=True)
 
     return valid
 
@@ -129,6 +129,7 @@ async def validate_and_enrich(
                             "user_id": getattr(user, "id", None),
                             "first_name": getattr(user, "first_name", None),
                             "last_name": getattr(user, "last_name", None),
+                            "is_valid": "valid",
                         }
             except Exception as exc:
                 logger.warning("Validation batch failed: %s", exc)
@@ -139,6 +140,6 @@ async def validate_and_enrich(
             try:
                 await client.stop()
             except Exception:
-                pass
+                logger.warning("Failed to stop validation client", exc_info=True)
 
     return result

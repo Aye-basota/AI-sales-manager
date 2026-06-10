@@ -52,7 +52,7 @@ async def get_conversation_context(
             messages = [types.SimpleNamespace(**m) for m in cached["messages"]]
             return {"messages": messages, "facts": cached.get("facts", {})}
     except Exception:
-        pass
+        logger.warning("Redis cache read failed for conversation %s", conversation_id, exc_info=True)
 
     result = await db.execute(
         select(Message)
@@ -74,7 +74,7 @@ async def get_conversation_context(
         redis = await get_redis()
         await cache_conversation_context(redis, conversation_id, result["messages"], result["facts"])
     except Exception:
-        pass
+        logger.warning("Redis cache write failed for conversation %s", conversation_id, exc_info=True)
 
     return result
 
@@ -120,7 +120,7 @@ async def add_message(
         redis = await get_redis()
         await invalidate_conversation_cache(redis, conversation_id)
     except Exception:
-        pass
+        logger.warning("Redis cache invalidation failed for conversation %s", conversation_id, exc_info=True)
 
     return message
 
@@ -161,7 +161,7 @@ async def update_lead_facts(
         redis = await get_redis()
         await invalidate_conversation_cache(redis, conversation_id)
     except Exception:
-        pass
+        logger.warning("Redis cache invalidation failed for conversation %s", conversation_id, exc_info=True)
 
     return conversation
 

@@ -115,13 +115,14 @@ class GenericJSONAdapter(ExternalLeadSource):
 
 
 class RosprofileAdapter(GenericJSONAdapter):
-    """Rosprofile-specific adapter (currently a thin wrapper around GenericJSONAdapter).
+    """Rosprofile-specific adapter (currently a thin wrapper around GenericJSONAdapter)."""
 
-    TODO: Implement Rosprofile-specific query building and response parsing
-    when the API contract is finalised.
-    """
-
-    pass
+    async def search(self, criteria: LeadCriteria) -> List[DiscoveredContact]:
+        if not self.api_url:
+            raise NotImplementedError(
+                "Rosprofile integration requires EXTERNAL_LEAD_API_URL and EXTERNAL_LEAD_API_KEY in .env"
+            )
+        return await super().search(criteria)
 
 
 class TelegramPublicSearch:
@@ -205,7 +206,7 @@ class TelegramPublicSearch:
                 try:
                     await client.stop()
                 except Exception:
-                    pass
+                    logger.warning("Failed to stop lead discovery client", exc_info=True)
 
         return results
 
@@ -298,7 +299,7 @@ class ChannelMembersParser:
                 try:
                     await client.stop()
                 except Exception:
-                    pass
+                    logger.warning("Failed to stop channel parser client", exc_info=True)
 
         return results
 
@@ -345,7 +346,7 @@ async def enrich_contact(
             try:
                 await client.stop()
             except Exception:
-                pass
+                logger.warning("Failed to stop enrichment client", exc_info=True)
 
     return contact
 

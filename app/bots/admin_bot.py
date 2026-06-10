@@ -51,6 +51,7 @@ class ScriptCreateFSM(StatesGroup):
     max_messages = State()
     follow_up_delay_hours = State()
     working_hours = State()
+    working_hours_end = State()
     timezone = State()
     confirm = State()
 
@@ -620,13 +621,27 @@ async def process_script_work_start(message: types.Message, state: FSMContext):
         parts = message.text.split("-")
         if len(parts) == 2:
             start_str, end_str = parts[0].strip(), parts[1].strip()
+            h1, m1 = map(int, start_str.split(":"))
+            h2, m2 = map(int, end_str.split(":"))
+            await state.update_data(working_hours_start=dt_time(h1, m1))
+            await state.update_data(working_hours_end=dt_time(h2, m2))
+            await state.set_state(ScriptCreateFSM.timezone)
+            await message.answer("Введите timezone (по умолчанию Europe/Moscow):")
         else:
-            # Expect single start time for now, then prompt for end
             start_str = message.text.strip()
             await state.update_data(_start_tmp=start_str)
+            await state.set_state(ScriptCreateFSM.working_hours_end)
             await message.answer("Введите конец рабочих часов (HH:MM, например 18:00):")
-            return
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите HH:MM-HH:MM или два отдельных значения.")
 
+
+@router.message(ScriptCreateFSM.working_hours_end)
+async def process_script_work_end(message: types.Message, state: FSMContext):
+    try:
+        data = await state.get_data()
+        start_str = data.get("_start_tmp")
+        end_str = message.text.strip()
         h1, m1 = map(int, start_str.split(":"))
         h2, m2 = map(int, end_str.split(":"))
         await state.update_data(working_hours_start=dt_time(h1, m1))
@@ -634,7 +649,7 @@ async def process_script_work_start(message: types.Message, state: FSMContext):
         await state.set_state(ScriptCreateFSM.timezone)
         await message.answer("Введите timezone (по умолчанию Europe/Moscow):")
     except ValueError:
-        await message.answer("❌ Неверный формат. Введите HH:MM-HH:MM или два отдельных значения.")
+        await message.answer("❌ Неверный формат. Введите время в формате HH:MM.")
 
 
 @router.message(ScriptCreateFSM.timezone)
@@ -1030,7 +1045,7 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
         try:
             valid_map = await validate_and_enrich(usernames)
         except Exception:
-            pass
+            logger.warning("Lead validation failed during discovery", exc_info=True)
 
     valid_count = sum(1 for d in discovered if d.telegram_username in valid_map)
 
@@ -1046,6 +1061,7 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
             "city": d.city,
             "industry": d.industry,
             "source": d.source,
+            "is_valid": "valid" if d.telegram_username in valid_map else "unknown",
         }
         if d.telegram_username in valid_map:
             info = valid_map[d.telegram_username]

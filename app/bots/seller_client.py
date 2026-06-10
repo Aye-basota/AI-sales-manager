@@ -267,7 +267,7 @@ class SellerClient:
                 )
                 raise
 
-        raise RuntimeError("SellerClient not initialized")
+        raise RuntimeError("SellerClient not initialized: missing api_id/api_hash or invalid session")
 
     async def set_typing(self, user_id: int) -> None:
         """Notify that the account is typing in a chat."""

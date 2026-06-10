@@ -114,7 +114,7 @@ async def discover_contacts(payload: DiscoverRequest):
         try:
             valid_map = await validate_and_enrich(usernames)
         except Exception:
-            pass
+            logger.warning("Lead validation/enrichment failed", exc_info=True)
 
     results = []
     for d in discovered:
@@ -129,7 +129,7 @@ async def discover_contacts(payload: DiscoverRequest):
             "industry": d.industry,
             "bio": d.bio,
             "source": d.source,
-            "is_valid": d.telegram_username in valid_map,
+            "is_valid": "valid" if d.telegram_username in valid_map else "unknown",
         }
         if d.telegram_username in valid_map:
             info = valid_map[d.telegram_username]

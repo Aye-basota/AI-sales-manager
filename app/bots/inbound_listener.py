@@ -44,16 +44,23 @@ _inbound_clients: dict[str, SellerClient] = {}
 FALLBACK_TEXT = "Извините, не совсем понял. Могу ли я уточнить — вас интересует {goal}?"
 
 
-async def start_inbound_listeners(db_session: AsyncSession) -> None:
+async def start_inbound_listeners(db_session: AsyncSession | None = None) -> None:
     """Load ready/active accounts and start Pyrogram inbound listeners."""
     if not _PYROGRAM_AVAILABLE:
         logger.warning("Pyrogram not available, inbound listeners not started")
         return
 
-    result = await db_session.execute(
-        select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
-    )
-    accounts = result.scalars().all()
+    if db_session is None:
+        async with AsyncSessionLocal() as db_session:
+            result = await db_session.execute(
+                select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
+            )
+            accounts = result.scalars().all()
+    else:
+        result = await db_session.execute(
+            select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
+        )
+        accounts = result.scalars().all()
 
     settings = get_settings()
 
@@ -127,8 +134,19 @@ async def _handle_inbound_message(
             )
             contact: Contact | None = result.scalar_one_or_none()
             if not contact:
-                logger.info("No contact found for telegram_user_id %s", telegram_user_id)
-                return
+                logger.info("Creating new contact for telegram_user_id %s", telegram_user_id)
+                contact = Contact(
+                    telegram_user_id=telegram_user_id,
+                    telegram_username=message.from_user.username or "",
+                    first_name=message.from_user.first_name or "",
+                    last_name=message.from_user.last_name or "",
+                    source="inbound",
+                    last_source="inbound",
+                    is_valid="unknown",
+                )
+                db.add(contact)
+                await db.commit()
+                await db.refresh(contact)
 
             # 2. Find latest conversation
             result = await db.execute(

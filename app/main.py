@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from app.db.session import engine, Base, AsyncSessionLocal
-from app.api import scripts, campaigns, contacts, conversations, analytics, health
+from app.api import scripts, campaigns, contacts, conversations, analytics, health, telegram_accounts
 from app.bots import start_bot, stop_bot
 from app.bots.inbound_listener import start_inbound_listeners, stop_inbound_listeners
 from app.db.redis import close_redis
@@ -29,15 +29,11 @@ async def lifespan(app: FastAPI):
         signal.signal(signal.SIGTERM, lambda s, f: _signal_handler(s))
         signal.signal(signal.SIGINT, lambda s, f: _signal_handler(s))
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     scheduler.start()
 
     bot_task = asyncio.create_task(start_bot())
 
-    async with AsyncSessionLocal() as db:
-        inbound_task = asyncio.create_task(start_inbound_listeners(db))
+    inbound_task = asyncio.create_task(start_inbound_listeners())
 
     yield
 
@@ -68,3 +64,4 @@ app.include_router(contacts.router)
 app.include_router(conversations.router)
 app.include_router(analytics.router)
 app.include_router(health.router)
+app.include_router(telegram_accounts.router)

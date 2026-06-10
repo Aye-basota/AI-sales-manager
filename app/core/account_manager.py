@@ -65,7 +65,6 @@ async def mark_account_cooldown(
             cooldown_until=datetime.utcnow() + timedelta(seconds=wait_seconds),
         )
     )
-    await session.commit()
 
 
 async def mark_account_ready(account_id, session: AsyncSession) -> None:
@@ -79,7 +78,6 @@ async def mark_account_ready(account_id, session: AsyncSession) -> None:
             last_error=None,
         )
     )
-    await session.commit()
 
 
 async def reset_daily_counters_db(session: AsyncSession) -> None:
@@ -92,7 +90,7 @@ async def reset_daily_counters_db(session: AsyncSession) -> None:
 
 async def recover_cooldown_accounts(session: AsyncSession, hours: int = 24) -> None:
     """Recover accounts from ``cooldown`` to ``ready`` if enough time has passed."""
-    threshold = datetime.utcnow() - timedelta(hours=hours)
+    threshold = datetime.utcnow()
     await session.execute(
         update(TelegramAccount)
         .where(

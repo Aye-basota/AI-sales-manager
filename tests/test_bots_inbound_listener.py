@@ -234,6 +234,8 @@ async def test_handle_inbound_message_unknown_user():
     mock_db = build_mock_session()
     mock_db.execute.side_effect = [
         MockResult([]),  # no contact
+        MockResult([]),  # no conversation
+        MockResult([]),  # no campaign contact
     ]
 
     with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:

@@ -83,6 +83,7 @@ async def test_validate_and_enrich_returns_info(mock_pyrogram_user):
     assert "valid_user" in result
     assert result["valid_user"]["user_id"] == 123456
     assert result["valid_user"]["first_name"] == "Valid"
+    assert result["valid_user"]["is_valid"] == "valid"
 
 
 @pytest.mark.asyncio
