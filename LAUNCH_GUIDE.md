@@ -115,6 +115,14 @@ DAILY_MESSAGE_LIMIT=50
 DEBUG=True
 ```
 
+> **Важно:** для Docker в `DATABASE_URL` и `REDIS_URL` должны быть имена сервисов — `postgres` и `redis`, а не `localhost`. Внутри контейнера `localhost` означает сам контейнер, и база не найдётся.
+>
+> Если вы уже запустили `docker-compose up`, а потом изменили `.env`, контейнеры НЕ подхватят новые значения автоматически. Нужно выполнить:
+> ```bash
+> docker-compose down
+> docker-compose up -d
+> ```
+
 **Что обязательно заполнить:**
 - `OPENROUTER_API_KEY`
 - `ADMIN_BOT_TOKEN`

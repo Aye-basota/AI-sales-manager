@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -15,6 +16,12 @@ from app.models.conversation import Conversation, Message
 from app.models.telegram_account import TelegramAccount
 
 config = context.config
+
+# Prefer DATABASE_URL from the environment over the value in alembic.ini.
+# This keeps migrations working both inside Docker and in local setups.
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
