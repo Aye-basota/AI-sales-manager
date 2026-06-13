@@ -55,8 +55,23 @@ def _process_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
             for key, value in row.to_dict().items()
             if pd.notna(value)
         }
-        if record:
-            records.append(record)
+        if not record:
+            continue
+
+        # Coerce numeric/UUID fields so they match the database types.
+        if "telegram_user_id" in record:
+            try:
+                record["telegram_user_id"] = int(record["telegram_user_id"])
+            except (ValueError, TypeError):
+                record.pop("telegram_user_id", None)
+
+        if "icp_score" in record:
+            try:
+                record["icp_score"] = int(record["icp_score"])
+            except (ValueError, TypeError):
+                record.pop("icp_score", None)
+
+        records.append(record)
 
     return records
 

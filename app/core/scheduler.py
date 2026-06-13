@@ -1,6 +1,7 @@
 """Campaign scheduling and anti-spam logic."""
 
 import logging
+import random
 from datetime import datetime, timedelta, time, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 try:
+    import asyncio
+
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        _tmp_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_tmp_loop)
+
     from pyrogram.errors import FloodWait, PeerFlood
 
     _PYROGRAM_ERRORS_AVAILABLE = True
@@ -407,6 +416,7 @@ async def send_initial_message(
         maybe_self_correct,
         add_casual_markers,
         maybe_double_take,
+        split_message_into_chunks,
     )
 
     from app.core.account_manager import mark_message_sent
@@ -450,9 +460,14 @@ async def send_initial_message(
     text = add_casual_markers(text)
     text = maybe_double_take(text, getattr(contact, "city", None))
 
-    typing_delay = calculate_typing_delay(text)
+    chunks = split_message_into_chunks(text)
+    base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
-    total_delay = typing_delay + thinking_delay
+    total_delay = base_typing_delay + thinking_delay
+    chunk_delays = [
+        int(base_typing_delay * len(chunk) / max(len(text), 1))
+        for chunk in chunks
+    ]
 
     from app.bots.seller_client import SellerClient
     settings = get_settings()
@@ -465,11 +480,15 @@ async def send_initial_message(
     )
     try:
         await client.start()
-        await client.send_message(
-            user_id=int(contact.telegram_user_id),
-            text=text,
-            typing_delay_ms=total_delay,
-        )
+        for idx, chunk in enumerate(chunks):
+            if idx > 0:
+                await asyncio.sleep(random.uniform(1.5, 3.5))
+            await client.send_message(
+                user_id=int(contact.telegram_user_id),
+                text=chunk,
+                typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+            )
+            thinking_delay = 0
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
         logger.warning(
@@ -536,6 +555,7 @@ async def send_follow_up_message(
         maybe_self_correct,
         add_casual_markers,
         maybe_double_take,
+        split_message_into_chunks,
     )
 
     from app.core.account_manager import mark_message_sent
@@ -603,9 +623,14 @@ async def send_follow_up_message(
     text = add_casual_markers(text)
     text = maybe_double_take(text, getattr(contact, "city", None))
 
-    typing_delay = calculate_typing_delay(text)
+    chunks = split_message_into_chunks(text)
+    base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
-    total_delay = typing_delay + thinking_delay
+    total_delay = base_typing_delay + thinking_delay
+    chunk_delays = [
+        int(base_typing_delay * len(chunk) / max(len(text), 1))
+        for chunk in chunks
+    ]
 
     from app.bots.seller_client import SellerClient
     settings = get_settings()
@@ -618,11 +643,15 @@ async def send_follow_up_message(
     )
     try:
         await client.start()
-        await client.send_message(
-            user_id=int(contact.telegram_user_id),
-            text=text,
-            typing_delay_ms=total_delay,
-        )
+        for idx, chunk in enumerate(chunks):
+            if idx > 0:
+                await asyncio.sleep(random.uniform(1.5, 3.5))
+            await client.send_message(
+                user_id=int(contact.telegram_user_id),
+                text=chunk,
+                typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+            )
+            thinking_delay = 0
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
         logger.warning(

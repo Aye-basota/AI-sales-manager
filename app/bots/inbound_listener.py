@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import random
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 try:
+    # Pyrogram's sync module calls asyncio.get_event_loop() at import time.
+    # When uvloop is the active policy and no loop exists yet, this raises.
+    # Create a temporary loop so the import succeeds; uvicorn will replace it later.
+    import asyncio
+
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        _tmp_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_tmp_loop)
+
     from pyrogram import Client
     from pyrogram.types import Message
 
@@ -28,7 +40,11 @@ from app.bots.seller_client import SellerClient
 from app.llm.engine import LLMEngine
 from app.llm.intent_classifier import classify_intent
 from app.llm.prompts import build_system_prompt, build_user_prompt
-from app.core.humanizer import calculate_typing_delay, calculate_thinking_delay
+from app.core.humanizer import (
+    calculate_typing_delay,
+    calculate_thinking_delay,
+    split_message_into_chunks,
+)
 from app.core.state_machine import transition
 from app.services.notification_service import NotificationService
 from app.services.conversation_service import (
@@ -97,7 +113,7 @@ async def start_inbound_listeners(db_session: AsyncSession | None = None) -> Non
 
         client.on_message(_make_handler(account, client))
         _inbound_clients[str(account.id)] = client
-        logger.info("Inbound listener started for account %s", account.id)
+        logger.warning("Inbound listener started for account %s", account.id)
 
 
 async def stop_inbound_listeners() -> None:
@@ -219,8 +235,9 @@ async def _handle_inbound_message(
                 )
                 return
 
-            # 5. Mark message as read immediately (double-checks for lead)
+            # 5. Mark message as read after a short human-like delay
             user_id = int(contact.telegram_user_id)
+            await asyncio.sleep(random.uniform(2.0, 5.0))
             await client.read_history(user_id)
 
             # 6. Extract facts from inbound message
@@ -298,21 +315,28 @@ async def _handle_inbound_message(
                 goal = script.goal or "наше предложение"
                 response_text = FALLBACK_TEXT.format(goal=goal)
 
-            # 11. Humanizer delays
-            typing_delay = calculate_typing_delay(response_text)
+            # 11. Humanizer delays and chunking
+            chunks = split_message_into_chunks(response_text)
+            base_typing_delay = calculate_typing_delay(response_text)
             thinking_delay = calculate_thinking_delay()
+            chunk_delays = [
+                int(base_typing_delay * len(chunk) / max(len(response_text), 1))
+                for chunk in chunks
+            ]
 
-            # 12. Send with human-like delays
-            # "typing" indicator should appear right before the typing delay
-            await client.set_typing(user_id)
-            await asyncio.sleep(thinking_delay / 1000.0)
-            await client.send_message(
-                user_id=user_id,
-                text=response_text,
-                typing_delay_ms=typing_delay,
-            )
+            # 12. Send with human-like delays, one chunk at a time
+            # "typing" indicator is kept alive during the chunk delays.
+            for idx, chunk in enumerate(chunks):
+                if idx > 0:
+                    await asyncio.sleep(random.uniform(1.5, 3.5))
+                await client.send_message(
+                    user_id=user_id,
+                    text=chunk,
+                    typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+                )
+                thinking_delay = 0  # only apply thinking delay to the first chunk
 
-            # 13. Save outbound message
+            # 13. Save outbound message (whole text for conversation history)
             await add_message(
                 db,
                 conversation.id,
@@ -321,7 +345,7 @@ async def _handle_inbound_message(
                 message_type="text",
                 llm_model=response.get("model"),
                 tokens_used=response.get("tokens_used"),
-                typing_delay_ms=typing_delay + thinking_delay,
+                typing_delay_ms=base_typing_delay + thinking_delay,
                 intent_classification=intent,
             )
 

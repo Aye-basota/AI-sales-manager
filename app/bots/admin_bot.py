@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, time as dt_time, timezone
 from io import BytesIO
@@ -953,18 +954,25 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
         campaign.total_contacts = len(contacts)
         await session.commit()
 
-        from app.core.scheduler import process_campaigns
-        try:
-            await process_campaigns(session)
-        except Exception:
-            logger.exception("Immediate process_campaigns failed after campaign start")
-
     await state.clear()
     await callback.answer("✅ Кампания запущена!")
     await callback.message.answer(
         f"Кампания <b>{campaign.name}</b> запущена с {campaign.total_contacts} контактами.",
         parse_mode="HTML",
     )
+
+    # Process campaign in background so the bot UI stays responsive.
+    from app.core.scheduler import process_campaigns
+    asyncio.create_task(_process_campaign_safely(campaign.id, process_campaigns))
+
+
+async def _process_campaign_safely(campaign_id, process_campaigns_fn):
+    """Run process_campaigns in a fresh session and log any errors."""
+    try:
+        async with AsyncSessionLocal() as session:
+            await process_campaigns_fn(session)
+    except Exception:
+        logger.exception("Background process_campaigns failed for campaign %s", campaign_id)
 
 
 # ---------------------------------------------------------------------------

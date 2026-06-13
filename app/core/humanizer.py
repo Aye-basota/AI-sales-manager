@@ -25,11 +25,8 @@ def calculate_thinking_delay(min_sec: int = 3, max_sec: int = 15) -> int:
 
 _SELF_CORRECTIONS = [
     "Точнее, ",
-    "*точнее, ",
     "Уточню, ",
-    "*уточню, ",
     "Поправка, ",
-    "*поправка, ",
 ]
 
 
@@ -84,6 +81,46 @@ def maybe_double_take(text: str, city: str | None, rate: float = 0.1) -> str:
     if not city or random.random() > rate:
         return text
     return f"{text}\n\nХотя подождите, вы же говорите из {city}, там у вас, наверное, уже другие приоритеты?"
+
+
+def split_message_into_chunks(
+    text: str, max_chars: int = 700, max_chunks: int = 3
+) -> list[str]:
+    """Split *text* into human-sized chunks separated by blank lines.
+
+    Keeps natural paragraph boundaries and limits the number of chunks so the
+    conversation does not feel like a message flood.
+    """
+    if not text:
+        return []
+
+    # Split on blank lines, preserving sentence groups
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    if not paragraphs:
+        return [text.strip()]
+
+    chunks: list[str] = []
+    current = paragraphs[0]
+    for paragraph in paragraphs[1:]:
+        if len(current) + len(paragraph) + 2 <= max_chars:
+            current = f"{current}\n\n{paragraph}"
+        else:
+            chunks.append(current)
+            current = paragraph
+            if len(chunks) >= max_chunks - 1:
+                break
+    chunks.append(current)
+
+    # If there are remaining paragraphs and we hit the chunk limit, append them
+    # to the last chunk up to a reasonable ceiling so nothing is silently lost.
+    remaining = paragraphs[len(chunks) :]
+    if remaining and len(chunks) >= max_chunks:
+        tail = "\n\n".join(remaining)
+        combined = f"{chunks[-1]}\n\n{tail}"
+        if len(combined) <= max_chars * 2:
+            chunks[-1] = combined
+
+    return chunks[:max_chunks]
 
 
 def contains_markdown(text: str) -> bool:

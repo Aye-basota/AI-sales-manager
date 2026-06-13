@@ -11,15 +11,25 @@ from app.core.humanizer import calculate_typing_delay, calculate_thinking_delay
 logger = logging.getLogger(__name__)
 
 try:
+    # Pyrogram's sync module calls asyncio.get_event_loop() at import time.
+    # When uvloop is the active policy and no loop exists yet, this raises.
+    # Create a temporary loop so the import succeeds; uvicorn will replace it later.
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        _tmp_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_tmp_loop)
+
     from pyrogram import Client
-    from pyrogram.raw.functions.account import SendStatusOnline
-    from pyrogram.raw.functions.messages import SendChatAction, ReadHistory
+    from pyrogram.raw.functions.account import UpdateStatus
+    from pyrogram.raw.functions.messages import SetTyping, ReadHistory
     from pyrogram.raw.types import InputPeerUser, SendMessageTypingAction
     from pyrogram.errors import FloodWait, PeerFlood
 
     _PYROGRAM_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except Exception as _pyrogram_import_exc:  # pragma: no cover
     _PYROGRAM_AVAILABLE = False
+    logger.warning("Pyrogram import failed: %s", _pyrogram_import_exc)
 
 
 def typing_delay_for(text: str, chars_per_min: tuple[float, float] = (200, 350)) -> int:
@@ -149,7 +159,7 @@ class SellerClient:
                         logger.debug("SellerClient %s: already connected", self.account_id)
                         return
                     await self._client.start()
-                    logger.info("SellerClient %s: connected", self.account_id)
+                    logger.warning("SellerClient %s: connected", self.account_id)
                     return
             except Exception as exc:
                 logger.warning(
@@ -228,8 +238,8 @@ class SellerClient:
     ) -> dict[str, Any]:
         """Send *text* to *user_id*.
 
-        Waits for *typing_delay_ms* if > 0, then returns a message dict.
-        Raises :class:`pyrogram.errors.FloodWait` or
+        Shows the typing indicator during the typing delay, then returns a
+        message dict. Raises :class:`pyrogram.errors.FloodWait` or
         :class:`pyrogram.errors.PeerFlood` on Telegram rate limits.
         """
         if typing_delay_ms > 0:
@@ -239,7 +249,15 @@ class SellerClient:
                 typing_delay_ms,
                 user_id,
             )
-            await asyncio.sleep(typing_delay_ms / 1000.0)
+            # Keep the typing indicator alive while we "type". Telegram usually
+            # shows typing for ~5 seconds, so refresh it periodically.
+            total_seconds = typing_delay_ms / 1000.0
+            elapsed = 0.0
+            tick = 4.0
+            while elapsed < total_seconds:
+                await self.set_typing(user_id)
+                await asyncio.sleep(min(tick, total_seconds - elapsed))
+                elapsed += tick
 
         if self._client is not None:
             async def _send():
@@ -275,7 +293,7 @@ class SellerClient:
             async def _do_set_typing():
                 peer = InputPeerUser(user_id=user_id, access_hash=0)
                 await self._client.invoke(
-                    SendChatAction(peer=peer, action=SendMessageTypingAction())
+                    SetTyping(peer=peer, action=SendMessageTypingAction())
                 )
 
             try:
@@ -288,7 +306,7 @@ class SellerClient:
         """Set the account status to online."""
         if self._client is not None:
             async def _do_set_online():
-                await self._client.invoke(SendStatusOnline())
+                await self._client.invoke(UpdateStatus(offline=False))
 
             try:
                 await self._with_reconnect(_do_set_online)

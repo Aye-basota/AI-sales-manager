@@ -8,6 +8,14 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 try:
+    import asyncio
+
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        _tmp_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_tmp_loop)
+
     from pyrogram import Client
     from pyrogram.types import User
 
