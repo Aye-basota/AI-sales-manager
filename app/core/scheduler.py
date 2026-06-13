@@ -776,7 +776,8 @@ class CampaignScheduler:
     def is_running(self) -> bool:
         return getattr(self._scheduler, "running", False)
 
-    async def _run_process_campaigns(self) -> None:
+    @staticmethod
+    async def _run_process_campaigns() -> None:
 
 
         try:
@@ -785,7 +786,8 @@ class CampaignScheduler:
         except Exception as exc:
             logger.exception("process_campaigns job failed: %s", exc)
 
-    async def _run_reset_daily_counters(self) -> None:
+    @staticmethod
+    async def _run_reset_daily_counters() -> None:
 
         from app.core.account_manager import reset_daily_counters_db
 
@@ -796,7 +798,8 @@ class CampaignScheduler:
         except Exception as exc:
             logger.exception("reset_daily_counters job failed: %s", exc)
 
-    async def _run_recover_cooldown_accounts(self) -> None:
+    @staticmethod
+    async def _run_recover_cooldown_accounts() -> None:
 
         from app.core.account_manager import recover_cooldown_accounts
 
@@ -807,7 +810,8 @@ class CampaignScheduler:
         except Exception as exc:
             logger.exception("recover_cooldown_accounts job failed: %s", exc)
 
-    async def _run_auto_close_conversations(self) -> None:
+    @staticmethod
+    async def _run_auto_close_conversations() -> None:
 
 
         try:
