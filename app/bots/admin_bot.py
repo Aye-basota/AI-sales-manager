@@ -290,6 +290,7 @@ async def cmd_campaigns(message: types.Message):
                 types.InlineKeyboardButton(text=f"⏸ {campaign.name[:20]}", callback_data=f"camp_pause:{campaign.id}"),
                 types.InlineKeyboardButton(text=f"▶️ {campaign.name[:20]}", callback_data=f"camp_resume:{campaign.id}"),
                 types.InlineKeyboardButton(text=f"🛑 {campaign.name[:20]}", callback_data=f"camp_stop:{campaign.id}"),
+                types.InlineKeyboardButton(text=f"🗑 {campaign.name[:20]}", callback_data=f"camp_delete:{campaign.id}"),
             ]
         )
     kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_campaigns")])
@@ -363,6 +364,27 @@ async def handle_camp_stop(callback: types.CallbackQuery):
             await callback.answer("🛑 Остановлено")
         else:
             await callback.answer("❌ Нельзя остановить")
+    await cmd_campaigns(callback.message)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("camp_delete:"))
+async def handle_camp_delete(callback: types.CallbackQuery):
+    camp_id_str = callback.data.split(":", 1)[1]
+    try:
+        camp_id = UUID(camp_id_str)
+    except ValueError:
+        await callback.answer("❌ Неверный ID")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Campaign).where(Campaign.id == camp_id))
+        campaign = result.scalar_one_or_none()
+        if campaign:
+            await session.delete(campaign)
+            await session.commit()
+            await callback.answer("🗑 Удалено")
+        else:
+            await callback.answer("❌ Кампания не найдена")
     await cmd_campaigns(callback.message)
 
 
