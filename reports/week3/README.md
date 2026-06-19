@@ -116,7 +116,7 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Video Demonstration
 
-- [MVP v1 demo (YouTube / Loom)](https://example.com) *(upload your video and replace this link)*
+- [MVP v1 demo (Google Drive)](https://drive.google.com/file/d/1M_hOEDzeCzJ5AxQ8Ix0v1Udy51Z5HnR6/view?usp=sharing)
 
 ## Screenshots
 
@@ -125,8 +125,10 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 | Product Backlog | ![Product Backlog](images/backlog.jpg) |
 | Sprint Backlog | ![Sprint Backlog](images/sprint.jpg) |
 | Sprint milestone | ![Milestone](images/milestone.jpg) |
-| MVP v1 view | ![MVP v1](images/release.jpg) |
+| MVP v1 view | ![MVP v1](images/mvp-v1.jpg) |
 | SemVer release | ![Release](images/release.jpg) |
+| Delivered MVP v1 | ![Delivered](images/mvp-v1.jpg) |
+| Reviewed PR | ![PR](images/pr.jpg) *(add after PR is merged)* |
 
 ## Customer Review
 
