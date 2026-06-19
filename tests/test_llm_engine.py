@@ -182,7 +182,7 @@ async def test_generate_response_with_guardrails_fallback_after_retries(engine):
             max_retries=1,
         )
 
-    assert result["text"] == "Извините, не совсем понял, могу ли я уточнить..."
+    assert result["text"] == FALLBACK_TEXT
     assert result["model"] == "fallback"
     # initial + 1 retry = 2 calls
     assert mock_client.post.call_count == 2
