@@ -167,3 +167,29 @@ async def list_campaign_contacts(campaign_id: UUID, db: AsyncSession = Depends(g
         )
         for row in rows
     ]
+
+
+@router.delete("/{campaign_id}/contacts/{contact_id}", status_code=204)
+async def remove_contact_from_campaign(
+    campaign_id: UUID,
+    contact_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    result = await db.execute(
+        select(CampaignContact)
+        .where(CampaignContact.campaign_id == campaign_id)
+        .where(CampaignContact.contact_id == contact_id)
+    )
+    campaign_contact = result.scalar_one_or_none()
+    if not campaign_contact:
+        raise HTTPException(status_code=404, detail="Contact not found in campaign")
+
+    await db.delete(campaign_contact)
+    campaign.total_contacts = max((campaign.total_contacts or 0) - 1, 0)
+    await db.commit()
+    return None
