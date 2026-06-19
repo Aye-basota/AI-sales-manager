@@ -316,14 +316,17 @@ async def _send_or_edit_campaigns(message: types.Message):
             kb_rows.append(_build_campaign_buttons(campaign))
         kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
-    try:
-        await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    except TelegramBadRequest as exc:
-        # Ignore "message is not modified" and similar edit errors;
-        # do not send a duplicate message.
-        if "message is not modified" not in str(exc).lower():
-            raise
-    except Exception:
+    if message.from_user and message.from_user.is_bot:
+        # Editing the bot's own message (e.g. after a callback button click)
+        try:
+            await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except TelegramBadRequest as exc:
+            # Ignore "message is not modified" and similar edit errors;
+            # do not send a duplicate message.
+            if "message is not modified" not in str(exc).lower():
+                raise
+    else:
+        # User-sent command message: send a new message instead of editing.
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 

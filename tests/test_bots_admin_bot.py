@@ -11,6 +11,8 @@ from app.bots.admin_bot import (
     _format_campaigns,
     _format_hotleads,
     _format_analytics,
+    _build_campaign_buttons,
+    _send_or_edit_campaigns,
     cmd_start,
     cmd_help,
     cmd_scripts,
@@ -45,6 +47,10 @@ from app.bots.admin_bot import (
     process_upload_file,
     cmd_startcampaign,
     handle_startcamp,
+    handle_camp_start,
+    handle_camp_pause,
+    handle_camp_resume,
+    handle_camp_delete,
     process_work_hours_default,
     process_work_hours_manual,
     process_campaign_script,
@@ -64,6 +70,9 @@ from app.models import Script, Campaign, Conversation, Contact, Message
 def mock_message():
     msg = AsyncMock(spec=types.Message)
     msg.answer = AsyncMock()
+    msg.edit_text = AsyncMock()
+    msg.from_user = MagicMock()
+    msg.from_user.is_bot = False
     return msg
 
 
@@ -888,3 +897,163 @@ class TestCampaignCreateFSM:
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.select_script)
         mock_callback.message.answer.assert_called_once()
         assert "Выберите скрипт" in mock_callback.message.answer.call_args[0][0]
+class TestBuildCampaignButtons:
+    def test_draft_buttons(self):
+        campaign = Campaign(id=uuid.uuid4(), name="Draft Campaign", status="draft")
+        buttons = _build_campaign_buttons(campaign)
+        assert len(buttons) == 2
+        assert "▶️" in buttons[0].text
+        assert buttons[0].callback_data.startswith("camp_start:")
+        assert "🗑" in buttons[1].text
+        assert buttons[1].callback_data.startswith("camp_delete:")
+
+    def test_running_buttons(self):
+        campaign = Campaign(id=uuid.uuid4(), name="Running Campaign", status="running")
+        buttons = _build_campaign_buttons(campaign)
+        assert len(buttons) == 2
+        assert "⏸" in buttons[0].text
+        assert buttons[0].callback_data.startswith("camp_pause:")
+        assert "🗑" in buttons[1].text
+        assert buttons[1].callback_data.startswith("camp_delete:")
+
+    def test_paused_buttons(self):
+        campaign = Campaign(id=uuid.uuid4(), name="Paused Campaign", status="paused")
+        buttons = _build_campaign_buttons(campaign)
+        assert len(buttons) == 2
+        assert "▶️" in buttons[0].text
+        assert buttons[0].callback_data.startswith("camp_resume:")
+        assert "🗑" in buttons[1].text
+        assert buttons[1].callback_data.startswith("camp_delete:")
+
+    def test_closed_buttons(self):
+        campaign = Campaign(id=uuid.uuid4(), name="Closed Campaign", status="closed")
+        buttons = _build_campaign_buttons(campaign)
+        assert len(buttons) == 1
+        assert "🗑" in buttons[0].text
+        assert buttons[0].callback_data.startswith("camp_delete:")
+
+
+class TestSendOrEditCampaigns:
+    @pytest.mark.asyncio
+    async def test_sends_new_message_for_user_command(self, mock_message):
+        from unittest.mock import AsyncMock, MagicMock
+        from app.models.script import Script
+
+        campaign = Campaign(
+            id=uuid.uuid4(),
+            name="Test Campaign",
+            status="draft",
+            script_id=uuid.uuid4(),
+        )
+        script = Script(id=campaign.script_id, name="Test Script")
+
+        with patch("app.bots.admin_bot._load_campaigns", new=AsyncMock(return_value=[(campaign, script)])):
+            mock_message.from_user = MagicMock()
+            mock_message.from_user.is_bot = False
+            await _send_or_edit_campaigns(mock_message)
+
+        mock_message.answer.assert_awaited_once()
+        mock_message.edit_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_edits_message_for_bot_message(self, mock_message):
+        from unittest.mock import AsyncMock, MagicMock
+        from app.models.script import Script
+
+        campaign = Campaign(
+            id=uuid.uuid4(),
+            name="Test Campaign",
+            status="draft",
+            script_id=uuid.uuid4(),
+        )
+        script = Script(id=campaign.script_id, name="Test Script")
+
+        with patch("app.bots.admin_bot._load_campaigns", new=AsyncMock(return_value=[(campaign, script)])):
+            mock_message.from_user = MagicMock()
+            mock_message.from_user.is_bot = True
+            await _send_or_edit_campaigns(mock_message)
+
+        mock_message.edit_text.assert_awaited_once()
+        mock_message.answer.assert_not_called()
+
+
+class TestCampActions:
+    @pytest.mark.asyncio
+    async def test_handle_camp_start_only_from_draft(self, mock_callback):
+        from unittest.mock import MagicMock
+        campaign = Campaign(id=uuid.uuid4(), name="Test", status="draft")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = campaign
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context), \
+             patch("app.bots.admin_bot._send_or_edit_campaigns", new=AsyncMock()), \
+             patch("app.bots.admin_bot.asyncio.create_task"):
+            mock_callback.data = f"camp_start:{campaign.id}"
+            await handle_camp_start(mock_callback)
+
+        assert campaign.status == "running"
+        mock_callback.answer.assert_awaited_with("▶️ Запущено")
+
+    @pytest.mark.asyncio
+    async def test_handle_camp_pause_only_from_running(self, mock_callback):
+        from unittest.mock import MagicMock
+        campaign = Campaign(id=uuid.uuid4(), name="Test", status="running")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = campaign
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context), \
+             patch("app.bots.admin_bot._send_or_edit_campaigns", new=AsyncMock()):
+            mock_callback.data = f"camp_pause:{campaign.id}"
+            await handle_camp_pause(mock_callback)
+
+        assert campaign.status == "paused"
+        mock_callback.answer.assert_awaited_with("⏸ Пауза")
+
+    @pytest.mark.asyncio
+    async def test_handle_camp_resume_only_from_paused(self, mock_callback):
+        from unittest.mock import MagicMock
+        campaign = Campaign(id=uuid.uuid4(), name="Test", status="paused")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = campaign
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context), \
+             patch("app.bots.admin_bot._send_or_edit_campaigns", new=AsyncMock()):
+            mock_callback.data = f"camp_resume:{campaign.id}"
+            await handle_camp_resume(mock_callback)
+
+        assert campaign.status == "running"
+        mock_callback.answer.assert_awaited_with("▶️ Возобновлено")
+
+    @pytest.mark.asyncio
+    async def test_handle_camp_delete_removes_dependent_records(self, mock_callback):
+        from unittest.mock import MagicMock
+        campaign = Campaign(id=uuid.uuid4(), name="Test", status="closed")
+        conversation = Conversation(id=uuid.uuid4(), campaign_id=campaign.id)
+        campaign_result = MagicMock()
+        campaign_result.scalar_one_or_none.return_value = campaign
+        conv_ids_result = MagicMock()
+        conv_ids_result.all.return_value = [(conversation.id,)]
+
+        session = AsyncMock()
+        session.execute.side_effect = [
+            campaign_result,
+            conv_ids_result,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        ]
+        session.add = MagicMock()
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context), \
+             patch("app.bots.admin_bot._send_or_edit_campaigns", new=AsyncMock()):
+            mock_callback.data = f"camp_delete:{campaign.id}"
+            await handle_camp_delete(mock_callback)
+
+        assert session.execute.call_count == 5
+        mock_callback.answer.assert_awaited_with("🗑 Удалено")
