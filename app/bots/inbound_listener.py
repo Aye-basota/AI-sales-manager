@@ -167,6 +167,7 @@ async def _handle_inbound_message(
                 select(Conversation)
                 .where(Conversation.contact_id == contact.id)
                 .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(1)
             )
             conversation: Conversation | None = result.scalar_one_or_none()
 
