@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Sales Manager — Автоматизация B2B-продаж в Telegram</title>
+  <meta name="description" content="AI Sales Manager автоматизирует B2B outbound продажи через Telegram: живые аккаунты, LLM-диалоги, автоворонка и аналитика.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+
+  <!-- Header -->
+  <header class="header" id="header">
+    <div class="container header-inner">
+      <a href="#" class="logo">
+        <span class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </span>
+        <span class="logo-text">AI Sales Manager</span>
+      </a>
+
+      <nav class="nav" id="nav">
+        <a href="#features" class="nav-link">Возможности</a>
+        <a href="#how-it-works" class="nav-link">Как работает</a>
+        <a href="#pricing" class="nav-link">Тарифы</a>
+        <a href="#faq" class="nav-link">FAQ</a>
+        <a href="#contact" class="btn btn-primary btn-sm">Получить демо</a>
+      </nav>
+
+      <button class="menu-toggle" id="menuToggle" aria-label="Открыть меню">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-content">
+          <div class="badge">
+            <span class="badge-dot"></span>
+            Новое поколение outbound-продаж
+          </div>
+          <h1 class="hero-title">
+            Автоматизируйте B2B-продажи в Telegram с помощью
+            <span class="text-gradient">ИИ и живых аккаунтов</span>
+          </h1>
+          <p class="hero-subtitle">
+            AI Sales Manager сам находит лиды, ведёт естественные диалоги от реальных Telegram-аккаунтов, 
+            обрабатывает возражения и назначает встречи — пока вы занимаетесь важными задачами.
+          </p>
+          <div class="hero-actions">
+            <a href="#contact" class="btn btn-primary btn-lg">Запросить демо</a>
+            <a href="#how-it-works" class="btn btn-ghost btn-lg">Узнать, как работает</a>
+          </div>
+          <div class="hero-stats">
+            <div class="stat">
+              <div class="stat-value">10×</div>
+              <div class="stat-label">больше личных исходящих</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">24/7</div>
+              <div class="stat-label">автономная работа</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">~77%</div>
+              <div class="stat-label">покрытие тестами</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="chat-header">
+                <div class="chat-avatar">А</div>
+                <div class="chat-info">
+                  <div class="chat-name">Анна, Sales Manager</div>
+                  <div class="chat-status">в сети</div>
+                </div>
+              </div>
+              <div class="chat-body">
+                <div class="message message-in">
+                  Добрый день! Мы помогаем IT-компаниям увеличивать входящие заявки через Telegram. 
+                  Рассказать, как это работает?
+                  <span class="message-time">10:02</span>
+                </div>
+                <div class="message message-out">
+                  Интересно. Какие результаты у ваших клиентов?
+                  <span class="message-time">10:14</span>
+                </div>
+                <div class="message message-in">
+                  В среднем клиенты получают в 3–5 раз больше ответов по сравнению с email-рассылками. 
+                  Можно созвониться на 15 минут, чтобы обсудить ваш кейс?
+                  <span class="message-time">10:15</span>
+                </div>
+                <div class="typing" id="typing">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="floating-card card-leads">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <div>
+              <div class="card-value">+127</div>
+              <div class="card-label">новых лидов</div>
+            </div>
+          </div>
+          <div class="floating-card card-rate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            <div>
+              <div class="card-value">+34%</div>
+              <div class="card-label">reply rate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Logos / Trust -->
+  <section class="trust">
+    <div class="container">
+      <p class="trust-title">Надёжная технологическая основа</p>
+      <div class="trust-grid">
+        <div class="trust-item">FastAPI</div>
+        <div class="trust-item">PostgreSQL</div>
+        <div class="trust-item">Redis</div>
+        <div class="trust-item">Pyrogram MTProto</div>
+        <div class="trust-item">OpenRouter LLM</div>
+        <div class="trust-item">Docker</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem -->
+  <section class="problem" id="problem">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Проблема</span>
+        <h2 class="section-title">Классический outbound больше не работает так, как нужно</h2>
+      </div>
+      <div class="problem-grid">
+        <div class="problem-card">
+          <div class="problem-icon">📧</div>
+          <h3>Email игнорируют</h3>
+          <p>Открываемость писам снижается, папки «Спам» переполнены, холодные рассылки теряют эффективность.</p>
+        </div>
+        <div class="problem-card">
+          <div class="problem-icon">⏰</div>
+          <h3>Ручной труд</h3>
+          <p>Менеджеры часами пишут сообщения, ждут ответов и вручную ведут каждую переписку.</p>
+        </div>
+        <div class="problem-card">
+          <div class="problem-icon">🤖</div>
+          <h3>Боты не доверяют</h3>
+          <p>Люди сразу распознают официальные боты и отказываются от диалога.</p>
+        </div>
+        <div class="problem-card">
+          <div class="problem-icon">📉</div>
+          <h3>Нет масштаба</h3>
+          <p>Нельзя быстро выйти на сотни целевых контактов, сохранив персонализацию.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-header center">
+        <span class="section-tag">Возможности</span>
+        <h2 class="section-title">Всё, чтобы продавать в Telegram на автопилоте</h2>
+        <p class="section-subtitle">От поиска аудитории до назначения встречи — одна платформа.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <h3>Живые Telegram-аккаунты</h3>
+          <p>Отправка через MTProto от реальных пользователей, а не Bot API. Сообщения попадают в личные чаты и выглядят как от человека.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </div>
+          <h3>LLM-диалоги под ваш бренд</h3>
+          <p>Гибкие скрипты, тон общения, guardrails и fallback-cascade из трёх моделей: Qwen, Gemini, DeepSeek.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <h3>Humanizer поведения</h3>
+          <p>Задержки печати, паузы «на подумать», разговорные вставки и самокоррекция — чтобы не выдать автоматику.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          </div>
+          <h3>Автоворонка продаж</h3>
+          <p>State machine управляет состояниями: cold → warm → hot → meeting_booked. Follow-up и авто-закрытие по таймеру.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3>Anti-spam защита</h3>
+          <p>Ротация аккаунтов, cooldown при FloodWait, daily limits, rate limit 1 сообщение в 30 секунд и рабочие часы по таймзоне.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>
+          </div>
+          <h3>Hot Lead alerts</h3>
+          <p>Мгновенные уведомления в Telegram, когда лид согласен на созвон или дал положительный ответ.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </div>
+          <h3>Lead Discovery</h3>
+          <p>Поиск контактов через Telegram Search, парсинг каналов и внешние API с валидацией и дедупликацией.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <h3>Аналитика и дашборд</h3>
+          <p>Отслеживайте reply rate, hot leads, meetings booked и эффективность кампаний в Telegram Admin Bot.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="how-it-works" id="how-it-works">
+    <div class="container">
+      <div class="section-header center">
+        <span class="section-tag">Как это работает</span>
+        <h2 class="section-title">Запустите кампанию за 4 шага</h2>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">01</div>
+          <div class="step-body">
+            <h3>Подключите аккаунты</h3>
+            <p>Добавьте один или несколько живых Telegram-аккаунтов. Система шифрует session-строки и готовит их к отправке.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">02</div>
+          <div class="step-body">
+            <h3>Создайте скрипт</h3>
+            <p>Опишите роль, целевую аудиторию, цель и тон общения. AI будет писать персонализированные сообщения под ваш сценарий.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">03</div>
+          <div class="step-body">
+            <h3>Загрузите аудиторию</h3>
+            <p>Импортируйте контакты из CSV или найдите новых лидов через Lead Discovery. Кампания запускается одной кнопкой.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">04</div>
+          <div class="step-body">
+            <h3>Получайте встречи</h3>
+            <p>Система ведёт диалог, обрабатывает ответы и присылает горячие лиды. Вам остаётся только закрывать сделки.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use cases -->
+  <section class="usecases" id="usecases">
+    <div class="container">
+      <div class="section-header center">
+        <span class="section-tag">Для кого</span>
+        <h2 class="section-title">Идеально подходит для</h2>
+      </div>
+      <div class="usecases-grid">
+        <div class="usecase-card">
+          <div class="usecase-icon">🏢</div>
+          <h3>IT-аутсорсинг и студии</h3>
+          <p>Поиск заказчиков на разработку, диджитал-услуги и консалтинг.</p>
+        </div>
+        <div class="usecase-card">
+          <div class="usecase-icon">🎓</div>
+          <h3>Образовательные проекты</h3>
+          <p>Набор на курсы, вебинары и корпоративное обучение.</p>
+        </div>
+        <div class="usecase-card">
+          <div class="usecase-icon">💼</div>
+          <h3>B2B-сервисы</h3>
+          <p>Рассылка предложений для юристов, бухгалтеров, HR и агентств.</p>
+        </div>
+        <div class="usecase-card">
+          <div class="usecase-icon">🚀</div>
+          <h3>Стартапы и SaaS</h3>
+          <p>Первые продажи, тестирование гипотез и выход на целевую аудиторию.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section class="pricing" id="pricing">
+    <div class="container">
+      <div class="section-header center">
+        <span class="section-tag">Тарифы</span>
+        <h2 class="section-title">Прозрачные условия под любой этап</h2>
+        <p class="section-subtitle">Выберите подходящий тариф или обсудите индивидуальное решение.</p>
+      </div>
+
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="pricing-name">Старт</div>
+          <div class="pricing-desc">Для пилота и небольших команд</div>
+          <div class="pricing-price">$499<span>/мес</span></div>
+          <ul class="pricing-features">
+            <li>1 живой Telegram-аккаунт</li>
+            <li>До 1 000 сообщений в месяц</li>
+            <li>3 продажных скрипта</li>
+            <li>Базовая аналитика</li>
+            <li>Поддержка по email</li>
+          </ul>
+          <a href="#contact" class="btn btn-secondary btn-block">Выбрать</a>
+        </div>
+
+        <div class="pricing-card popular">
+          <div class="popular-badge">Популярный</div>
+          <div class="pricing-name">Рост</div>
+          <div class="pricing-desc">Для активного outbound</div>
+          <div class="pricing-price">$1 299<span>/мес</span></div>
+          <ul class="pricing-features">
+            <li>3 живых Telegram-аккаунта</li>
+            <li>До 5 000 сообщений в месяц</li>
+            <li>Безлимитные скрипты</li>
+            <li>Lead Discovery</li>
+            <li>Hot Lead alerts</li>
+            <li>Приоритетная поддержка</li>
+          </ul>
+          <a href="#contact" class="btn btn-primary btn-block">Выбрать</a>
+        </div>
+
+        <div class="pricing-card">
+          <div class="pricing-name">Enterprise</div>
+          <div class="pricing-desc">Для крупных команд и агентств</div>
+          <div class="pricing-price">Индивидуально</div>
+          <ul class="pricing-features">
+            <li>Любое количество аккаунтов</li>
+            <li>Безлимитные сообщения</li>
+            <li>White-label решение</li>
+            <li>Интеграции под API</li>
+            <li>Выделенный менеджер</li>
+            <li>SLA и аудит безопасности</li>
+          </ul>
+          <a href="#contact" class="btn btn-secondary btn-block">Обсудить</a>
+        </div>
+      </div>
+
+      <p class="pricing-note">* Стоимость OpenRouter и Telegram API не включена и оплачивается отдельно по факту использования.</p>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq" id="faq">
+    <div class="container">
+      <div class="section-header center">
+        <span class="section-tag">FAQ</span>
+        <h2 class="section-title">Частые вопросы</h2>
+      </div>
+
+      <div class="faq-list">
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>Это официальный Telegram-бот?</span>
+            <span class="faq-icon"></span>
+          </button>
+          <div class="faq-answer">
+            <p>Нет. AI Sales Manager работает через MTProto от имени реальных пользовательских аккаунтов. Сообщения приходят из личных чатов, а не от ботов, что повышает доверие и открываемость.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>Безопасно ли хранить session-строки аккаунтов?</span>
+            <span class="faq-icon"></span>
+          </button>
+          <div class="faq-answer">
+            <p>Session-строки шифруются алгоритмом Fernet и хранятся в защищённой PostgreSQL-базе. Доступ к ключам настраивается через переменные окружения.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>Можно ли интегрировать с CRM?</span>
+            <span class="faq-icon"></span>
+          </button>
+          <div class="faq-answer">
+            <p>Да. Платформа построена на FastAPI с полноценным REST API. В коробочной версии доступны эндпоинты для кампаний, контактов, диалогов и аналитики. Интеграции под Enterprise.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>Что будет, если Telegram ограничит аккаунт?</span>
+            <span class="faq-icon"></span>
+          </button>
+          <div class="faq-answer">
+            <p>Система автоматически распознаёт FloodWait и PeerFlood, переводит аккаунт в cooldown и продолжает рассылку с другого аккаунта. Daily limits и rate limiting снижают риски.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>Нужен ли программист для запуска?</span>
+            <span class="faq-icon"></span>
+          </button>
+          <div class="faq-answer">
+            <p>Для пилота достаточно следовать пошаговому Launch Guide. Все управление — через Telegram Admin Bot: создание скриптов, загрузка контактов, запуск и аналитика.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta" id="contact">
+    <div class="container">
+      <div class="cta-card">
+        <div class="cta-content">
+          <h2 class="cta-title">Готовы автоматизировать продажи?</h2>
+          <p class="cta-subtitle">Заполните форму — мы покажем демо, рассчитаем ROI для вашей ниши и поможем запустить первую кампанию.</p>
+        </div>
+        <form class="cta-form" id="contactForm">
+          <input type="text" name="name" placeholder="Ваше имя" required>
+          <input type="email" name="email" placeholder="Email" required>
+          <input type="text" name="company" placeholder="Компания">
+          <textarea name="message" rows="3" placeholder="Расскажите о вашей задаче"></textarea>
+          <button type="submit" class="btn btn-white btn-lg btn-block">Отправить заявку</button>
+          <p class="form-note">Ответим в течение 24 часов. Нажимая кнопку, вы соглашаетесь на обработку персональных данных.</p>
+          <div class="form-success" id="formSuccess">✅ Спасибо! Мы получили вашу заявку и скоро свяжемся.</div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="#" class="logo">
+            <span class="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <span class="logo-text">AI Sales Manager</span>
+          </a>
+          <p>Автоматизация B2B outbound продаж через Telegram с использованием живых аккаунтов и LLM.</p>
+          <p class="footer-copyright">© 2026 Neural Lead Team. Все права защищены.</p>
+        </div>
+        <div class="footer-links">
+          <h4>Продукт</h4>
+          <a href="#features">Возможности</a>
+          <a href="#how-it-works">Как работает</a>
+          <a href="#pricing">Тарифы</a>
+          <a href="#faq">FAQ</a>
+        </div>
+        <div class="footer-links">
+          <h4>Ресурсы</h4>
+          <a href="#">Launch Guide</a>
+          <a href="#">API Docs</a>
+          <a href="#">Roadmap</a>
+        </div>
+        <div class="footer-links">
+          <h4>Контакты</h4>
+          <a href="mailto:hello@neurallead.team">hello@neurallead.team</a>
+          <a href="#contact">Обратная связь</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
