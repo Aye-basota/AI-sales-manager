@@ -45,7 +45,7 @@ _SELF_CORRECTIONS = [
 ]
 
 
-def maybe_self_correct(text: str, rate: float = 0.06) -> str:
+def maybe_self_correct(text: str, rate: float = 0.0) -> str:
     """With probability *rate*, prepend a casual self-correction prefix."""
     if not text or random.random() > rate:
         return text
@@ -60,7 +60,7 @@ _CASUAL_MARKERS = [
 ]
 
 
-def add_casual_markers(text: str, rate: float = 0.15) -> str:
+def add_casual_markers(text: str, rate: float = 0.0) -> str:
     """Occasionally inject casual markers into *text*.
 
     A marker is inserted at the beginning of a random sentence with
@@ -97,7 +97,7 @@ _DOUBLE_TAKE_TEMPLATES = [
 ]
 
 
-def maybe_double_take(text: str, city: str | None, rate: float = 0.1) -> str:
+def maybe_double_take(text: str, city: str | None, rate: float = 0.0) -> str:
     """Append a double-take question or observation about city with probability rate."""
     if not city or random.random() > rate:
         return text

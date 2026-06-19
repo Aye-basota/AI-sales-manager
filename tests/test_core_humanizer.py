@@ -170,16 +170,17 @@ class TestFormatMessage:
         assert "жирный" in result
         assert "код" in result
 
-    def test_applies_humanization(self):
+    def test_no_aggressive_humanization_by_default(self):
+        # By default self-correction, markers and double-take are disabled.
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = format_message("Hello. How are you?", city=None)
-        # casual marker or self-correction may be applied
-        assert result != "Hello. How are you?" or result == "Hello. How are you?"
+        assert result == "Hello. How are you?"
 
-    def test_applies_double_take_with_city(self):
+    def test_no_double_take_by_default(self):
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = format_message("Hello there", city="Moscow")
-        assert "Moscow" in result
+        assert "Moscow" not in result
+        assert result == "Hello there"
 
 
 class TestSplitMessageIntoChunks:
