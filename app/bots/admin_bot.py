@@ -5,6 +5,7 @@ from typing import List
 from uuid import UUID
 
 from aiogram import Bot, Dispatcher, F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -154,22 +155,20 @@ def _format_campaigns(campaigns: List) -> str:
 
 def _build_campaign_buttons(campaign) -> list:
     """Return action buttons appropriate for the campaign status."""
-    name = campaign.name[:20]
     status = campaign.status
-    buttons = []
+    start_btn = types.InlineKeyboardButton(text="▶️", callback_data=f"camp_start:{campaign.id}")
+    pause_btn = types.InlineKeyboardButton(text="⏸", callback_data=f"camp_pause:{campaign.id}")
+    resume_btn = types.InlineKeyboardButton(text="▶️", callback_data=f"camp_resume:{campaign.id}")
+    delete_btn = types.InlineKeyboardButton(text="🗑", callback_data=f"camp_delete:{campaign.id}")
 
     if status == "draft":
-        buttons.append(types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_start:{campaign.id}"))
+        return [start_btn, delete_btn]
     elif status == "running":
-        buttons.append(types.InlineKeyboardButton(text=f"⏸ {name}", callback_data=f"camp_pause:{campaign.id}"))
-        buttons.append(types.InlineKeyboardButton(text=f"🛑 {name}", callback_data=f"camp_stop:{campaign.id}"))
+        return [pause_btn, delete_btn]
     elif status == "paused":
-        buttons.append(types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_resume:{campaign.id}"))
-        buttons.append(types.InlineKeyboardButton(text=f"🛑 {name}", callback_data=f"camp_stop:{campaign.id}"))
-
-    # Delete is always available
-    buttons.append(types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"))
-    return buttons
+        return [resume_btn, delete_btn]
+    else:
+        return [delete_btn]
 
 
 def _format_hotleads(rows: List) -> str:
@@ -314,6 +313,11 @@ async def _send_or_edit_campaigns(message: types.Message):
 
     try:
         await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except TelegramBadRequest as exc:
+        # Ignore "message is not modified" and similar edit errors;
+        # do not send a duplicate message.
+        if "message is not modified" not in str(exc).lower():
+            raise
     except Exception:
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
@@ -348,6 +352,9 @@ async def handle_camp_pause(callback: types.CallbackQuery):
         else:
             await callback.answer("❌ Нельзя поставить на паузу")
     await _send_or_edit_campaigns(callback.message)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("camp_resume:"))
 async def handle_camp_resume(callback: types.CallbackQuery):
     camp_id_str = callback.data.split(":", 1)[1]
     try:
@@ -365,27 +372,6 @@ async def handle_camp_resume(callback: types.CallbackQuery):
             await callback.answer("▶️ Возобновлено")
         else:
             await callback.answer("❌ Нельзя возобновить")
-    await _send_or_edit_campaigns(callback.message)
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("camp_stop:"))
-async def handle_camp_stop(callback: types.CallbackQuery):
-    camp_id_str = callback.data.split(":", 1)[1]
-    try:
-        camp_id = UUID(camp_id_str)
-    except ValueError:
-        await callback.answer("❌ Неверный ID")
-        return
-
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Campaign).where(Campaign.id == camp_id))
-        campaign = result.scalar_one_or_none()
-        if campaign and campaign.status in ("running", "paused"):
-            campaign.status = "closed"
-            await session.commit()
-            await callback.answer("🛑 Остановлено")
-        else:
-            await callback.answer("❌ Нельзя остановить")
     await _send_or_edit_campaigns(callback.message)
 
 
@@ -426,7 +412,19 @@ async def handle_camp_delete(callback: types.CallbackQuery):
         result = await session.execute(select(Campaign).where(Campaign.id == camp_id))
         campaign = result.scalar_one_or_none()
         if campaign:
-            # Delete linked campaign contacts first to avoid FK violation
+            # Delete dependent records in the right order to avoid FK violations:
+            # messages -> conversations -> campaign_contacts -> campaign
+            conv_ids_result = await session.execute(
+                select(Conversation.id).where(Conversation.campaign_id == camp_id)
+            )
+            conv_ids = [row[0] for row in conv_ids_result.all()]
+            if conv_ids:
+                await session.execute(
+                    delete(Message).where(Message.conversation_id.in_(conv_ids))
+                )
+                await session.execute(
+                    delete(Conversation).where(Conversation.campaign_id == camp_id)
+                )
             await session.execute(
                 delete(CampaignContact).where(CampaignContact.campaign_id == camp_id)
             )
@@ -435,7 +433,7 @@ async def handle_camp_delete(callback: types.CallbackQuery):
             await callback.answer("🗑 Удалено")
         else:
             await callback.answer("❌ Кампания не найдена")
-    await _refresh_campaigns_message(callback.message)
+    await _send_or_edit_campaigns(callback.message)
 
 
 @router.message(Command("analytics"))
