@@ -9,13 +9,24 @@ from app.llm.guardrails import evaluate_guardrails
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODELS = [
+OPENROUTER_MODELS = [
     "qwen-2.5-72b-instruct",
     "gemini-2.5-flash-preview-05-20",
     "deepseek-chat",
 ]
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DASHSCOPE_MODELS = [
+    "qwen-plus",
+    "qwen-turbo",
+    "qwen-max",
+]
+
+DEFAULT_MODELS = list(OPENROUTER_MODELS)
+
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+OPENROUTER_BASE_URL = DEFAULT_OPENROUTER_BASE_URL
+DASHSCOPE_BASE_URL = DEFAULT_DASHSCOPE_BASE_URL
 
 FALLBACK_TEXT = "Здравствуйте! Увидел ваш профиль и подумал, что наше предложение может быть вам полезно. Есть 15 минут на короткий созвон?"
 
@@ -31,22 +42,63 @@ def _is_retryable_error(exc: Exception) -> bool:
     return False
 
 
+def _provider_from_base_url(base_url: str | None) -> str:
+    """Guess provider from a base URL when no explicit provider is set."""
+    if not base_url:
+        return "openrouter"
+    host = base_url.lower()
+    if "dashscope" in host or "aliyuncs" in host:
+        return "dashscope"
+    return "openrouter"
+
+
 class LLMEngine:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        provider: str | None = None,
+    ) -> None:
         settings = get_settings()
-        self.api_key = api_key or settings.openrouter_api_key
-        self.base_url = base_url or OPENROUTER_BASE_URL
+        resolved_provider = (
+            provider
+            or getattr(settings, "llm_provider", None)
+            or _provider_from_base_url(base_url or settings.openrouter_base_url)
+        )
+        self.provider = resolved_provider.lower()
+
+        if self.provider == "dashscope":
+            self.api_key = api_key or settings.dashscope_api_key or ""
+            self.base_url = (
+                base_url
+                or settings.dashscope_base_url
+                or DEFAULT_DASHSCOPE_BASE_URL
+            )
+            self.models = list(DASHSCOPE_MODELS)
+        else:
+            self.api_key = api_key or settings.openrouter_api_key or ""
+            self.base_url = (
+                base_url
+                or settings.openrouter_base_url
+                or DEFAULT_OPENROUTER_BASE_URL
+            )
+            self.models = list(OPENROUTER_MODELS)
+
         self._client: httpx.AsyncClient | None = None
 
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            if self.provider == "openrouter":
+                headers.setdefault("HTTP-Referer", "https://github.com/Aye-basota/AI-sales-manager")
+                headers.setdefault("X-Title", "AI Sales Manager")
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 timeout=60.0,
             )
         return self._client
@@ -55,12 +107,15 @@ class LLMEngine:
         self,
         messages: list[dict[str, str]],
         model: str | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
-        target_model = model or DEFAULT_MODELS[0]
-        payload = {
+        target_model = model or self.models[0]
+        payload: dict[str, Any] = {
             "model": target_model,
             "messages": messages,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
         response = await self.client.post("/chat/completions", json=payload)
         response.raise_for_status()
@@ -79,15 +134,16 @@ class LLMEngine:
     async def generate_with_fallback(
         self,
         messages: list[dict[str, str]],
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         last_exception: Exception | None = None
         retries_done = 0
         model_idx = 0
 
-        while model_idx < len(DEFAULT_MODELS):
-            model = DEFAULT_MODELS[model_idx]
+        while model_idx < len(self.models):
+            model = self.models[model_idx]
             try:
-                return await self.generate(messages, model=model)
+                return await self.generate(messages, model=model, max_tokens=max_tokens)
             except Exception as exc:
                 last_exception = exc
                 if _is_retryable_error(exc) and retries_done < _MAX_RETRIES:
@@ -120,6 +176,7 @@ class LLMEngine:
         messages: list[dict[str, str]],
         last_messages: list[str],
         max_retries: int = 2,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         current_messages = list(messages)
         strict_reminder = {
@@ -132,7 +189,7 @@ class LLMEngine:
         }
 
         for attempt in range(max_retries + 1):
-            result = await self.generate_with_fallback(current_messages)
+            result = await self.generate_with_fallback(current_messages, max_tokens=max_tokens)
             text = result["text"]
             gr = evaluate_guardrails(text, last_messages)
 
@@ -144,6 +201,12 @@ class LLMEngine:
                 attempt + 1,
                 max_retries + 1,
                 gr.violations,
+            )
+            logger.info(
+                "Guardrails rejected text (attempt %d/%d): %r",
+                attempt + 1,
+                max_retries + 1,
+                text,
             )
 
             if attempt < max_retries:

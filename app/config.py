@@ -5,7 +5,18 @@ from functools import lru_cache
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://sales:salespass@localhost:5432/ai_sales"
     redis_url: str = "redis://localhost:6379/0"
+
+    # LLM provider selection: "openrouter" or "dashscope"
+    llm_provider: str = "openrouter"
+
+    # OpenRouter settings
     openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+
+    # DashScope (Alibaba Cloud) settings
+    dashscope_api_key: str = ""
+    dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+
     admin_bot_token: str = ""
     admin_notification_chat_id: str = ""
     secret_key: str = "changeme"
