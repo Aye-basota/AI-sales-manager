@@ -29,10 +29,10 @@ MVP v1 was scoped to the core sales-automation flow:
 
 | Artifact | Link |
 |---|---|
-| Product Backlog board | [GitHub Projects — Product Backlog](https://github.com/Aye-basota/AI-sales-manager/projects/1) *(create in UI)* |
-| Current Sprint Backlog board | [GitHub Projects — Sprint 1](https://github.com/Aye-basota/AI-sales-manager/projects/2) *(create in UI)* |
-| Sprint 1 milestone | [Sprint 1 — 2026-06-09..2026-06-20](https://github.com/Aye-basota/AI-sales-manager/milestone/1) *(create in UI)* |
-| MVP v1 grouped view | [MVP v1 issues](https://github.com/Aye-basota/AI-sales-manager/issues?q=is%3Aissue+label%3Amvp-v1) *(apply label after creating issues)* |
+| Product Backlog board | [GitHub Projects — Product Backlog](https://github.com/users/Aye-basota/projects/1/views/1) |
+| Current Sprint Backlog board | [GitHub Projects — Sprint 1](https://github.com/users/Aye-basota/projects/2) |
+| Sprint 1 milestone | [Sprint 1 — 2026-06-09..2026-06-20](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
+| MVP v1 grouped view | [MVP v1 issues](https://github.com/Aye-basota/AI-sales-manager/issues?q=is%3Aissue+label%3Amvp-v1) |
 
 ## Backlog Size
 
@@ -63,11 +63,11 @@ Short-term focus for Sprint 2 is operator takeover, inbound rate limiting, and f
 
 ## Verification Evidence
 
-- All tests pass: `408 passed` (run locally and in CI).
+- All tests pass: `419 passed` (run locally and in CI).
 - Funnel logic covered by `tests/test_core_funnel.py`.
 - Funnel-aware prompts covered by `tests/test_llm_funnel_prompts.py`.
 - LLM provider switch covered by existing engine tests plus new provider-selection path.
-- PRs include acceptance-criteria checklists and reviewer approvals.
+- Campaign action buttons covered by `tests/test_bots_admin_bot.py`.
 
 ## Current Product Status
 
@@ -75,20 +75,22 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Next Steps
 
-1. Apply the `mvp-v1` label and Sprint 1 milestone to the relevant issues in the GitHub UI.
-2. Create GitHub Projects for Product Backlog and Sprint Backlog views.
-3. Record and publish the public sanitized MVP v1 video demonstration.
-4. Set up a persistent staging deployment.
-5. Open Sprint 2 for operator takeover and rate-limiting PBIs.
+1. Create and merge an issue-linked PR to complete workflow evidence.
+2. Review a teammate's PR and leave a meaningful comment.
+3. Set up a persistent staging deployment.
+4. Open Sprint 2 for operator takeover and rate-limiting PBIs.
 
 ## Contribution Traceability
 
 | Team member | Issues | PRs | Reviews |
 |---|---|---|---|
-| @Aye-basota | US-01, US-03 | #11, #13 | #12 |
-| *(add teammates)* | | | |
+| Isaam | US-01, US-02 | — | — |
+| Maksim | US-03, US-08 | #XX | Reviewed #YY |
+| Makrsel | US-04, US-07 | — | — |
+| Marat | US-05, US-09 | — | — |
+| Daniil | US-06, US-10 | — | — |
 
-> Update this table after creating real issues and PRs in the GitHub UI.
+> Replace #XX with the issue-linked PR created during Assignment 3 and #YY with the PR reviewed by Maksim.
 
 ## Release and Documentation
 
@@ -104,10 +106,7 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Reviewed PRs
 
-- [#XX](../../pull/XX) — Add week3 images placeholder *(issue-linked, reviewed)*
-- [#YY](../../pull/YY) — Reviewed teammate's PR
-
-> Replace XX and YY with real PR numbers after creating them in the GitHub UI.
+- *(To be added after creating and reviewing PRs during Assignment 3)*
 
 ## Delivered MVP v1
 
