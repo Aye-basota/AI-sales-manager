@@ -4,6 +4,7 @@ import signal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from app.db.session import engine, Base, AsyncSessionLocal
 from app.api import scripts, campaigns, contacts, conversations, analytics, health, telegram_accounts
 from app.bots import start_bot, stop_bot
@@ -65,3 +66,6 @@ app.include_router(conversations.router)
 app.include_router(analytics.router)
 app.include_router(health.router)
 app.include_router(telegram_accounts.router)
+
+# Serve the customer-facing landing site at the root URL
+app.mount("/", StaticFiles(directory="site", html=True), name="site")

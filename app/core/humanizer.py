@@ -4,21 +4,36 @@ import random
 import re
 
 
-def calculate_typing_delay(text: str, chars_per_min: tuple[float, float] = (200, 350)) -> int:
+# Maximum time a human would plausibly keep the "typing..." indicator visible.
+MAX_TYPING_DELAY_MS = 10_000
+
+
+def calculate_typing_delay(
+    text: str,
+    chars_per_min: tuple[float, float] = (200, 350),
+    max_ms: int = MAX_TYPING_DELAY_MS,
+) -> int:
     """Return simulated typing delay for *text* in milliseconds.
 
-    The delay is calculated using a random speed within *chars_per_min*.
+    The delay is calculated using a random speed within *chars_per_min* and
+    capped at *max_ms* so long messages do not keep the typing indicator
+    visible for an unnaturally long time.
     """
     if not text:
         return 0
     speed = random.uniform(*chars_per_min)
     chars_per_sec = speed / 60.0
     delay_sec = len(text) / chars_per_sec
-    return int(delay_sec * 1000)
+    return min(int(delay_sec * 1000), max_ms)
 
 
-def calculate_thinking_delay(min_sec: int = 3, max_sec: int = 15) -> int:
-    """Return a random thinking delay in milliseconds."""
+def calculate_thinking_delay(min_sec: int = 3, max_sec: int = 12) -> int:
+    """Return a random thinking delay in milliseconds.
+
+    The thinking delay simulates the time before the person starts typing.
+    It is applied *before* showing the typing indicator so the lead does not
+    see "typing..." while the agent is "thinking".
+    """
     delay_sec = random.randint(min_sec, max_sec)
     return delay_sec * 1000
 
@@ -76,20 +91,48 @@ def add_casual_markers(text: str, rate: float = 0.15) -> str:
     return " ".join(sentences)
 
 
+_DOUBLE_TAKE_TEMPLATES = [
+    "Хотя подождите, вы же из {city}, там у вас, наверное, уже другие приоритеты?",
+    "Кстати, {city} — оттуда у нас много запросов на эту тему.",
+]
+
+
 def maybe_double_take(text: str, city: str | None, rate: float = 0.1) -> str:
-    """Append a double-take question about city with probability rate."""
+    """Append a double-take question or observation about city with probability rate."""
     if not city or random.random() > rate:
         return text
-    return f"{text}\n\nХотя подождите, вы же говорите из {city}, там у вас, наверное, уже другие приоритеты?"
+    template = random.choice(_DOUBLE_TAKE_TEMPLATES)
+    return f"{text}\n\n{template.format(city=city)}"
+
+
+def _split_paragraph_into_sentences(paragraph: str, max_chars: int) -> list[str]:
+    """Split a long paragraph into sentence-sized chunks."""
+    sentences = re.split(r"(?<=[.!?])\s+", paragraph.strip())
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        if not sentence:
+            continue
+        if len(current) + len(sentence) + 1 <= max_chars:
+            current = f"{current} {sentence}".strip() if current else sentence
+        else:
+            if current:
+                chunks.append(current)
+            current = sentence
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def split_message_into_chunks(
-    text: str, max_chars: int = 700, max_chunks: int = 3
+    text: str,
+    max_chars: int = 350,
+    max_chunks: int = 4,
 ) -> list[str]:
-    """Split *text* into human-sized chunks separated by blank lines.
+    """Split *text* into human-sized chunks.
 
-    Keeps natural paragraph boundaries and limits the number of chunks so the
-    conversation does not feel like a message flood.
+    Splits on blank lines first, then breaks long paragraphs by sentences so
+    that each chunk is small enough to feel like a natural message.
     """
     if not text:
         return []
@@ -99,21 +142,29 @@ def split_message_into_chunks(
     if not paragraphs:
         return [text.strip()]
 
+    # Break long paragraphs by sentences
+    pieces: list[str] = []
+    for paragraph in paragraphs:
+        if len(paragraph) <= max_chars:
+            pieces.append(paragraph)
+        else:
+            pieces.extend(_split_paragraph_into_sentences(paragraph, max_chars))
+
     chunks: list[str] = []
-    current = paragraphs[0]
-    for paragraph in paragraphs[1:]:
-        if len(current) + len(paragraph) + 2 <= max_chars:
-            current = f"{current}\n\n{paragraph}"
+    current = pieces[0]
+    for piece in pieces[1:]:
+        if len(current) + len(piece) + 2 <= max_chars:
+            current = f"{current}\n\n{piece}"
         else:
             chunks.append(current)
-            current = paragraph
+            current = piece
             if len(chunks) >= max_chunks - 1:
                 break
     chunks.append(current)
 
-    # If there are remaining paragraphs and we hit the chunk limit, append them
+    # If there are remaining pieces and we hit the chunk limit, append them
     # to the last chunk up to a reasonable ceiling so nothing is silently lost.
-    remaining = paragraphs[len(chunks) :]
+    remaining = pieces[len(chunks) :]
     if remaining and len(chunks) >= max_chunks:
         tail = "\n\n".join(remaining)
         combined = f"{chunks[-1]}\n\n{tail}"
@@ -121,6 +172,11 @@ def split_message_into_chunks(
             chunks[-1] = combined
 
     return chunks[:max_chunks]
+
+
+def chunk_pause_seconds(min_sec: float = 2.0, max_sec: float = 6.0) -> float:
+    """Return a random pause length between consecutive message chunks."""
+    return random.uniform(min_sec, max_sec)
 
 
 def contains_markdown(text: str) -> bool:

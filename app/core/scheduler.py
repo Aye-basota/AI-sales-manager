@@ -1,7 +1,6 @@
 """Campaign scheduling and anti-spam logic."""
 
 import logging
-import random
 from datetime import datetime, timedelta, time, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -409,7 +408,7 @@ async def send_initial_message(
 ) -> None:
     """Generate, guardrail, humanise and send an initial outbound message."""
 
-    from app.llm.prompts import build_system_prompt
+    from app.llm.prompts import build_system_prompt, build_initial_user_prompt
     from app.core.humanizer import (
         calculate_typing_delay,
         calculate_thinking_delay,
@@ -418,6 +417,7 @@ async def send_initial_message(
         maybe_double_take,
         split_message_into_chunks,
     )
+    from app.core.funnel import get_first_stage
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
@@ -426,28 +426,25 @@ async def send_initial_message(
     from app.llm.engine import LLMEngine
     engine = LLMEngine()
 
-    system_prompt = build_system_prompt(script)
-    user_prompt_parts = [
-        "Напиши первое сообщение для потенциального клиента."
-    ]
-    if contact.first_name:
-        user_prompt_parts.append(f"Имя: {contact.first_name}")
-    if contact.company_name:
-        user_prompt_parts.append(f"Компания: {contact.company_name}")
-    if contact.position:
-        user_prompt_parts.append(f"Должность: {contact.position}")
-    if contact.city:
-        user_prompt_parts.append(f"Город: {contact.city}")
-    if contact.industry:
-        user_prompt_parts.append(f"Индустрия: {contact.industry}")
+    conversation_stage = get_first_stage(script)
+    conversation.conversation_stage = conversation_stage
+
+    system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
+    user_prompt = build_initial_user_prompt(script, contact, conversation_stage=conversation_stage)
+
+    max_tokens = None
+    if hasattr(script, "max_first_message_length") and script.max_first_message_length:
+        max_tokens = int(script.max_first_message_length * 1.5)
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n".join(user_prompt_parts)},
+        {"role": "user", "content": user_prompt},
     ]
 
     try:
-        response = await engine.generate_response_with_guardrails(messages, [])
+        response = await engine.generate_response_with_guardrails(
+            messages, [], max_tokens=max_tokens
+        )
     except Exception as exc:
         logger.exception("LLM generation failed for initial message: %s", exc)
         raise
@@ -463,12 +460,12 @@ async def send_initial_message(
     chunks = split_message_into_chunks(text)
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
-    total_delay = base_typing_delay + thinking_delay
     chunk_delays = [
         int(base_typing_delay * len(chunk) / max(len(text), 1))
         for chunk in chunks
     ]
 
+    from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
     settings = get_settings()
     client = SellerClient(
@@ -480,15 +477,18 @@ async def send_initial_message(
     )
     try:
         await client.start()
+        # Thinking delay is applied before typing so the lead does not see
+        # "typing..." while the agent is supposedly thinking.
+        if thinking_delay > 0:
+            await asyncio.sleep(thinking_delay / 1000.0)
         for idx, chunk in enumerate(chunks):
             if idx > 0:
-                await asyncio.sleep(random.uniform(1.5, 3.5))
+                await asyncio.sleep(chunk_pause_seconds())
             await client.send_message(
                 user_id=int(contact.telegram_user_id),
                 text=chunk,
-                typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+                typing_delay_ms=chunk_delays[idx],
             )
-            thinking_delay = 0
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
         logger.warning(
@@ -525,7 +525,7 @@ async def send_initial_message(
         message_type="text",
         llm_model=response.get("model"),
         tokens_used=response.get("tokens_used"),
-        typing_delay_ms=total_delay,
+        typing_delay_ms=base_typing_delay + thinking_delay,
     )
     db_session.add(message)
 
@@ -548,7 +548,7 @@ async def send_follow_up_message(
 ) -> None:
     """Generate, guardrail, humanise and send a follow-up outbound message."""
 
-    from app.llm.prompts import build_system_prompt, build_user_prompt
+    from app.llm.prompts import build_system_prompt, build_follow_up_user_prompt
     from app.core.humanizer import (
         calculate_typing_delay,
         calculate_thinking_delay,
@@ -557,6 +557,7 @@ async def send_follow_up_message(
         maybe_double_take,
         split_message_into_chunks,
     )
+    from app.core.funnel import get_max_length_for_stage
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
@@ -570,7 +571,8 @@ async def send_follow_up_message(
         db_session, conversation.id, limit=10
     )
 
-    system_prompt = build_system_prompt(script)
+    conversation_stage = getattr(conversation, "conversation_stage", None) or "hook"
+    system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
 
     history = [
         {
@@ -586,16 +588,16 @@ async def send_follow_up_message(
             last_agent_msg = msg["content"]
             break
 
-    user_prompt = build_user_prompt(
+    user_prompt = build_follow_up_user_prompt(
+        script=script,
         conversation_history=history,
         lead_facts=context["facts"] or {},
         last_agent_message=last_agent_msg,
-        lead_message="",
+        conversation_stage=conversation_stage,
     )
-    user_prompt = (
-        "Напиши короткое follow-up сообщение. Клиент пока не ответил.\n\n"
-        + user_prompt
-    )
+
+    max_length = get_max_length_for_stage(script, conversation_stage)
+    max_tokens = int(max_length * 1.5) if max_length else None
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -610,6 +612,7 @@ async def send_follow_up_message(
                 for msg in context["messages"]
                 if msg.direction == "outbound"
             ],
+            max_tokens=max_tokens,
         )
     except Exception as exc:
         logger.exception("LLM generation failed for follow-up message: %s", exc)
@@ -626,12 +629,12 @@ async def send_follow_up_message(
     chunks = split_message_into_chunks(text)
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
-    total_delay = base_typing_delay + thinking_delay
     chunk_delays = [
         int(base_typing_delay * len(chunk) / max(len(text), 1))
         for chunk in chunks
     ]
 
+    from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
     settings = get_settings()
     client = SellerClient(
@@ -643,15 +646,16 @@ async def send_follow_up_message(
     )
     try:
         await client.start()
+        if thinking_delay > 0:
+            await asyncio.sleep(thinking_delay / 1000.0)
         for idx, chunk in enumerate(chunks):
             if idx > 0:
-                await asyncio.sleep(random.uniform(1.5, 3.5))
+                await asyncio.sleep(chunk_pause_seconds())
             await client.send_message(
                 user_id=int(contact.telegram_user_id),
                 text=chunk,
-                typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+                typing_delay_ms=chunk_delays[idx],
             )
-            thinking_delay = 0
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
         logger.warning(
@@ -688,7 +692,7 @@ async def send_follow_up_message(
         message_type="text",
         llm_model=response.get("model"),
         tokens_used=response.get("tokens_used"),
-        typing_delay_ms=total_delay,
+        typing_delay_ms=base_typing_delay + thinking_delay,
     )
     db_session.add(message)
 

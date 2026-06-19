@@ -35,7 +35,15 @@ def _process_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
 
     # Normalise column names
     df.columns = [str(col).strip() for col in df.columns]
+
+    # Support both telegram_id and telegram_user_id column names
+    if "telegram_id" in df.columns:
+        df = df.rename(columns={"telegram_id": "telegram_user_id"})
+
     file_columns = set(df.columns)
+
+    if "telegram_user_id" not in file_columns:
+        raise ValueError("Не найдена колонка telegram_user_id (или telegram_id)")
 
     unknown = file_columns - _ALLOWED_COLUMNS
     if unknown:

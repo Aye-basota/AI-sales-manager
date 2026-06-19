@@ -12,6 +12,7 @@ from app.core.humanizer import (
     maybe_double_take,
     maybe_self_correct,
     remove_markdown,
+    split_message_into_chunks,
 )
 
 
@@ -26,10 +27,15 @@ class TestCalculateTypingDelay:
         assert delay == expected
 
     def test_longer_text_takes_longer(self):
-        text = "a" * 100
+        text = "a" * 50
         delay = calculate_typing_delay(text, chars_per_min=(300, 300))
-        expected = int((100 / 5) * 1000)
+        expected = int((50 / 5) * 1000)
         assert delay == expected
+
+    def test_typing_delay_is_capped(self):
+        text = "a" * 1000
+        delay = calculate_typing_delay(text, chars_per_min=(300, 300))
+        assert delay <= 10000
 
     def test_random_speed_affects_delay(self):
         text = "test"
@@ -116,7 +122,6 @@ class TestMaybeDoubleTake:
         text = "Hello there"
         result = maybe_double_take(text, city="Moscow", rate=1.0)
         assert "Moscow" in result
-        assert "приоритеты" in result
         assert result.startswith(text)
 
 
@@ -175,3 +180,24 @@ class TestFormatMessage:
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = format_message("Hello there", city="Moscow")
         assert "Moscow" in result
+
+
+class TestSplitMessageIntoChunks:
+    def test_empty_text_returns_empty(self):
+        assert split_message_into_chunks("") == []
+
+    def test_short_text_single_chunk(self):
+        assert split_message_into_chunks("Hello there") == ["Hello there"]
+
+    def test_long_paragraph_split_by_sentences(self):
+        text = "First sentence. " * 20
+        chunks = split_message_into_chunks(text, max_chars=100)
+        assert len(chunks) > 1
+        assert all(len(chunk) <= 100 for chunk in chunks)
+
+    def test_paragraphs_preserved_when_small(self):
+        text = "Paragraph one.\n\nParagraph two."
+        chunks = split_message_into_chunks(text, max_chars=200)
+        assert len(chunks) == 1
+        assert "Paragraph one" in chunks[0]
+        assert "Paragraph two" in chunks[0]

@@ -24,7 +24,7 @@ class NotificationService:
 
     def __init__(self, bot: Bot | None = None, chat_id: str | None = None):
         self._bot = bot
-        self._chat_id = chat_id or settings.admin_notification_chat_id
+        self._chat_id = chat_id if chat_id is not None else settings.admin_notification_chat_id
 
     def _get_bot(self) -> Bot | None:
         if self._bot is None:

@@ -1,20 +1,24 @@
 import asyncio
 import logging
 from datetime import datetime, time as dt_time, timezone
-from io import BytesIO
 from typing import List
 from uuid import UUID
 
-from aiogram import Bot, Dispatcher, Router, types
+from aiogram import Bot, Dispatcher, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
 from sqlalchemy import select, func
+from types import SimpleNamespace
 
 from app.config import get_settings
+from app.core.funnel import get_first_stage, get_max_length_for_stage
 from app.db.session import AsyncSessionLocal
-from app.models import Script, Campaign, Conversation, Contact, Message
+from app.llm.engine import FALLBACK_TEXT, LLMEngine
+from app.llm.prompts import build_initial_user_prompt, build_system_prompt
+from app.models import Script, Campaign, CampaignContact, Conversation, Contact, Message
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,37 @@ TONE_MAP = {
     "Дружелюбный": "friendly",
     "Агрессивный": "aggressive",
 }
+
+
+COMMANDS = [
+    BotCommand(command="start", description="Главное меню"),
+    BotCommand(command="help", description="Помощь и схема"),
+    BotCommand(command="scripts", description="Список скриптов"),
+    BotCommand(command="campaigns", description="Список кампаний"),
+    BotCommand(command="upload", description="Импорт контактов"),
+    BotCommand(command="analytics", description="Аналитика"),
+    BotCommand(command="hotleads", description="Горячие лиды"),
+    BotCommand(command="newscript", description="Создать скрипт"),
+    BotCommand(command="startcampaign", description="Запустить кампанию"),
+    BotCommand(command="discover", description="Поиск лидов"),
+    BotCommand(command="conversations", description="История по contact_id"),
+]
+
+
+def _main_menu_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Scripts"), KeyboardButton(text="Campaigns")],
+            [KeyboardButton(text="Upload"), KeyboardButton(text="Analytics")],
+            [KeyboardButton(text="Hot Leads"), KeyboardButton(text="Help")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+@dp.startup()
+async def on_startup(bot: Bot):
+    await bot.set_my_commands(COMMANDS)
 
 
 def _get_bot() -> Bot:
@@ -49,6 +84,11 @@ class ScriptCreateFSM(StatesGroup):
     goal = State()
     success_criteria = State()
     tone = State()
+    first_message_goal = State()
+    call_to_action = State()
+    language = State()
+    emoji_policy = State()
+    max_first_message_length = State()
     max_messages = State()
     follow_up_delay_hours = State()
     working_hours = State()
@@ -64,6 +104,7 @@ class CSVImportFSM(StatesGroup):
 
 class CampaignCreateFSM(StatesGroup):
     select_script = State()
+    preview = State()
     name = State()
     confirm = State()
 
@@ -76,23 +117,34 @@ class CampaignStartFSM(StatesGroup):
 # Formatters
 # ---------------------------------------------------------------------------
 
-def _format_scripts(scripts: List[Script]) -> str:
+def _format_scripts(scripts: List) -> str:
     lines = []
-    for s in scripts:
+    for item in scripts:
+        try:
+            s, campaign_count = item[0], item[1]
+        except Exception:
+            s, campaign_count = item, 0
         status = "✅" if s.is_active else "❌"
         lines.append(
             f"{status} <b>{s.name}</b>\n"
+            f"Campaigns: {campaign_count}\n"
             f"Goal: {s.goal}\n"
             f"Max messages: {s.max_messages} | Tone: {s.tone}"
         )
     return "\n\n".join(lines)
 
 
-def _format_campaigns(campaigns: List[Campaign]) -> str:
+def _format_campaigns(campaigns: List) -> str:
     lines = []
-    for c in campaigns:
+    for item in campaigns:
+        try:
+            c, script = item[0], item[1]
+        except Exception:
+            c, script = item, None
+        script_name = script.name if script else "—"
         lines.append(
             f"📢 <b>{c.name}</b>\n"
+            f"Script: {script_name}\n"
             f"Status: {c.status}\n"
             f"Contacts: {c.processed_contacts}/{c.total_contacts}\n"
             f"Replied: {c.replied_count} | Qualified: {c.qualified_count} | Meetings: {c.meeting_booked_count}"
@@ -119,6 +171,8 @@ def _format_analytics(
     replied: int,
     hot: int,
     meetings: int,
+    rejected: int = 0,
+    avg_length: float = 0.0,
 ) -> str:
     reply_rate = (replied / sent * 100) if sent else 0
     return (
@@ -127,7 +181,9 @@ def _format_analytics(
         f"Отправлено: {sent}\n"
         f"Ответили: {replied} ({reply_rate:.1f}%)\n"
         f"Hot leads: {hot}\n"
-        f"Встречи: {meetings}"
+        f"Встречи: {meetings}\n"
+        f"Guardrails отказов: {rejected}\n"
+        f"Средняя длина сообщения: {avg_length:.0f} симв."
     )
 
 
@@ -139,26 +195,57 @@ def _format_analytics(
 async def cmd_start(message: types.Message):
     welcome = (
         "👋 Welcome to AI Sales Manager Admin Bot!\n\n"
-        "Available commands:\n"
-        "/scripts — list all scripts\n"
-        "/campaigns — list campaigns with status\n"
-        "/analytics — show dashboard metrics\n"
-        "/hotleads — list hot leads & meetings booked\n"
-        "/newscript — create a new script step-by-step\n"
-        "/upload — import contacts from CSV or Excel\n"
-        "/discover — find leads via Telegram or external sources\n"
-        "/startcampaign — start a draft campaign"
+        "Выберите раздел в меню ниже или используйте команды.\n\n"
+        "/scripts — список скриптов\n"
+        "/campaigns — список кампаний\n"
+        "/analytics — аналитика\n"
+        "/hotleads — горячие лиды\n"
+        "/upload — импорт контактов\n"
+        "/newscript — создать скрипт\n"
+        "/startcampaign — запустить кампанию\n"
+        "/discover — поиск лидов\n"
+        "/help — помощь"
     )
-    await message.answer(welcome)
+    await message.answer(welcome, reply_markup=_main_menu_keyboard())
+
+
+@router.message(Command("help"))
+async def cmd_help(message: types.Message):
+    text = (
+        "Структура проекта:\n\n"
+        "Script (сценарий общения)\n"
+        "  ↓\n"
+        "Campaign (рассылка по списку контактов)\n"
+        "  ↓\n"
+        "Contact (человек) → Conversation (диалог)\n\n"
+        "Команды:\n"
+        "/start — главное меню\n"
+        "/help — помощь\n"
+        "/scripts — список скриптов\n"
+        "/campaigns — список кампаний\n"
+        "/upload — импорт контактов\n"
+        "/analytics — аналитика\n"
+        "/hotleads — горячие лиды\n"
+        "/newscript — создать скрипт\n"
+        "/startcampaign — запустить кампанию\n"
+        "/discover — поиск лидов\n"
+        "/conversations — история по contact_id"
+    )
+    await message.answer(text, reply_markup=_main_menu_keyboard())
 
 
 @router.message(Command("scripts"))
 async def cmd_scripts(message: types.Message):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Script).order_by(Script.created_at.desc()).limit(20)
+        campaign_count = (
+            select(func.count(Campaign.id))
+            .where(Campaign.script_id == Script.id)
+            .scalar_subquery()
         )
-        scripts = result.scalars().all()
+        result = await session.execute(
+            select(Script, campaign_count).order_by(Script.created_at.desc()).limit(20)
+        )
+        scripts = result.all()
 
     if not scripts:
         await message.answer("No scripts found.")
@@ -183,9 +270,12 @@ async def refresh_scripts(callback: types.CallbackQuery):
 async def cmd_campaigns(message: types.Message):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Campaign).order_by(Campaign.created_at.desc()).limit(20)
+            select(Campaign, Script)
+            .join(Script, Campaign.script_id == Script.id, isouter=True)
+            .order_by(Campaign.created_at.desc())
+            .limit(20)
         )
-        campaigns = result.scalars().all()
+        campaigns = result.all()
 
     if not campaigns:
         await message.answer("No campaigns found.")
@@ -193,12 +283,13 @@ async def cmd_campaigns(message: types.Message):
 
     text = _format_campaigns(campaigns)
     kb_rows = []
-    for c in campaigns:
+    for row in campaigns:
+        campaign = row[0]
         kb_rows.append(
             [
-                types.InlineKeyboardButton(text=f"⏸ {c.name[:20]}", callback_data=f"camp_pause:{c.id}"),
-                types.InlineKeyboardButton(text=f"▶️ {c.name[:20]}", callback_data=f"camp_resume:{c.id}"),
-                types.InlineKeyboardButton(text=f"🛑 {c.name[:20]}", callback_data=f"camp_stop:{c.id}"),
+                types.InlineKeyboardButton(text=f"⏸ {campaign.name[:20]}", callback_data=f"camp_pause:{campaign.id}"),
+                types.InlineKeyboardButton(text=f"▶️ {campaign.name[:20]}", callback_data=f"camp_resume:{campaign.id}"),
+                types.InlineKeyboardButton(text=f"🛑 {campaign.name[:20]}", callback_data=f"camp_stop:{campaign.id}"),
             ]
         )
     kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_campaigns")])
@@ -291,8 +382,25 @@ async def cmd_analytics(message: types.Message):
         meetings = await session.scalar(
             select(func.count(Conversation.id)).where(Conversation.current_state == "meeting_booked")
         )
+        rejected = await session.scalar(
+            select(func.count(Message.id))
+            .where(Message.direction == "outbound")
+            .where(Message.llm_model == "fallback")
+        )
+        avg_length = await session.scalar(
+            select(func.coalesce(func.avg(func.length(Message.content)), 0))
+            .where(Message.direction == "outbound")
+        )
 
-    text = _format_analytics(total_contacts or 0, sent or 0, replied or 0, hot or 0, meetings or 0)
+    text = _format_analytics(
+        total_contacts or 0,
+        sent or 0,
+        replied or 0,
+        hot or 0,
+        meetings or 0,
+        rejected or 0,
+        avg_length or 0.0,
+    )
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [types.InlineKeyboardButton(text="📋 Экспорт в CSV", callback_data="export_analytics")],
@@ -374,8 +482,11 @@ async def cmd_hotleads(message: types.Message):
             [
                 types.InlineKeyboardButton(text="✅ Qualified", callback_data=f"qualify:{conv.id}"),
                 types.InlineKeyboardButton(text="❌ Rejected", callback_data=f"reject:{conv.id}"),
-                types.InlineKeyboardButton(text="📋 Диалог", callback_data=f"dialog:{conv.id}"),
+                types.InlineKeyboardButton(text="📜 История диалога", callback_data=f"history:{conv.id}"),
             ]
+        )
+        kb_rows.append(
+            [types.InlineKeyboardButton(text="📋 Диалог", callback_data=f"dialog:{conv.id}")]
         )
     kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_hotleads")])
     kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
@@ -458,6 +569,72 @@ async def handle_dialog(callback: types.CallbackQuery):
 
     text = "\n\n".join(lines)
     await callback.message.answer(text)
+    await callback.answer()
+
+
+def _format_history_messages(messages: List[Message], limit: int = 20) -> str:
+    lines = []
+    for msg in messages[-limit:]:
+        sender = "👤" if msg.direction == "inbound" else "🤖"
+        ts = msg.sent_at
+        if ts:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.astimezone(timezone.utc)
+            ts_str = ts.strftime("%H:%M %d.%m")
+        else:
+            ts_str = "--:--"
+        lines.append(f"{ts_str} {sender}\n{msg.content}")
+    return "\n\n".join(lines)
+
+
+def _split_long_text(text: str, max_len: int = 3800) -> list[str]:
+    if len(text) <= max_len:
+        return [text]
+    chunks: list[str] = []
+    current = ""
+    for block in text.split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        candidate = f"{current}\n\n{block}".strip() if current else block
+        if len(candidate) <= max_len:
+            current = candidate
+        else:
+            if current:
+                chunks.append(current)
+            current = block[:max_len]
+    if current:
+        chunks.append(current)
+    return chunks or [text[:max_len]]
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("history:"))
+async def handle_history(callback: types.CallbackQuery):
+    conv_id_str = callback.data.split(":", 1)[1]
+    try:
+        conv_id = UUID(conv_id_str)
+    except ValueError:
+        await callback.answer("❌ Неверный ID диалога")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.conversation_id == conv_id)
+            .order_by(Message.sent_at.desc())
+            .limit(20)
+        )
+        messages = list(reversed(result.scalars().all()))
+
+    if not messages:
+        await callback.message.answer("Сообщений в диалоге не найдено.")
+        await callback.answer()
+        return
+
+    text = _format_history_messages(messages)
+    for chunk in _split_long_text(text):
+        await callback.message.answer(chunk)
     await callback.answer()
 
 
@@ -562,9 +739,79 @@ async def process_script_tone(callback: types.CallbackQuery, state: FSMContext):
     tone_label = callback.data.split(":", 1)[1]
     tone_value = TONE_MAP.get(tone_label, "professional")
     await state.update_data(tone=tone_value)
-    await state.set_state(ScriptCreateFSM.max_messages)
-    await callback.message.answer("Введите максимальное количество сообщений на контакт (например, 2):")
+    await state.set_state(ScriptCreateFSM.first_message_goal)
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="Hook (мягкий контакт)", callback_data="fmg:hook"),
+                types.InlineKeyboardButton(text="Qualification (вопрос)", callback_data="fmg:qualification"),
+            ],
+            [
+                types.InlineKeyboardButton(text="Value (ценность)", callback_data="fmg:value"),
+                types.InlineKeyboardButton(text="Call (сразу созвон)", callback_data="fmg:cta"),
+            ],
+        ]
+    )
+    await callback.message.answer("Выберите цель первого сообщения:", reply_markup=kb)
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("fmg:"))
+async def process_script_first_message_goal(callback: types.CallbackQuery, state: FSMContext):
+    goal = callback.data.split(":", 1)[1]
+    await state.update_data(first_message_goal=goal)
+    await state.set_state(ScriptCreateFSM.call_to_action)
+    await callback.message.answer(
+        "Введите призыв к действию (call_to_action), например:\n'15-минутный созвон'"
+    )
+    await callback.answer()
+
+
+@router.message(ScriptCreateFSM.call_to_action)
+async def process_script_call_to_action(message: types.Message, state: FSMContext):
+    await state.update_data(call_to_action=message.text)
+    await state.set_state(ScriptCreateFSM.language)
+    await message.answer("Введите язык сообщений (ru / en):")
+
+
+@router.message(ScriptCreateFSM.language)
+async def process_script_language(message: types.Message, state: FSMContext):
+    lang = message.text.strip().lower()
+    if lang not in ("ru", "en"):
+        lang = "ru"
+    await state.update_data(language=lang)
+    await state.set_state(ScriptCreateFSM.emoji_policy)
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="Запрещены", callback_data="emoji:forbidden")],
+            [types.InlineKeyboardButton(text="Редко", callback_data="emoji:rare")],
+            [types.InlineKeyboardButton(text="Разрешены", callback_data="emoji:allowed")],
+        ]
+    )
+    await message.answer("Политика использования эмодзи:", reply_markup=kb)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("emoji:"))
+async def process_script_emoji_policy(callback: types.CallbackQuery, state: FSMContext):
+    policy = callback.data.split(":", 1)[1]
+    await state.update_data(emoji_policy=policy)
+    await state.set_state(ScriptCreateFSM.max_first_message_length)
+    await callback.message.answer(
+        "Введите максимальную длину первого сообщения в символах (например, 200):"
+    )
+    await callback.answer()
+
+
+@router.message(ScriptCreateFSM.max_first_message_length)
+async def process_script_max_first_message_length(message: types.Message, state: FSMContext):
+    try:
+        val = int(message.text)
+    except ValueError:
+        await message.answer("❌ Введите число.")
+        return
+    await state.update_data(max_first_message_length=val)
+    await state.set_state(ScriptCreateFSM.max_messages)
+    await message.answer("Введите максимальное количество сообщений на контакт (например, 2):")
 
 
 @router.message(ScriptCreateFSM.max_messages)
@@ -595,7 +842,7 @@ async def process_script_delay(message: types.Message, state: FSMContext):
         ]
     )
     await message.answer(
-        f"Рабочие часы по умолчанию: 09:00 - 18:00.\nЧто выберете?",
+        "Рабочие часы по умолчанию: 09:00 - 18:00.\nЧто выберете?",
         reply_markup=kb,
     )
 
@@ -667,6 +914,11 @@ async def process_script_timezone(message: types.Message, state: FSMContext):
         f"Цель: {data['goal']}\n"
         f"Критерий успеха: {data.get('success_criteria') or '—'}\n"
         f"Тон: {data['tone']}\n"
+        f"Первое сообщение: {data.get('first_message_goal', 'hook')}\n"
+        f"Призыв к действию: {data.get('call_to_action', '15-минутный созвон')}\n"
+        f"Язык: {data.get('language', 'ru')}\n"
+        f"Эмодзи: {data.get('emoji_policy', 'forbidden')}\n"
+        f"Макс. длина первого сообщения: {data.get('max_first_message_length', 200)}\n"
         f"Max messages: {data['max_messages']}\n"
         f"Follow-up delay: {data['follow_up_delay_hours']}ч\n"
         f"Рабочие часы: {data['working_hours_start']} - {data['working_hours_end']}\n"
@@ -693,6 +945,11 @@ async def confirm_create_script(callback: types.CallbackQuery, state: FSMContext
             goal=data["goal"],
             success_criteria=data.get("success_criteria"),
             tone=data.get("tone", "professional"),
+            first_message_goal=data.get("first_message_goal", "hook"),
+            call_to_action=data.get("call_to_action", "15-минутный созвон"),
+            language=data.get("language", "ru"),
+            emoji_policy=data.get("emoji_policy", "forbidden"),
+            max_first_message_length=data.get("max_first_message_length", 200),
             max_messages=data.get("max_messages", 2),
             follow_up_delay_hours=data.get("follow_up_delay_hours", 24),
             working_hours_start=data["working_hours_start"],
@@ -724,7 +981,10 @@ async def cmd_upload(message: types.Message, state: FSMContext):
     await state.set_state(CSVImportFSM.waiting_file)
     await message.answer(
         "📎 Отправьте CSV или Excel-файл с контактами.\n\n"
-        "Ожидаемые колонки: first_name, last_name, company_name, position, city, industry, telegram_username, phone"
+        "Обязательная колонка: telegram_user_id (или telegram_id).\n\n"
+        "Пример CSV:\n"
+        "first_name,last_name,company_name,position,city,industry,telegram_user_id,phone\n"
+        "Иван,Иванов,ООО Ромашка,Директор,Москва,IT,123456789,+79990000000"
     )
 
 
@@ -751,7 +1011,11 @@ async def process_upload_file(message: types.Message, state: FSMContext):
         else:
             records = parse_excel(contents)
     except ValueError as exc:
-        await message.answer(f"❌ Ошибка парсинга: {exc}")
+        error_text = str(exc)
+        if error_text.startswith("Не найдена колонка"):
+            await message.answer(f"❌ {error_text}. Проверьте файл и попробуйте снова.")
+        else:
+            await message.answer(f"❌ Ошибка парсинга: {exc}")
         await state.clear()
         return
 
@@ -824,6 +1088,39 @@ async def start_campaign_from_csv(callback: types.CallbackQuery, state: FSMConte
 # FSM: Campaign creation from import / discover
 # ---------------------------------------------------------------------------
 
+def _preview_keyboard() -> types.InlineKeyboardMarkup:
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="✅ Запустить", callback_data="preview:launch"),
+                types.InlineKeyboardButton(text="🔄 Перегенерировать", callback_data="preview:regenerate"),
+            ],
+            [types.InlineKeyboardButton(text="✏️ Изменить скрипт", callback_data="preview:change_script")],
+        ]
+    )
+
+
+async def _generate_preview_message(script: Script, record: dict) -> str:
+    stage = get_first_stage(script)
+    contact = SimpleNamespace(**record)
+    messages = [
+        {"role": "system", "content": build_system_prompt(script, conversation_stage=stage)},
+        {"role": "user", "content": build_initial_user_prompt(script, contact, conversation_stage=stage)},
+    ]
+    try:
+        engine = LLMEngine()
+        result = await engine.generate_response_with_guardrails(
+            messages,
+            last_messages=[],
+            max_retries=2,
+            max_tokens=get_max_length_for_stage(script, stage),
+        )
+        return result.get("text", FALLBACK_TEXT)
+    except Exception:
+        logger.exception("Failed to generate campaign preview")
+        return FALLBACK_TEXT
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("campaign_script:"))
 async def process_campaign_script(callback: types.CallbackQuery, state: FSMContext):
     script_id_str = callback.data.split(":", 1)[1]
@@ -834,7 +1131,65 @@ async def process_campaign_script(callback: types.CallbackQuery, state: FSMConte
         await state.clear()
         return
 
+    data = await state.get_data()
+    records = data.get("records", [])
+    if not records:
+        await callback.answer("❌ Нет контактов")
+        await state.clear()
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+
+    if not script:
+        await callback.answer("❌ Скрипт не найден")
+        await state.clear()
+        return
+
     await state.update_data(script_id=script_id)
+    preview_text = await _generate_preview_message(script, records[0])
+    await state.update_data(preview_text=preview_text)
+    await state.set_state(CampaignCreateFSM.preview)
+
+    text = f"👁 Предпросмотр первого сообщения:\n\n{preview_text}"
+    await callback.message.answer(text, reply_markup=_preview_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "preview:regenerate")
+async def handle_preview_regenerate(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    script_id = data.get("script_id")
+    records = data.get("records", [])
+    if not script_id or not records:
+        await callback.answer("❌ Сессия устарела")
+        await state.clear()
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+
+    if not script:
+        await callback.answer("❌ Скрипт не найден")
+        await state.clear()
+        return
+
+    preview_text = await _generate_preview_message(script, records[0])
+    await state.update_data(preview_text=preview_text)
+    text = f"👁 Предпросмотр первого сообщения:\n\n{preview_text}"
+    await callback.message.edit_text(text, reply_markup=_preview_keyboard())
+    await callback.answer("🔄 Обновлено")
+
+
+@router.callback_query(lambda c: c.data == "preview:change_script")
+async def handle_preview_change_script(callback: types.CallbackQuery, state: FSMContext):
+    await start_campaign_from_csv(callback, state)
+
+
+@router.callback_query(lambda c: c.data == "preview:launch")
+async def handle_preview_launch(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(CampaignCreateFSM.name)
     await callback.message.answer("Введите название кампании:")
     await callback.answer()
@@ -856,6 +1211,7 @@ async def process_campaign_name(message: types.Message, state: FSMContext):
         f"Название: {data['campaign_name']}\n"
         f"Скрипт: {script.name if script else '—'}\n"
         f"Контактов: {len(data.get('records', []))}\n\n"
+        f"👁 Предпросмотр первого сообщения:\n{data.get('preview_text', '—')}\n\n"
         f"Запустить?"
     )
     kb = types.InlineKeyboardMarkup(
@@ -899,7 +1255,6 @@ async def campaign_start_later(callback: types.CallbackQuery, state: FSMContext)
         contacts = created + updated
 
         for contact in contacts:
-            from app.models.campaign import CampaignContact
             cc = CampaignContact(
                 campaign_id=campaign.id,
                 contact_id=contact.id,
@@ -942,7 +1297,6 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
         contacts = created + updated
 
         for contact in contacts:
-            from app.models.campaign import CampaignContact
             cc = CampaignContact(
                 campaign_id=campaign.id,
                 contact_id=contact.id,
@@ -1219,6 +1573,25 @@ async def handle_startcamp(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer("✅ Кампания запущена!")
     await callback.message.answer(f"Кампания <b>{campaign.name}</b> запущена.", parse_mode="HTML")
+
+
+MENU_HANDLERS = {
+    "Scripts": cmd_scripts,
+    "Campaigns": cmd_campaigns,
+    "Upload": cmd_upload,
+    "Analytics": cmd_analytics,
+    "Hot Leads": cmd_hotleads,
+    "Help": cmd_help,
+}
+
+
+@router.message(F.text.in_(set(MENU_HANDLERS.keys())))
+async def handle_menu_button(message: types.Message, state: FSMContext):
+    handler = MENU_HANDLERS[message.text]
+    if message.text == "Upload":
+        await handler(message, state)
+    else:
+        await handler(message)
 
 
 dp.include_router(router)

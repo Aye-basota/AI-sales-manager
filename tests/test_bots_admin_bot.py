@@ -12,6 +12,7 @@ from app.bots.admin_bot import (
     _format_hotleads,
     _format_analytics,
     cmd_start,
+    cmd_help,
     cmd_scripts,
     cmd_campaigns,
     cmd_analytics,
@@ -20,6 +21,7 @@ from app.bots.admin_bot import (
     handle_qualify,
     handle_reject,
     handle_dialog,
+    handle_history,
     start_bot,
     stop_bot,
     cmd_newscript,
@@ -28,6 +30,12 @@ from app.bots.admin_bot import (
     process_script_audience,
     process_script_goal,
     process_script_criteria,
+    process_script_tone,
+    process_script_first_message_goal,
+    process_script_call_to_action,
+    process_script_language,
+    process_script_emoji_policy,
+    process_script_max_first_message_length,
     process_script_max_messages,
     process_script_delay,
     process_script_timezone,
@@ -37,10 +45,12 @@ from app.bots.admin_bot import (
     process_upload_file,
     cmd_startcampaign,
     handle_startcamp,
-    process_script_tone,
     process_work_hours_default,
     process_work_hours_manual,
     process_campaign_script,
+    handle_preview_regenerate,
+    handle_preview_change_script,
+    handle_preview_launch,
     ScriptCreateFSM,
     CSVImportFSM,
     CampaignStartFSM,
@@ -165,16 +175,18 @@ class TestFormatHotleads:
 
 class TestFormatAnalytics:
     def test_analytics_output(self):
-        text = _format_analytics(150, 142, 18, 3, 1)
+        text = _format_analytics(150, 142, 18, 3, 1, 2, 120.7)
         assert "Всего контактов: 150" in text
         assert "Отправлено: 142" in text
         assert "Ответили: 18 (12.7%)" in text
         assert "Hot leads: 3" in text
         assert "Встречи: 1" in text
+        assert "Guardrails отказов: 2" in text
+        assert "Средняя длина сообщения: 121 симв." in text
 
 
 class TestCmdStart:
-    async def test_sends_welcome(self, mock_message):
+    async def test_sends_welcome_with_menu(self, mock_message):
         await cmd_start(mock_message)
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
@@ -183,6 +195,18 @@ class TestCmdStart:
         assert "/newscript" in text
         assert "/upload" in text
         assert "/startcampaign" in text
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+
+
+class TestCmdHelp:
+    async def test_shows_schema_and_commands(self, mock_message):
+        await cmd_help(mock_message)
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "Script (сценарий общения)" in text
+        assert "Campaign (рассылка по списку контактов)" in text
+        assert "/scripts" in text
+        assert "/upload" in text
 
 
 class TestCmdScripts:
@@ -197,18 +221,20 @@ class TestCmdScripts:
             created_at=datetime.now(),
         )
         result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = [script]
+        result_mock.all.return_value = [(script, 2)]
         context = _make_mock_session(result_mock)
 
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
             await cmd_scripts(mock_message)
 
         mock_message.answer.assert_called_once()
-        assert "Script A" in mock_message.answer.call_args[0][0]
+        text = mock_message.answer.call_args[0][0]
+        assert "Script A" in text
+        assert "Campaigns: 2" in text
 
     async def test_empty_scripts(self, mock_message):
         result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = []
+        result_mock.all.return_value = []
         context = _make_mock_session(result_mock)
 
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
@@ -219,6 +245,13 @@ class TestCmdScripts:
 
 class TestCmdCampaigns:
     async def test_returns_formatted_campaigns(self, mock_message):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Script B",
+            goal="Book",
+            max_messages=2,
+            tone="professional",
+        )
         campaign = Campaign(
             id=uuid.uuid4(),
             name="Campaign B",
@@ -231,20 +264,24 @@ class TestCmdCampaigns:
             created_at=datetime.now(),
         )
         result_mock = MagicMock()
-        result_mock.scalars.return_value.all.return_value = [campaign]
+        result_mock.all.return_value = [(campaign, script)]
         context = _make_mock_session(result_mock)
 
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
             await cmd_campaigns(mock_message)
 
         mock_message.answer.assert_called_once()
-        assert "Campaign B" in mock_message.answer.call_args[0][0]
+        text = mock_message.answer.call_args[0][0]
+        assert "Campaign B" in text
+        assert "Script: Script B" in text
+        assert "Contacts: 0/10" in text
+        assert "Replied: 0" in text
 
 
 class TestCmdAnalytics:
     async def test_returns_metrics(self, mock_message):
         session = AsyncMock()
-        session.scalar.side_effect = [150, 142, 18, 3, 1]
+        session.scalar.side_effect = [150, 142, 18, 3, 1, 2, 120.5]
         context = AsyncMock()
         context.__aenter__ = AsyncMock(return_value=session)
         context.__aexit__ = AsyncMock(return_value=False)
@@ -491,6 +528,58 @@ class TestHandleDialog:
         mock_callback.answer.assert_awaited_once_with("❌ Неверный ID диалога")
 
 
+class TestHandleHistory:
+    async def test_shows_last_20_messages_with_timestamps(self, mock_callback):
+        conv_id = uuid.uuid4()
+        msg1 = Message(
+            id=uuid.uuid4(),
+            conversation_id=conv_id,
+            direction="outbound",
+            content="Hello",
+            sent_at=datetime(2024, 1, 1, 10, 30),
+        )
+        msg2 = Message(
+            id=uuid.uuid4(),
+            conversation_id=conv_id,
+            direction="inbound",
+            content="Hi there",
+            sent_at=datetime(2024, 1, 1, 10, 31),
+        )
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [msg2, msg1]
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"history:{conv_id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_history(mock_callback)
+
+        mock_callback.message.answer.assert_called()
+        text = mock_callback.message.answer.call_args[0][0]
+        assert "🤖" in text
+        assert "👤" in text
+        assert "10:30 01.01" in text
+        assert "Hello" in text
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_no_messages(self, mock_callback):
+        conv_id = uuid.uuid4()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        mock_callback.data = f"history:{conv_id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_history(mock_callback)
+
+        mock_callback.message.answer.assert_called_once_with("Сообщений в диалоге не найдено.")
+        mock_callback.answer.assert_awaited_once()
+
+    async def test_invalid_uuid(self, mock_callback):
+        mock_callback.data = "history:invalid"
+        await handle_history(mock_callback)
+        mock_callback.answer.assert_awaited_once_with("❌ Неверный ID диалога")
+
+
 # ---------------------------------------------------------------------------
 # FSM Tests
 # ---------------------------------------------------------------------------
@@ -537,7 +626,7 @@ class TestProcessScriptFSM:
         mock_callback.data = "tone:Деловой"
         await process_script_tone(mock_callback, mock_state)
         mock_state.update_data.assert_awaited_with(tone="professional")
-        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.max_messages)
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.first_message_goal)
 
     async def test_max_messages_invalid(self, mock_message, mock_state):
         mock_message.text = "abc"
@@ -634,6 +723,8 @@ class TestCmdUpload:
         text = mock_message.answer.call_args[0][0]
         assert "CSV" in text
         assert "Excel" in text
+        assert "telegram_user_id" in text
+        assert "telegram_id" in text
 
     async def test_rejects_non_document(self, mock_message, mock_state):
         mock_message.document = None
@@ -703,9 +794,97 @@ class TestHandleStartcamp:
 
 
 class TestCampaignCreateFSM:
-    async def test_select_script(self, mock_callback, mock_state):
+    async def test_select_script_generates_preview(self, mock_callback, mock_state):
         script_id = uuid.uuid4()
         mock_callback.data = f"campaign_script:{script_id}"
-        await process_campaign_script(mock_callback, mock_state)
-        mock_state.update_data.assert_awaited_with(script_id=script_id)
+        mock_state.get_data.return_value = {
+            "records": [{"first_name": "Alice", "telegram_user_id": "123"}],
+        }
+        script = Script(
+            id=script_id,
+            name="Test Script",
+            goal="Book",
+            max_messages=2,
+            tone="professional",
+        )
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = script
+        context = _make_mock_session(result_mock)
+
+        mock_engine = MagicMock()
+        mock_engine.generate_response_with_guardrails = AsyncMock(
+            return_value={"text": "Привет, Alice!"}
+        )
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context), \
+             patch("app.bots.admin_bot.LLMEngine", return_value=mock_engine):
+            await process_campaign_script(mock_callback, mock_state)
+
+        mock_state.update_data.assert_any_await(script_id=script_id)
+        mock_state.set_state.assert_awaited_with(CampaignCreateFSM.preview)
+        text = mock_callback.message.answer.call_args[0][0]
+        assert "Привет, Alice!" in text
+        assert "Запустить" in mock_callback.message.answer.call_args[1]["reply_markup"].inline_keyboard[0][0].text
+
+    async def test_preview_regenerate(self, mock_callback, mock_state):
+        script_id = uuid.uuid4()
+        mock_callback.data = "preview:regenerate"
+        mock_callback.message.edit_text = AsyncMock()
+        mock_state.get_data.return_value = {
+            "script_id": script_id,
+            "records": [{"first_name": "Bob", "telegram_user_id": "456"}],
+        }
+        script = Script(
+            id=script_id,
+            name="Test Script",
+            goal="Book",
+            max_messages=2,
+            tone="professional",
+        )
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = script
+        context = _make_mock_session(result_mock)
+
+        mock_engine = MagicMock()
+        mock_engine.generate_response_with_guardrails = AsyncMock(
+            return_value={"text": "Новое сообщение"}
+        )
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context), \
+             patch("app.bots.admin_bot.LLMEngine", return_value=mock_engine):
+            await handle_preview_regenerate(mock_callback, mock_state)
+
+        mock_callback.message.edit_text.assert_called_once()
+        assert "Новое сообщение" in mock_callback.message.edit_text.call_args[0][0]
+        mock_callback.answer.assert_awaited_once_with("🔄 Обновлено")
+
+    async def test_preview_launch_asks_name(self, mock_callback, mock_state):
+        mock_callback.data = "preview:launch"
+        await handle_preview_launch(mock_callback, mock_state)
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.name)
+        mock_callback.message.answer.assert_called_once()
+        assert "название кампании" in mock_callback.message.answer.call_args[0][0].lower()
+
+    async def test_preview_change_script(self, mock_callback, mock_state):
+        script_id = uuid.uuid4()
+        mock_callback.data = "preview:change_script"
+        mock_state.get_data.return_value = {
+            "records": [{"first_name": "Alice", "telegram_user_id": "123"}],
+        }
+        script = Script(
+            id=script_id,
+            name="Test Script",
+            goal="Book",
+            max_messages=2,
+            tone="professional",
+        )
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [script]
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_preview_change_script(mock_callback, mock_state)
+
+        mock_state.set_state.assert_awaited_with(CampaignCreateFSM.select_script)
+        mock_callback.message.answer.assert_called_once()
+        assert "Выберите скрипт" in mock_callback.message.answer.call_args[0][0]

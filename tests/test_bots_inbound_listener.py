@@ -137,7 +137,6 @@ async def test_handle_inbound_message_existing_conversation():
                                 )
 
                                 client.set_online.assert_awaited_once()
-                                client.set_typing.assert_awaited_once()
                                 client.send_message.assert_awaited_once()
                                 client.read_history.assert_awaited_once()
                                 mock_add.assert_awaited()

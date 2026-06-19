@@ -16,6 +16,11 @@ from app.bots.admin_bot import (
     process_script_goal,
     process_script_criteria,
     process_script_tone,
+    process_script_first_message_goal,
+    process_script_call_to_action,
+    process_script_language,
+    process_script_emoji_policy,
+    process_script_max_first_message_length,
     process_script_max_messages,
     process_script_delay,
     process_work_hours_default,
@@ -105,9 +110,15 @@ class TestNewScriptFSM:
         mock_callback.data = "tone:Деловой"
         await process_script_tone(mock_callback, mock_state)
         mock_state.update_data.assert_awaited_with(tone="professional")
-        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.max_messages)
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.first_message_goal)
         mock_callback.message.answer.assert_called_once()
         mock_callback.answer.assert_awaited_once()
+
+    async def test_first_message_goal_selection(self, mock_callback, mock_state):
+        mock_callback.data = "fmg:hook"
+        await process_script_first_message_goal(mock_callback, mock_state)
+        mock_state.update_data.assert_awaited_with(first_message_goal="hook")
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.call_to_action)
 
     async def test_max_messages_to_delay(self, mock_message, mock_state):
         mock_message.text = "3"
@@ -160,6 +171,11 @@ class TestNewScriptFSM:
             "goal": "Goal",
             "success_criteria": None,
             "tone": "professional",
+            "first_message_goal": "hook",
+            "call_to_action": "15-минутный созвон",
+            "language": "ru",
+            "emoji_policy": "forbidden",
+            "max_first_message_length": 200,
             "max_messages": 2,
             "follow_up_delay_hours": 24,
             "working_hours_start": dt_time(9, 0),
@@ -207,7 +223,9 @@ class TestUploadFSM:
         mock_message.document.file_id = "file123"
 
         file_bytes = MagicMock()
-        file_bytes.read.return_value = b"first_name,last_name\nAlice,Smith"
+        file_bytes.read.return_value = (
+            b"first_name,last_name,telegram_user_id\nAlice,Smith,123456"
+        )
 
         mock_bot = AsyncMock()
         mock_bot.get_file = AsyncMock(return_value=MagicMock(file_path="path"))

@@ -1,5 +1,5 @@
 from datetime import time, datetime
-from typing import Optional
+from typing import Optional, List, Any
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +17,14 @@ class ScriptBase(BaseModel):
     working_hours_end: time
     timezone: str = "Europe/Moscow"
     is_active: bool = True
+
+    # Sales funnel configuration
+    sales_funnel: Optional[List[Any]] = None
+    first_message_goal: str = "hook"
+    call_to_action: str = "15-минутный созвон"
+    language: str = "ru"
+    emoji_policy: str = "forbidden"
+    max_first_message_length: int = 200
 
 
 class ScriptCreate(ScriptBase):
@@ -36,6 +44,13 @@ class ScriptUpdate(BaseModel):
     working_hours_end: Optional[time] = None
     timezone: Optional[str] = None
     is_active: Optional[bool] = None
+
+    sales_funnel: Optional[List[Any]] = None
+    first_message_goal: Optional[str] = None
+    call_to_action: Optional[str] = None
+    language: Optional[str] = None
+    emoji_policy: Optional[str] = None
+    max_first_message_length: Optional[int] = None
 
 
 class ScriptResponse(ScriptBase):
