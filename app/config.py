@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://sales:salespass@localhost:5432/ai_sales"
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM provider selection: "openrouter" or "dashscope"
-    llm_provider: str = "openrouter"
+    # LLM provider selection: "dashscope" or "openrouter"
+    llm_provider: str = "dashscope"
 
     # OpenRouter settings
     openrouter_api_key: str = ""

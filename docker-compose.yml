@@ -42,7 +42,7 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sales:salespass@postgres:5432/ai_sales}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
+      - LLM_PROVIDER=${LLM_PROVIDER:-dashscope}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}

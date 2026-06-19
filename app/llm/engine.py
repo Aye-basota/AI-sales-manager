@@ -60,12 +60,13 @@ class LLMEngine:
         provider: str | None = None,
     ) -> None:
         settings = get_settings()
-        resolved_provider = (
-            provider
-            or getattr(settings, "llm_provider", None)
-            or _provider_from_base_url(base_url or settings.openrouter_base_url)
-        )
-        self.provider = resolved_provider.lower()
+        if provider:
+            resolved_provider = provider.lower()
+        elif base_url:
+            resolved_provider = _provider_from_base_url(base_url)
+        else:
+            resolved_provider = settings.llm_provider.lower()
+        self.provider = resolved_provider
 
         if self.provider == "dashscope":
             self.api_key = api_key or settings.dashscope_api_key or ""
