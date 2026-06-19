@@ -9,7 +9,7 @@
 4. Создадим первый скрипт продаж.
 5. Загрузим 1 тестовый контакт и запустим кампанию через Telegram Admin Bot.
 
-> **Важно:** на момент написания гида в проекте 377 тестов проходят, 0 критических багов, но есть 3 некритичных ограничения (см. раздел «Известные ограничения» внизу). Инструкция честно их отражает.
+> **Важно:** на момент написания гида в проекте 408 тестов проходят, 0 критических багов, но есть несколько некритичных ограничений (см. раздел «Известные ограничения» внизу). Инструкция честно их отражает.
 
 ---
 
@@ -20,7 +20,7 @@
 | Docker + Docker Compose | Запускает все части системы (базу, бота, планировщик) одной командой | [docker.com](https://www.docker.com/products/docker-desktop/) |
 | Telegram API ID и API Hash | Чтобы программа могла работать от имени живого Telegram-аккаунта | [my.telegram.org](https://my.telegram.org) |
 | Токен Telegram-бота (Admin Bot) | Управление кампаниями через Telegram | Напишите [@BotFather](https://t.me/BotFather), создайте бота и скопируйте токен |
-| OpenRouter API Key | Генерация сообщений искусственным интеллектом | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| LLM API Key | Генерация сообщений искусственным интеллектом | [dashscope-intl.aliyuncs.com](https://dashscope-intl.aliyuncs.com) или [openrouter.ai/keys](https://openrouter.ai/keys) |
 | Живой Telegram-аккаунт (номер телефона) | С него будут отправляться сообщения клиентам | Любой реальный аккаунт, желательно «возрастной» (не свежезарегистрированный) |
 | Telegram User ID тестового контакта | Чтобы отправить первое сообщение | Напишите [@userinfobot](https://t.me/userinfobot), он ответит вашим ID |
 
@@ -66,11 +66,18 @@ docker-compose --version
 2. Отправьте `/newbot`, придумайте имя и адрес (username) для бота.
 3. BotFather пришлёт токен вида `123456789:ABCdefGHI...`. Сохраните его.
 
-### 2.3 Ключ OpenRouter
+### 2.3 Ключ LLM (DashScope или OpenRouter)
 
+Проект по умолчанию использует **DashScope** (Alibaba Cloud).
+
+1. Зарегистрируйтесь на [dashscope-intl.aliyuncs.com](https://dashscope-intl.aliyuncs.com).
+2. Создайте API Key.
+3. Скопируйте ключ и вставьте в `DASHSCOPE_API_KEY` в `.env`.
+
+Если хотите использовать OpenRouter:
 1. Зарегистрируйтесь на [openrouter.ai](https://openrouter.ai).
 2. Перейдите в раздел Keys и создайте ключ.
-3. Скопируйте ключ вида `sk-or-v1-...`.
+3. Установите `LLM_PROVIDER=openrouter` и вставьте ключ в `OPENROUTER_API_KEY`.
 
 ### 2.4 ID тестового контакта
 
@@ -104,13 +111,23 @@ cp .env.example .env
 ```dotenv
 DATABASE_URL=postgresql+asyncpg://sales:salespass@postgres:5432/ai_sales
 REDIS_URL=redis://redis:6379/0
-OPENROUTER_API_KEY=sk-or-v1-ВАШ_КЛЮЧ_OPENROUTER
+
+# LLM-провайдер: dashscope (по умолчанию) или openrouter
+LLM_PROVIDER=dashscope
+DASHSCOPE_API_KEY=ВАШ_КЛЮЧ_DASHSCOPE
+DASHSCOPE_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+
+# Или, если используете OpenRouter:
+# OPENROUTER_API_KEY=sk-or-v1-ВАШ_КЛЮЧ_OPENROUTER
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
 ADMIN_BOT_TOKEN=ВАШ_ТОКЕН_ОТ_BOTFATHER
 ADMIN_NOTIFICATION_CHAT_ID=
 SECRET_KEY=придумайте_любую_длинную_строку
 SESSION_ENCRYPTION_KEY=
 TELEGRAM_API_ID=ВАШ_API_ID_ЧИСЛОМ
 TELEGRAM_API_HASH=ВАШ_API_HASH
+SELLER_PHONE=+79991234567
 DAILY_MESSAGE_LIMIT=50
 DEBUG=True
 ```
@@ -206,44 +223,38 @@ curl http://localhost:8000/health
 
 ### 5.1 Генерируем session string
 
-Самый простой способ — запустить временный Python-скрипт внутри контейнера `api`.
+В проекте есть готовый скрипт `scripts/generate_session.py`. Он запускается внутри контейнера `api`.
 
-Выполните:
+Перед запуском убедитесь, что в `.env` заполнены:
+
+- `TELEGRAM_API_ID`
+- `TELEGRAM_API_HASH`
+- `SELLER_PHONE` — номер seller-аккаунта в международном формате, например `+79991234567`
+
+Запустите генератор:
 
 ```bash
-docker-compose run --rm api bash
+docker-compose exec api python scripts/generate_session.py
 ```
 
-Вы попадёте внутрь контейнера. Там выполните:
+Скрипт попросит код подтверждения. В **другом терминале** выполните:
 
-```python
-python - <<'PY'
-import asyncio
-import os
-from pyrogram import Client
-
-async def main():
-    api_id = int(os.getenv("TELEGRAM_API_ID"))
-    api_hash = os.getenv("TELEGRAM_API_HASH")
-    async with Client("session_gen", api_id=api_id, api_hash=api_hash, in_memory=True) as app:
-        session = await app.export_session_string()
-        print("\n=== ВАША SESSION STRING ===")
-        print(session)
-        print("===========================\n")
-
-asyncio.run(main())
-PY
+```bash
+docker-compose exec api bash -c "echo 12345 > /tmp/telegram_code.txt"
 ```
 
-Скрипт спросит:
-1. Номер телефона — введите номер seller-аккаунта в международном формате (`+79991234567`).
-2. Код из SMS или Telegram — введите полученный код.
-3. Если включена двухфакторная аутентификация — введите пароль.
+(замените `12345` на реальный код из SMS или Telegram).
 
-В конце появится длинная строка — это `session string`. **Скопируйте её полностью** и выйдите из контейнера (`exit`).
+Если включена двухфакторная аутентификация, скрипт попросит пароль. Введите его аналогично:
+
+```bash
+docker-compose exec api bash -c "echo ваш_пароль_2fa > /tmp/telegram_2fa.txt"
+```
+
+В конце скрипт выведет длинную строку — это `session string`. **Скопируйте её полностью**.
 
 **Если код не приходит:**
-- Убедитесь, что ввели номер правильно и с `+`.
+- Убедитесь, что `SELLER_PHONE` в `.env` указан правильно и с `+`.
 - Попробуйте получить код через Telegram вместо SMS (на том устройстве, где установлен аккаунт).
 - Если аккаунт новый, Telegram может временно блокировать авторизацию сторонних приложений — используйте более «возрастной» аккаунт.
 
