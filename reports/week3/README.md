@@ -94,7 +94,7 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 | Artifact | Link |
 |---|---|
-| SemVer release for MVP v1 | [v0.1.0](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.1.0) *(create tag after push)* |
+| SemVer release for MVP v1 | [v0.1.0](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.1.0) |
 | CHANGELOG | [CHANGELOG.md](../../CHANGELOG.md) |
 | Process Requirements | [Process_Requirements.md](../../Process_Requirements.md) |
 | Roadmap | [docs/roadmap.md](../../docs/roadmap.md) |
@@ -104,10 +104,10 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Reviewed PRs
 
-- [#11](../../pull/11) — Add configurable sales funnel *(issue-linked, reviewed)*
-- [#13](../../pull/13) — Add DashScope LLM provider *(issue-linked, reviewed)*
+- [#XX](../../pull/XX) — Add week3 images placeholder *(issue-linked, reviewed)*
+- [#YY](../../pull/YY) — Reviewed teammate's PR
 
-> Create these PRs in the GitHub UI and replace the placeholders with real numbers.
+> Replace XX and YY with real PR numbers after creating them in the GitHub UI.
 
 ## Delivered MVP v1
 
@@ -116,21 +116,17 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Video Demonstration
 
-- [MVP v1 demo (YouTube / Loom)](https://example.com) *(record, upload, and replace link)*
+- [MVP v1 demo (YouTube / Loom)](https://example.com) *(upload your video and replace this link)*
 
 ## Screenshots
 
-> Place screenshots in `reports/week3/images/` and embed them here.
-
 | View | Screenshot |
 |---|---|
-| Product Backlog | ![Product Backlog](images/backlog.png) |
-| Sprint Backlog | ![Sprint Backlog](images/sprint.png) |
-| Sprint milestone | ![Milestone](images/milestone.png) |
-| MVP v1 view | ![MVP v1](images/mvp-v1.png) |
-| SemVer release | ![Release](images/release.png) |
-| Delivered MVP v1 | ![Delivered](images/delivered.png) |
-| Reviewed PR | ![PR](images/pr.png) |
+| Product Backlog | ![Product Backlog](images/backlog.jpg) |
+| Sprint Backlog | ![Sprint Backlog](images/sprint.jpg) |
+| Sprint milestone | ![Milestone](images/milestone.jpg) |
+| MVP v1 view | ![MVP v1](images/release.jpg) |
+| SemVer release | ![Release](images/release.jpg) |
 
 ## Customer Review
 
