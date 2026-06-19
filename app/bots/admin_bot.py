@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from types import SimpleNamespace
 
 from app.config import get_settings
@@ -152,6 +152,26 @@ def _format_campaigns(campaigns: List) -> str:
     return "\n\n".join(lines)
 
 
+def _build_campaign_buttons(campaign) -> list:
+    """Return action buttons appropriate for the campaign status."""
+    name = campaign.name[:20]
+    status = campaign.status
+    buttons = []
+
+    if status == "draft":
+        buttons.append(types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_start:{campaign.id}"))
+    elif status == "running":
+        buttons.append(types.InlineKeyboardButton(text=f"⏸ {name}", callback_data=f"camp_pause:{campaign.id}"))
+        buttons.append(types.InlineKeyboardButton(text=f"🛑 {name}", callback_data=f"camp_stop:{campaign.id}"))
+    elif status == "paused":
+        buttons.append(types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_resume:{campaign.id}"))
+        buttons.append(types.InlineKeyboardButton(text=f"🛑 {name}", callback_data=f"camp_stop:{campaign.id}"))
+
+    # Delete is always available
+    buttons.append(types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"))
+    return buttons
+
+
 def _format_hotleads(rows: List) -> str:
     lines = []
     for idx, (conv, contact) in enumerate(rows, 1):
@@ -266,8 +286,7 @@ async def refresh_scripts(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.message(Command("campaigns"))
-async def cmd_campaigns(message: types.Message):
+async def _load_campaigns():
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Campaign, Script)
@@ -275,32 +294,38 @@ async def cmd_campaigns(message: types.Message):
             .order_by(Campaign.created_at.desc())
             .limit(20)
         )
-        campaigns = result.all()
+        return result.all()
+
+
+async def _send_or_edit_campaigns(message: types.Message):
+    campaigns = await _load_campaigns()
 
     if not campaigns:
-        await message.answer("No campaigns found.")
-        return
+        text = "No campaigns found."
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[])
+    else:
+        text = _format_campaigns(campaigns)
+        kb_rows = []
+        for row in campaigns:
+            campaign = row[0]
+            kb_rows.append(_build_campaign_buttons(campaign))
+        kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_campaigns")])
+        kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
-    text = _format_campaigns(campaigns)
-    kb_rows = []
-    for row in campaigns:
-        campaign = row[0]
-        kb_rows.append(
-            [
-                types.InlineKeyboardButton(text=f"⏸ {campaign.name[:20]}", callback_data=f"camp_pause:{campaign.id}"),
-                types.InlineKeyboardButton(text=f"▶️ {campaign.name[:20]}", callback_data=f"camp_resume:{campaign.id}"),
-                types.InlineKeyboardButton(text=f"🛑 {campaign.name[:20]}", callback_data=f"camp_stop:{campaign.id}"),
-                types.InlineKeyboardButton(text=f"🗑 {campaign.name[:20]}", callback_data=f"camp_delete:{campaign.id}"),
-            ]
-        )
-    kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_campaigns")])
-    kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    try:
+        await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.message(Command("campaigns"))
+async def cmd_campaigns(message: types.Message):
+    await _send_or_edit_campaigns(message)
 
 
 @router.callback_query(lambda c: c.data == "refresh_campaigns")
 async def refresh_campaigns(callback: types.CallbackQuery):
-    await cmd_campaigns(callback.message)
+    await _send_or_edit_campaigns(callback.message)
     await callback.answer()
 
 
@@ -322,10 +347,7 @@ async def handle_camp_pause(callback: types.CallbackQuery):
             await callback.answer("⏸ Пауза")
         else:
             await callback.answer("❌ Нельзя поставить на паузу")
-    await cmd_campaigns(callback.message)
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("camp_resume:"))
+    await _send_or_edit_campaigns(callback.message)
 async def handle_camp_resume(callback: types.CallbackQuery):
     camp_id_str = callback.data.split(":", 1)[1]
     try:
@@ -343,7 +365,7 @@ async def handle_camp_resume(callback: types.CallbackQuery):
             await callback.answer("▶️ Возобновлено")
         else:
             await callback.answer("❌ Нельзя возобновить")
-    await cmd_campaigns(callback.message)
+    await _send_or_edit_campaigns(callback.message)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("camp_stop:"))
@@ -364,7 +386,31 @@ async def handle_camp_stop(callback: types.CallbackQuery):
             await callback.answer("🛑 Остановлено")
         else:
             await callback.answer("❌ Нельзя остановить")
-    await cmd_campaigns(callback.message)
+    await _send_or_edit_campaigns(callback.message)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("camp_start:"))
+async def handle_camp_start(callback: types.CallbackQuery):
+    camp_id_str = callback.data.split(":", 1)[1]
+    try:
+        camp_id = UUID(camp_id_str)
+    except ValueError:
+        await callback.answer("❌ Неверный ID")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Campaign).where(Campaign.id == camp_id))
+        campaign = result.scalar_one_or_none()
+        if campaign and campaign.status == "draft":
+            campaign.status = "running"
+            campaign.started_at = datetime.now(timezone.utc)
+            await session.commit()
+            await callback.answer("▶️ Запущено")
+            from app.core.scheduler import process_campaigns
+            asyncio.create_task(_process_campaign_safely(campaign.id, process_campaigns))
+        else:
+            await callback.answer("❌ Кампания уже запущена или не найдена")
+    await _send_or_edit_campaigns(callback.message)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("camp_delete:"))
@@ -380,12 +426,16 @@ async def handle_camp_delete(callback: types.CallbackQuery):
         result = await session.execute(select(Campaign).where(Campaign.id == camp_id))
         campaign = result.scalar_one_or_none()
         if campaign:
+            # Delete linked campaign contacts first to avoid FK violation
+            await session.execute(
+                delete(CampaignContact).where(CampaignContact.campaign_id == camp_id)
+            )
             await session.delete(campaign)
             await session.commit()
             await callback.answer("🗑 Удалено")
         else:
             await callback.answer("❌ Кампания не найдена")
-    await cmd_campaigns(callback.message)
+    await _refresh_campaigns_message(callback.message)
 
 
 @router.message(Command("analytics"))
