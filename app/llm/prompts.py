@@ -184,10 +184,7 @@ def build_reply_user_prompt(
 ) -> str:
     """Build the user prompt for replying to a lead message."""
     stage_cfg = get_stage_config(script, conversation_stage)
-    stage_instructions = stage_cfg.get(
-        "instructions",
-        "Напиши короткий, естественный ответ клиенту.",
-    )
+    stage_goal = stage_cfg.get("goal", "Дать короткий, естественный ответ клиенту.")
     max_length = get_max_length_for_stage(script, conversation_stage)
     cta_allowed = is_call_to_action_allowed(script, conversation_stage)
     cta_text = getattr(script, "call_to_action", None) or "15-минутный созвон"
@@ -202,16 +199,18 @@ def build_reply_user_prompt(
     facts_block = _build_facts_block(lead_facts)
 
     return (
+        f"ВАЖНО: Это ОТВЕТ клиенту, а не первое сообщение. "
+        f"Клиент уже получил первое сообщение и ответил на него. "
+        f"Не повторяй первое сообщение — отвечай на его реплику.\n\n"
         f"Текущий этап воронки: {conversation_stage}\n"
+        f"Цель этапа при ответе: {stage_goal}\n"
         f"Максимальная длина: {max_length} символов.\n"
         f"{cta_note}\n\n"
-        f"ИНСТРУКЦИЯ К ЭТАПУ:\n{stage_instructions}\n\n"
         f"КОНТЕКСТ ДИАЛОГА:\n{history_block}\n\n"
         f"ФАКТЫ О ЛИДЕ:\n{facts_block}\n\n"
         f"ТВОЯ ПРЕДЫДУЩАЯ РЕПЛИКА:\n{last_agent_message}\n\n"
         f"ОТВЕТ КЛИЕНТА:\n{lead_message}\n\n"
-        f"Напиши ответ (1-3 коротких абзаца). Не используй приветствия, "
-        f"если это не первое сообщение."
+        f"Напиши ответ (1-3 коротких абзаца). Не используй приветствия."
     )
 
 
