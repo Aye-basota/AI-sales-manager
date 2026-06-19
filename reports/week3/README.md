@@ -13,11 +13,11 @@ In Assignment 2 the team documented 10 user stories in [`reports/week2/user-stor
 
 MVP v1 was scoped to the core sales-automation flow:
 
-- [`US-01`](../../issues/1) — Getting product information
-- [`US-02`](../../issues/2) — Contact Product Owner
-- [`US-03`](../../issues/3) — Bot Setup and Funnel Upload
-- [`US-04`](../../issues/4) — Labor Cost Reduction
-- [`US-08`](../../issues/8) — LLM Provider Selection
+- [`US-01`](https://github.com/Aye-basota/AI-sales-manager/issues/3) — Getting product information
+- [`US-02`](https://github.com/Aye-basota/AI-sales-manager/issues/4) — Contact Product Owner
+- [`US-03`](https://github.com/Aye-basota/AI-sales-manager/issues/5) — Bot Setup and Funnel Upload
+- [`US-04`](https://github.com/Aye-basota/AI-sales-manager/issues/6) — Labor Cost Reduction
+- [`US-08`](https://github.com/Aye-basota/AI-sales-manager/issues/10) — LLM Provider Selection
 
 ## Customer Feedback Addressed in MVP v1
 
@@ -75,10 +75,11 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Next Steps
 
-1. Create GitHub Issues for all active user stories and apply labels/milestones.
-2. Record and publish the public sanitized MVP v1 video demonstration.
-3. Set up a persistent staging deployment.
-4. Open Sprint 2 for operator takeover and rate-limiting PBIs.
+1. Apply the `mvp-v1` label and Sprint 1 milestone to the relevant issues in the GitHub UI.
+2. Create GitHub Projects for Product Backlog and Sprint Backlog views.
+3. Record and publish the public sanitized MVP v1 video demonstration.
+4. Set up a persistent staging deployment.
+5. Open Sprint 2 for operator takeover and rate-limiting PBIs.
 
 ## Contribution Traceability
 
