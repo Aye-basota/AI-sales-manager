@@ -1,33 +1,23 @@
-# Definition of Done
+# Definition of Done (DoD)
 
-This document defines the minimum completion standard for every Product Backlog Item (PBI) in this project.
+This document defines the team's shared minimum completion standard for the AI Sales Manager project. A Product Backlog Item (PBI) or User Story is only considered "Done" when all the following criteria are met.
 
-## General Criteria
+## 1. Code & Implementation
+- [ ] The code implements the clear expected outcome and description specified in the PBI.
+- [ ] For User Stories: All linked supporting PBIs required to satisfy its acceptance criteria are fully completed.
+- [ ] The work is successfully integrated without breaking existing functionality (e.g., Telegram/WhatsApp agent integrations).
 
-A PBI is considered **Done** only when all of the following are true:
+## 2. Testing & Verification
+- [ ] All specific, observable, and testable Acceptance Criteria attached to the PBI are fully satisfied.
+- [ ] Verification evidence proving that the Acceptance Criteria are met is recorded and linked (e.g., attached to the PR/MR or issue).
+- [ ] The application and its updates have been successfully tested locally.
 
-1. **Code implemented** — the functionality described by the PBI is implemented on a feature branch.
-2. **Tests pass** — all existing tests continue to pass, and new tests are added for the implemented behavior.
-3. **Code reviewed** — at least one team member has reviewed and approved the linked pull request.
-4. **Acceptance criteria verified** — every acceptance criterion is explicitly checked and evidenced in the PR description or comments.
-5. **No regressions** — the change does not break the build, API contracts, or existing user flows.
-6. **Documentation updated** — user-facing changes are reflected in `README.md`, API docs, or other relevant documentation.
-7. **CHANGELOG updated** — user-visible changes are recorded in `CHANGELOG.md` under `[Unreleased]` or the appropriate release.
-8. **Merged to main** — the linked PR is merged using a merge commit on the protected default branch.
-9. **Issue closed** — the related issue is closed with the `Done` work status.
+## 3. Workflow & Review
+- [ ] A Pull Request (PR) / Merge Request (MR) is created and explicitly linked to the issue to maintain full traceability.
+- [ ] The code is reviewed and approved by a **different** team member than the implementer.
+- [ ] All review comments, questions, and discussions on the PR/MR are resolved.
 
-## MVP v1 Specific Criteria
-
-For PBIs marked as part of **MVP v1**, the following also apply:
-
-- At least three acceptance criteria are defined before implementation starts.
-- The PBI is assigned to the current Sprint milestone.
-- Manual verification or integration test evidence is attached to the PR.
-- The implemented increment is demonstrable in the running application.
-
-## Quality Standards
-
-- Code follows the existing project style (PEP 8, type hints where applicable).
-- No secrets, API keys, or credentials are committed.
-- LLM-generated code is reviewed, tested, and understood by the team.
-- UI/UX changes are manually checked on desktop and mobile where relevant.
+## 4. Documentation
+- [ ] **`CHANGELOG.md` is updated** with a clear entry for any user-visible changes.
+- [ ] Traceability is maintained (e.g., stable User Story IDs are preserved; `docs/user-stories.md` is updated if the requirement status or Sprint assignment changed).
+- [ ] System documentation (README.md, launch guides, or interface specifications) is updated if the PBI introduces architectural, workflow, or configuration changes.
