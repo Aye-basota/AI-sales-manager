@@ -156,19 +156,25 @@ def _format_campaigns(campaigns: List) -> str:
 def _build_campaign_buttons(campaign) -> list:
     """Return action buttons appropriate for the campaign status."""
     status = campaign.status
-    start_btn = types.InlineKeyboardButton(text="▶️", callback_data=f"camp_start:{campaign.id}")
-    pause_btn = types.InlineKeyboardButton(text="⏸", callback_data=f"camp_pause:{campaign.id}")
-    resume_btn = types.InlineKeyboardButton(text="▶️", callback_data=f"camp_resume:{campaign.id}")
-    delete_btn = types.InlineKeyboardButton(text="🗑", callback_data=f"camp_delete:{campaign.id}")
+    name = campaign.name[:18]
 
     if status == "draft":
-        return [start_btn, delete_btn]
+        return [
+            types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_start:{campaign.id}"),
+            types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"),
+        ]
     elif status == "running":
-        return [pause_btn, delete_btn]
+        return [
+            types.InlineKeyboardButton(text=f"⏸ {name}", callback_data=f"camp_pause:{campaign.id}"),
+            types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"),
+        ]
     elif status == "paused":
-        return [resume_btn, delete_btn]
+        return [
+            types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_resume:{campaign.id}"),
+            types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"),
+        ]
     else:
-        return [delete_btn]
+        return [types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}")]
 
 
 def _format_hotleads(rows: List) -> str:
@@ -308,7 +314,6 @@ async def _send_or_edit_campaigns(message: types.Message):
         for row in campaigns:
             campaign = row[0]
             kb_rows.append(_build_campaign_buttons(campaign))
-        kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_campaigns")])
         kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
     try:
@@ -325,12 +330,6 @@ async def _send_or_edit_campaigns(message: types.Message):
 @router.message(Command("campaigns"))
 async def cmd_campaigns(message: types.Message):
     await _send_or_edit_campaigns(message)
-
-
-@router.callback_query(lambda c: c.data == "refresh_campaigns")
-async def refresh_campaigns(callback: types.CallbackQuery):
-    await _send_or_edit_campaigns(callback.message)
-    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("camp_pause:"))
