@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DashScope (Alibaba Cloud) LLM provider support via `LLM_PROVIDER=dashscope`.
 - Configurable `DASHSCOPE_API_KEY` and `DASHSCOPE_BASE_URL` environment variables.
 
+### Changed
+- Updated `docs/roadmap.md` to reflect Sprint 1 as completed and clarify Sprint 2 hardening priorities ([#32](https://github.com/Aye-basota/AI-sales-manager/issues/32)).
+- Updated `reports/week3/retrospective.md` with sanitized retrospective notes on team process and identified issues ([#32](https://github.com/Aye-basota/AI-sales-manager/issues/32)).
+
 ## [0.1.0] - 2026-06-19
 
 ### Added
