@@ -84,13 +84,11 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 | Team member | Issues | PRs | Reviews |
 |---|---|---|---|
-| Isaam | US-01, US-02 | — | — |
-| Maksim | US-03, US-08 | #XX | Reviewed #YY |
-| Makrsel | US-04, US-07 | — | — |
-| Marat | US-05, US-09 | — | — |
-| Daniil | US-06, US-10 | — | — |
-
-> Replace #XX with the issue-linked PR created during Assignment 3 and #YY with the PR reviewed by Maksim.
+| Isaam | Product Backlog & Sprint Planning | [#31](https://github.com/Aye-basota/AI-sales-manager/pull/31) | — |
+| Maksim | US-03 (#5) | [#13](https://github.com/Aye-basota/AI-sales-manager/pull/13) | Reviewed [#15](https://github.com/Aye-basota/AI-sales-manager/pull/15) |
+| Marsel | #14 | [#15](https://github.com/Aye-basota/AI-sales-manager/pull/15) | Reviewed [#36](https://github.com/Aye-basota/AI-sales-manager/pull/36) |
+| Marat | #32 | [#34](https://github.com/Aye-basota/AI-sales-manager/pull/34) | — |
+| Daniil | Customer Sprint Review | [#36](https://github.com/Aye-basota/AI-sales-manager/pull/36) | Reviewed [#13](https://github.com/Aye-basota/AI-sales-manager/pull/13) |
 
 ## Release and Documentation
 
@@ -106,7 +104,10 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Reviewed PRs
 
-- *(To be added after creating and reviewing PRs during Assignment 3)*
+- Maksim reviewed [#15](https://github.com/Aye-basota/AI-sales-manager/pull/15) — Fix formatting in user stories table.
+- Marsel reviewed [#35](https://github.com/Aye-basota/AI-sales-manager/pull/35) — docs(week3): update roadmap and retrospective (#34).
+- Marsel reviewed [#36](https://github.com/Aye-basota/AI-sales-manager/pull/36) — docs(week3): customer sprint review transcript and summary.
+- Daniil reviewed [#13](https://github.com/Aye-basota/AI-sales-manager/pull/13) — docs(week3): add placeholder images directory.
 
 ## Delivered MVP v1
 
@@ -126,7 +127,7 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 | Sprint milestone | ![Milestone](images/milestone.jpg) |
 | SemVer release | ![Release](images/release.jpg) |
 | Delivered MVP v1 | ![Delivered](images/mvp-v1.jpg) |
-| Reviewed PR | ![PR](images/pr.jpg) *(add after PR is merged)* |
+| Reviewed PR | ![PR](images/pr.jpg) |
 
 ## Customer Review
 
