@@ -16,8 +16,8 @@ Historical Assignment 2 artifact: [`reports/week2/user-stories.md`](../reports/w
 | US-04 | Labor cost reduction | Must Have | [#6](https://github.com/Aye-basota/AI-sales-manager/issues/6) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-011 | Import contact base from CSV | Must Have | [#16](https://github.com/Aye-basota/AI-sales-manager/issues/16) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-012 | Launch outreach campaign | Must Have | [#17](https://github.com/Aye-basota/AI-sales-manager/issues/17) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
-| US-05 | Human manager escalation | Should Have | [#7](https://github.com/Aye-basota/AI-sales-manager/issues/7) | Active | To Do | — |
-| US-06 | Increase lead turnover | Should Have | [#8](https://github.com/Aye-basota/AI-sales-manager/issues/8) | Active | To Do | — |
+| US-05 | Human manager escalation | Should Have | [#7](https://github.com/Aye-basota/AI-sales-manager/issues/7) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
+| US-06 | Increase lead turnover | Should Have | [#8](https://github.com/Aye-basota/AI-sales-manager/issues/8) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-07 | 24/7 availability | Should Have | [#9](https://github.com/Aye-basota/AI-sales-manager/issues/9) | Active | In Progress | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-08 | LLM provider selection | Should Have | [#10](https://github.com/Aye-basota/AI-sales-manager/issues/10) | Active | Done | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-013 | Monitor active dialogs | Should Have | [#18](https://github.com/Aye-basota/AI-sales-manager/issues/18) | Active | To Do | — |
@@ -41,6 +41,6 @@ No stories have been removed at this time.
 - `Sprint` links to the Sprint milestone when assigned; `—` when not yet scheduled.
 - Stories are ordered: Must Have → Should Have → Could Have (by MoSCoW), then by Sprint, then by stable ID within each priority group.
 - Removed stories are listed after all active stories with `Removed` status.
-- Total active qualifying PBIs: **15** (excludes Won't Have and Removed).
-- Total Product Backlog size: **79 Story Points**.
-- Current Sprint 1 size: **50 Story Points** (US-01 + US-02 + US-03 + US-04 + US-011 + US-012 + US-07 + US-08 + US-010).
+- Total active qualifying PBIs: **15 user stories + 10 technical PBIs = 25 qualifying PBIs** (excludes Won't Have and Removed).
+- Total Product Backlog size: **107 Story Points** (79 SP user stories + 28 SP technical tasks).
+- Current Sprint 1 size: **78 Story Points** — user stories: US-01 + US-02 + US-03 + US-04 + US-05 + US-06 + US-07 + US-08 + US-010 + US-011 + US-012 (50 SP) + technical tasks TECH-01…TECH-10 (28 SP).

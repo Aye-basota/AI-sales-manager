@@ -11,13 +11,16 @@
 
 In Assignment 2 the team documented 10 user stories in [`reports/week2/user-stories.md`](../../reports/week2/user-stories.md). For Assignment 3 these stories were migrated to the issue-based Product Backlog and refined into PBIs. The current registry lives in [`docs/user-stories.md`](../../docs/user-stories.md).
 
-MVP v1 was scoped to the core sales-automation flow:
+MVP v1 was scoped to the core sales-automation flow (all Must Have stories):
 
 - [`US-01`](https://github.com/Aye-basota/AI-sales-manager/issues/3) — Getting product information
 - [`US-02`](https://github.com/Aye-basota/AI-sales-manager/issues/4) — Contact Product Owner
 - [`US-03`](https://github.com/Aye-basota/AI-sales-manager/issues/5) — Bot Setup and Funnel Upload
 - [`US-04`](https://github.com/Aye-basota/AI-sales-manager/issues/6) — Labor Cost Reduction
-- [`US-08`](https://github.com/Aye-basota/AI-sales-manager/issues/10) — LLM Provider Selection
+- [`US-011`](https://github.com/Aye-basota/AI-sales-manager/issues/16) — Import Contact Base from CSV
+- [`US-012`](https://github.com/Aye-basota/AI-sales-manager/issues/17) — Launch Outreach Campaign
+
+All MVP v1 PBIs are labelled [`mvp-v1`](https://github.com/Aye-basota/AI-sales-manager/issues?q=is%3Aissue+label%3Amvp-v1).
 
 ## Customer Feedback Addressed in MVP v1
 
@@ -36,8 +39,9 @@ MVP v1 was scoped to the core sales-automation flow:
 
 ## Backlog Size
 
-- **Total Product Backlog:** 40 Story Points
-- **Sprint 1 Size:** 21 Story Points
+- **Total Product Backlog:** 107 Story Points (79 SP across 15 user stories + 28 SP across 10 technical PBIs)
+- **Sprint 1 Size:** 78 Story Points (50 SP user stories + 28 SP technical tasks)
+- **MVP v1 User Story SP:** 29 SP (US-01: 5 + US-02: 3 + US-03: 8 + US-04: 3 + US-011: 5 + US-012: 8 + supporting tech tasks)
 
 ## MVP v1 Scope
 
@@ -82,15 +86,15 @@ MVP v1 is **feature-complete and tested**. The funnel is configurable, LLM provi
 
 ## Contribution Traceability
 
-| Team member | Issues | PRs | Reviews |
-|---|---|---|---|
-| Isaam | US-01, US-02 | — | — |
-| Maksim | US-03, US-08 | #XX | Reviewed #YY |
-| Makrsel | US-04, US-07 | — | — |
-| Marat | US-05, US-09 | — | — |
-| Daniil | US-06, US-10 | — | — |
+| Team member | GitHub | Role | Issues Owned | PRs | Reviews |
+|---|---|---|---|---|---|
+| Isaam | @issammerdas05 | Lead Generation & Data Engineer | [#3](../../issues/3) US-01, [#4](../../issues/4) US-02, [#12](../../issues/12) US-010, [#27](../../issues/27) TECH-07, [#28](../../issues/28) TECH-08 | — | — |
+| Marsel | @Aye-basota | Backend Developer | [#5](../../issues/5) US-03, [#9](../../issues/9) US-07, [#10](../../issues/10) US-08, [#17](../../issues/17) US-012, [#24](../../issues/24) TECH-04, [#29](../../issues/29) TECH-09, [#30](../../issues/30) TECH-10 | — | — |
+| Marat | @Markyl018 | Product Analyst | [#6](../../issues/6) US-04, [#8](../../issues/8) US-06, [#20](../../issues/20) US-015, [#26](../../issues/26) TECH-06 | — | — |
+| Maksim | @MuS0rKa | Technical Analyst | [#7](../../issues/7) US-05, [#11](../../issues/11) US-09, [#18](../../issues/18) US-013, [#25](../../issues/25) TECH-05 | — | — |
+| Daniil | @Volgadon636 | Team Lead & Interviewer | [#4](../../issues/4) US-02 (reviewer), [#16](../../issues/16) US-011 (reviewer context), [#19](../../issues/19) US-014, [#23](../../issues/23) TECH-03 | — | — |
 
-> Replace #XX with the issue-linked PR created during Assignment 3 and #YY with the PR reviewed by Maksim.
+> Update PR and Review columns once issue-linked PRs are opened and reviewed during Assignment 3.
 
 ## Release and Documentation
 
