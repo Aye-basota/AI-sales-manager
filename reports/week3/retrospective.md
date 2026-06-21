@@ -11,6 +11,7 @@
 1. **Backlog and evidence setup took manual effort** — creating and maintaining the repository workflow artifacts required more coordination than the implementation work itself.
 2. **Some alignment gaps appeared late** — a few details across schema, prompts, and documentation needed rework once the MVP v1 shape became clearer.
 3. **Public demonstration packaging still needs discipline** — screenshots, release links, and video evidence are easy to postpone unless they are planned as first-class Sprint work.
+4. **Admin bot manager setup was extremely time-consuming** — creating and configuring the manager bot required several hours to days of manual work, including FSM state management, command setup, and error handling for each feature.
 
 ## Action points
 

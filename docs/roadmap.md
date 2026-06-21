@@ -28,8 +28,9 @@ Sprint 1 delivered the MVP v1 baseline:
 
 Sprint 2 should harden the product around the live conversation flow:
 
+- **Race condition prevention**: Add Redis distributed lock per `conversation_id` to prevent double replies when multiple processes handle inbound messages simultaneously.
+- **Scheduler reliability**: Implement explicit recovery strategy for APScheduler jobs after process crash or restart, ensuring no campaign messages are lost.
 - Inbound rate limiting and daily-limit guard per account.
-- Redis distributed lock per `conversation_id` to prevent double replies.
 - Operator manual takeover with an `is_paused_by_operator` flag.
 - Funnel stage override in the admin bot and API.
 - Funnel stage distribution in analytics.
