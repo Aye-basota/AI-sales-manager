@@ -7,7 +7,7 @@ This file is the authoritative registry of stable user-story IDs and current mem
 | US-01 | Getting product information | Must Have | [#3](https://github.com/Aye-basota/AI-sales-manager/issues/3) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-02 | Contact Product Owner | Must Have | [#4](https://github.com/Aye-basota/AI-sales-manager/issues/4) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-03 | Bot Setup and Funnel Upload | Must Have | [#5](https://github.com/Aye-basota/AI-sales-manager/issues/5) | Active | In Progress | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
-| US-04 | Labor Cost Reduction | Must Have | [#6](https://github.com/Aye-basota/AI-sales-manager/issues/6) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
+| US-04 | Labor Cost Reduction | Must Have | [#6](https://github.com/Aye-basota/AI-sales-manager/issues/6) | Active | To Do | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) | 
 | US-05 | Human Manager Escalation | Should Have | [#7](https://github.com/Aye-basota/AI-sales-manager/issues/7) | Active | To Do | — |
 | US-06 | Increase Lead Turnover | Should Have | [#8](https://github.com/Aye-basota/AI-sales-manager/issues/8) | Active | To Do | — |
 | US-07 | 24/7 Availability | Should Have | [#9](https://github.com/Aye-basota/AI-sales-manager/issues/9) | Active | In Progress | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
