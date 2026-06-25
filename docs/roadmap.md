@@ -4,7 +4,7 @@
 
 Build an autonomous B2B outbound sales assistant that uses real Telegram accounts and LLM-driven dialogue to generate qualified meetings with minimal human intervention.
 
-## Current Sprint
+## Previous Sprint
 
 ### Sprint 1 — MVP v1
 
@@ -21,24 +21,45 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 - Analytics dashboard for replies, qualified leads, and meetings booked.
 - Multi-provider LLM support (OpenRouter + DashScope).
 
+### Current Sprint
+
+**Goal:** Deliver a usable campaign-launch workflow for AI-powered outreach while improving product reliability and reducing implementation risks through validation, testing, and documentation improvements.
+
+**Dates:** 2026-06-25 - 2026-07-09
+
+**Sprint Focus**
+
+- Complete critical campaign-launch functionality
+- Reduce operational risks
+- Improve workflow readiness
+- Maintain Sprint traceability and planning documentation
+
 ## Next Sprint
 
-### Sprint 2 — Hardening & Operator Tools
+### Sprint 3 – Operator Control and Visibility
 
 **Goal:** Improve reliability and give operators more control over live conversations.
 
-**Planned PBIs:**
+**Planned PBIs**
 
-- Inbound rate limiting and daily-limit guard per account.
-- Redis distributed lock per `conversation_id` to prevent double replies.
-- Operator manual takeover with `is_paused_by_operator` flag.
-- Funnel stage override in admin bot and API.
-- Funnel stage distribution in analytics.
+- US-09: Manual Dialog Takeover
+- US-010: Telegram Admin Bot for Management
+- US-013: Monitor Active Dialogs in Real Time
+- US-015: Campaign Analytics and Conversion Dashboard
+
+**Planned Outcomes**
+
+- Better operator control over conversations
+- Improved monitoring capabilities
+- Increased visibility into campaign performance
+- Enhanced management tooling
 
 ## Future Directions
 
-- Voice messages and photo support.
-- Calendar integration (Google Calendar / Calendly) for `meeting_intent`.
-- A/B testing for scripts.
-- WebSocket real-time dashboard.
-- External CRM integration (HubSpot, Pipedrive).
+- Voice message support
+- Image and media processing
+- CRM integrations (HubSpot, Pipedrive)
+- Calendar integrations (Google Calendar, Calendly)
+- Advanced campaign analytics
+- Real-time dashboards
+- A/B testing for outreach campaigns
