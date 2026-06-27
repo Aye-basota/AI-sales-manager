@@ -67,7 +67,7 @@ jobs:
 
       - name: Check CHANGELOG updated
         if: github.event_name == 'pull_request'
-        run: git diff --name-only origin/main | grep -q CHANGELOG.md || echo "WARNING: CHANGELOG.md not updated"
+        run: 'git diff --name-only origin/main | grep -q CHANGELOG.md || echo "WARNING: CHANGELOG.md not updated"'
 
   bandit:
     runs-on: ubuntu-latest
