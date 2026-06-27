@@ -187,6 +187,16 @@ curl http://localhost:8000/health
 - API docs: `http://localhost:8000/docs`
 - Health check: `http://localhost:8000/health`
 
+### Демо-данные для презентаций
+
+Чтобы в интерфейсе не было пустых списков во время демо, запустите seed-скрипт:
+
+```bash
+docker-compose exec api python scripts/seed_demo_data.py
+```
+
+Скрипт создаёт демо-скрипт, 5 демо-контактов с компаниями, запущенную кампанию и несколько диалогов с ответами (включая hot lead).
+
 ### Session String для Telegram seller-аккаунта
 
 Чтобы система могла отправлять сообщения от живого Telegram-аккаунта, нужно получить `session string`.
@@ -312,14 +322,19 @@ Admin Bot управляет системой через Telegram.
 pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-**Текущее покрытие:** 408 тестов, покрытие ~77%.
+**Текущее покрытие:** 420+ тестов, покрытие `app/` ≥ 78%.
 
 Ключевые модули с высоким покрытием:
-- `app/core/scheduler.py` — 80%
+- `app/core/scheduler.py` — 80%+
 - `app/core/state_machine.py` — 100%
 - `app/llm/engine.py` — 99%
 - `app/llm/guardrails.py` — 98%
 - `app/services/notification_service.py` — 96%
+
+Автоматизированные Quality Requirement Tests (QRTs) находятся в `tests/quality_requirement_tests/` и проверяют:
+- latency health endpoint (QRT-01),
+- availability health endpoint (QRT-02),
+- fault tolerance API на невалидном JSON (QRT-03).
 
 ---
 
@@ -339,19 +354,20 @@ pytest tests/ -v --cov=app --cov-report=term-missing
 - **Реальность:** Telegram не доставляет сообщения мгновенно. Pyrogram обрабатывает их последовательно в одном event loop. Вероятность реального race condition низкая.
 - **Решение:** Redis lock на `conversation_id` — ~10 строк, можно отложить до первых реальных случаев.
 
-### P1.3: Метрики засоряются для paused/closed кампаний
+### ✅ P1.3: Метрики засоряются для paused/closed кампаний
 
 - **Риск:** Аналитика показывает «ответы» по неактивным (paused/closed) кампаниям.
-- **Реальность:** Некрасиво, но не ломает функционал. Заказчик увидит цифры и подумает «странно», но продажи не пострадают.
-- **Решение:** Перенести обновление `campaign.replied_count` и `CampaignContact.status = "replied"` после проверки `campaign.status == "running"` — 3 строки.
+- **Статус:** Исправлено. Обновление `campaign.replied_count` и `CampaignContact.status = "replied"` теперь выполняется только для кампаний со статусом `running`.
 
-### P2: `processed_contacts` считает сообщения, а не уникальные контакты
+### ✅ P2: `processed_contacts` считает сообщения, а не уникальные контакты
 
-Если 5 контактов получили initial + follow-up, в UI отобразится `10/10` вместо `5/10`. Семантически неверно, но не критично для работы.
+- **Риск:** Если 5 контактов получили initial + follow-up, в UI отобразится `10/10` вместо `5/10`. Семантически неверно.
+- **Статус:** Исправлено. `processed_contacts` увеличивается только при первом исходящем сообщении контакту.
 
-### P2: `assigned_account_id` без проверки статуса
+### ✅ P2: `assigned_account_id` без проверки статуса
 
-Если контакт закреплен за аккаунтом в `cooldown` или без `session_string`, система попытается использовать его и упадет в `except`. Контакт будет пропущен до следующего прогона. Fallback на другой аккаунт работает только при `assigned_account_id = null`.
+- **Риск:** Если контакт закреплен за аккаунтом в `cooldown` или без `session_string`, система пыталась использовать его и падала.
+- **Статус:** Исправлено. Перед использованием закреплённого аккаунта проверяется его eligibility (статус, наличие session string, cooldown); при непрохождении выполняется fallback на любой доступный аккаунт.
 
 ---
 
@@ -361,7 +377,7 @@ pytest tests/ -v --cov=app --cov-report=term-missing
 - [ ] Redis distributed lock для `conversation_id`
 - [ ] Ручной takeover диалога оператором (`is_paused_by_operator`)
 - [ ] Funnel-аналитика по стадиям
-- [ ] Учет `processed_contacts` по уникальным контактам, а не сообщениям
+- [x] Учет `processed_contacts` по уникальным контактам, а не сообщениям
 - [ ] Поддержка голосовых сообщений и фото
 - [ ] Автоматическая интеграция с календарем (Google Calendar / Calendly) при `meeting_intent`
 - [ ] A/B тестирование скриптов

@@ -334,6 +334,82 @@ class TestProcessCampaigns:
             await process_campaigns(mock_db)
             mock_send.assert_not_awaited()
 
+    async def test_processed_contacts_counts_unique_contacts(self, mock_db, sample_campaign, sample_script, sample_contact):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_campaign.processed_contacts = 0
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="initial_sent",
+            message_count=1,
+            initial_sent_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        )
+        sample_contact.telegram_user_id = 123456
+
+        account = MockTelegramAccount()
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+        ]
+
+        with patch("app.core.scheduler.send_follow_up_message", new_callable=AsyncMock):
+            await process_campaigns(mock_db)
+
+        # Follow-up should not increment processed_contacts.
+        assert sample_campaign.processed_contacts == 0
+
+    async def test_assigned_account_ineligible_falls_back(self, mock_db, sample_campaign, sample_script, sample_contact):
+        from app.models.campaign import CampaignContact
+        from app.models.telegram_account import TelegramAccount
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        sample_contact.telegram_user_id = 123456
+
+        assigned_account = TelegramAccount(
+            id=uuid.uuid4(),
+            phone="+111",
+            status="cooldown",
+            session_string="sess",
+        )
+        sample_contact.assigned_account_id = assigned_account.id
+
+        fallback_account = MockTelegramAccount()
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([assigned_account]),  # assigned account lookup
+            _SimpleMockResult([fallback_account]),   # fallback pool
+        ]
+
+        with patch("app.core.scheduler.send_initial_message", new_callable=AsyncMock) as mock_send:
+            await process_campaigns(mock_db)
+            mock_send.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 class TestSendInitialMessage:

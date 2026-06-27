@@ -11,7 +11,7 @@ This document defines the quality requirements for our product to ensure it meet
 ## QR-02: Core System Availability
 * **ISO/IEC 25010 Sub-characteristic:** Availability
 * **Rationale:** The application must be reliably accessible so that clients can perform their tasks without business disruption.
-* **Measurable Scenario:** During normal operation over a 30-day period, the core web application must be accessible and successfully return a 200 OK status to health checks 99.9% of the time.
+* **Measurable Scenario:** During normal operation over a 30-day period, the core web application must be accessible and successfully return a 200 OK status to health checks 99.9% of the time. As an automated proxy for this long-term SLO, every CI run must verify that the `/health` endpoint returns HTTP 200 OK within 200 milliseconds.
 * **Linked QRTs:** [QRT-02](quality-requirement-tests.md#qrt-02)
 
 ## QR-03: API Fault Tolerance

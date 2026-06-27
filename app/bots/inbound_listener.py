@@ -212,7 +212,15 @@ async def _handle_inbound_message(
             # 4. Save inbound message
             await add_message(db, conversation.id, "inbound", text, message_type="text")
 
-            # 4.5 Update campaign contact status and analytics
+            if campaign.status not in ("running",):
+                logger.info(
+                    "Campaign %s is not running (%s), skipping automated reply",
+                    campaign.id,
+                    campaign.status,
+                )
+                return
+
+            # 4.5 Update campaign contact status and analytics only for running campaigns
             cc_result = await db.execute(
                 select(CampaignContact)
                 .where(CampaignContact.contact_id == contact.id)
@@ -225,17 +233,9 @@ async def _handle_inbound_message(
                 campaign.replied_count = (campaign.replied_count or 0) + 1
                 await db.commit()
 
-            if campaign.status not in ("running",):
-                logger.info(
-                    "Campaign %s is not running (%s), skipping automated reply",
-                    campaign.id,
-                    campaign.status,
-                )
-                return
-
             # 5. Mark message as read after a short human-like delay
             user_id = int(contact.telegram_user_id)
-            await asyncio.sleep(random.uniform(2.0, 5.0))
+            await asyncio.sleep(random.uniform(2.0, 5.0))  # nosec B311
             await client.read_history(user_id)
 
             # 6. Extract facts from inbound message

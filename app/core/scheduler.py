@@ -54,6 +54,21 @@ class AccountPeerFloodError(Exception):
         super().__init__(f"Account {account_id} peer flood error")
 
 
+def _is_eligible_account(account, now: datetime) -> bool:
+    """Return True if *account* can be used to send a message right now."""
+    if account.status not in ("ready", "active"):
+        return False
+    if not account.session_string:
+        return False
+    cooldown = account.cooldown_until
+    if cooldown is not None:
+        if cooldown.tzinfo is None:
+            cooldown = cooldown.replace(tzinfo=timezone.utc)
+        if cooldown > now:
+            return False
+    return True
+
+
 def should_send_to_contact(
     contact_status: str,
     last_sent_at: datetime | None,
@@ -262,15 +277,26 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 )
                 continue
 
-            # Select account
+            # Select account. If a contact has an assigned account, prefer it
+            # only when it is eligible; otherwise fall back to any eligible account.
+            account = None
             if contact.assigned_account_id:
                 acc_result = await db_session.execute(
                     select(TelegramAccount).where(
                         TelegramAccount.id == contact.assigned_account_id
                     )
                 )
-                account = acc_result.scalar_one_or_none()
-            else:
+                assigned_account = acc_result.scalar_one_or_none()
+                if assigned_account and _is_eligible_account(assigned_account, now):
+                    account = assigned_account
+                else:
+                    logger.debug(
+                        "Assigned account %s for contact %s is not eligible, falling back",
+                        contact.assigned_account_id,
+                        contact.id,
+                    )
+
+            if account is None:
                 acc_result = await db_session.execute(
                     select(TelegramAccount).where(
                         TelegramAccount.status.in_(["ready", "active"]),
@@ -299,6 +325,10 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                         elapsed,
                     )
                     continue
+
+            # Track whether this is the first message to the contact so that
+            # processed_contacts counts unique contacts, not outbound messages.
+            was_first_message = cc.status == "pending"
 
             async def _send_with_account(acc):
                 if cc.status == "pending":
@@ -394,7 +424,8 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 await db_session.rollback()
                 continue
 
-            campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
+            if was_first_message:
+                campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
             await db_session.commit()
 
 
@@ -535,7 +566,7 @@ async def send_initial_message(
         redis = await get_redis()
         await invalidate_conversation_cache(redis, conversation.id)
     except Exception:
-        pass
+        logger.debug("Failed to invalidate conversation cache", exc_info=True)
 
 
 async def send_follow_up_message(
@@ -702,7 +733,7 @@ async def send_follow_up_message(
         redis = await get_redis()
         await invalidate_conversation_cache(redis, conversation.id)
     except Exception:
-        pass
+        logger.debug("Failed to invalidate conversation cache", exc_info=True)
 
 
 # ---------------------------------------------------------------------------

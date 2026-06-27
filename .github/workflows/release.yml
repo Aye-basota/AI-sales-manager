@@ -18,9 +18,28 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
+      - name: Build release notes
+        id: release_notes
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          cat > /tmp/release_body.md <<EOF
+          ## AI Sales Manager v${VERSION}
+
+          This release maps to the **Assignment 4 Sprint increment**.
+
+          ### Links
+          - Sprint milestone: https://github.com/${{ github.repository }}/milestones
+          - Deployment / run instructions: https://github.com/${{ github.repository }}/blob/main/LAUNCH_GUIDE.md
+          - Public sanitized demo video: (add link)
+          - Full changelog: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
+
+          ### Changes
+          $(sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$d')
+          EOF
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: MVP v1 ${{ steps.version.outputs.VERSION }}
-          body_path: CHANGELOG.md
-          generate_release_notes: true
+          name: Assignment 4 Sprint Release v${{ steps.version.outputs.VERSION }}
+          body_path: /tmp/release_body.md
+          generate_release_notes: false

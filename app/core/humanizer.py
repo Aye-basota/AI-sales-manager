@@ -21,7 +21,7 @@ def calculate_typing_delay(
     """
     if not text:
         return 0
-    speed = random.uniform(*chars_per_min)
+    speed = random.uniform(*chars_per_min)  # nosec B311
     chars_per_sec = speed / 60.0
     delay_sec = len(text) / chars_per_sec
     return min(int(delay_sec * 1000), max_ms)
@@ -34,7 +34,7 @@ def calculate_thinking_delay(min_sec: int = 3, max_sec: int = 12) -> int:
     It is applied *before* showing the typing indicator so the lead does not
     see "typing..." while the agent is "thinking".
     """
-    delay_sec = random.randint(min_sec, max_sec)
+    delay_sec = random.randint(min_sec, max_sec)  # nosec B311
     return delay_sec * 1000
 
 
@@ -47,9 +47,9 @@ _SELF_CORRECTIONS = [
 
 def maybe_self_correct(text: str, rate: float = 0.0) -> str:
     """With probability *rate*, prepend a casual self-correction prefix."""
-    if not text or random.random() > rate:
+    if not text or random.random() > rate:  # nosec B311
         return text
-    prefix = random.choice(_SELF_CORRECTIONS)
+    prefix = random.choice(_SELF_CORRECTIONS)  # nosec B311
     return prefix + text
 
 
@@ -66,15 +66,15 @@ def add_casual_markers(text: str, rate: float = 0.0) -> str:
     A marker is inserted at the beginning of a random sentence with
     probability *rate*.  Only one marker is injected per call.
     """
-    if not text or random.random() > rate:
+    if not text or random.random() > rate:  # nosec B311
         return text
 
     sentences = re.split(r"(?<=[.!?])\s+", text)
     if not sentences:
         return text
 
-    idx = random.randrange(len(sentences))
-    marker = random.choice(_CASUAL_MARKERS)
+    idx = random.randrange(len(sentences))  # nosec B311
+    marker = random.choice(_CASUAL_MARKERS)  # nosec B311
     sentence = sentences[idx].lstrip()
     # Preserve original leading whitespace if any
     leading_ws = sentences[idx][: len(sentences[idx]) - len(sentences[idx].lstrip())]
@@ -99,9 +99,9 @@ _DOUBLE_TAKE_TEMPLATES = [
 
 def maybe_double_take(text: str, city: str | None, rate: float = 0.0) -> str:
     """Append a double-take question or observation about city with probability rate."""
-    if not city or random.random() > rate:
+    if not city or random.random() > rate:  # nosec B311
         return text
-    template = random.choice(_DOUBLE_TAKE_TEMPLATES)
+    template = random.choice(_DOUBLE_TAKE_TEMPLATES)  # nosec B311
     return f"{text}\n\n{template.format(city=city)}"
 
 
@@ -176,7 +176,7 @@ def split_message_into_chunks(
 
 def chunk_pause_seconds(min_sec: float = 2.0, max_sec: float = 6.0) -> float:
     """Return a random pause length between consecutive message chunks."""
-    return random.uniform(min_sec, max_sec)
+    return random.uniform(min_sec, max_sec)  # nosec B311
 
 
 def contains_markdown(text: str) -> bool:

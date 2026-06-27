@@ -133,6 +133,52 @@ class TestSellerClient:
         assert client._heartbeat_task is None
 
 
+class TestSellerClientHelpers:
+    def test_parse_proxy_returns_none_for_empty_url(self):
+        from app.bots.seller_client import _parse_proxy
+        assert _parse_proxy(None) is None
+        assert _parse_proxy("") is None
+
+    def test_parse_proxy_parses_socks5_url(self):
+        from app.bots.seller_client import _parse_proxy
+        proxy = _parse_proxy("socks5://user:pass@proxy.example.com:1080")
+        assert proxy["scheme"] == "socks5"
+        assert proxy["hostname"] == "proxy.example.com"
+        assert proxy["port"] == 1080
+        assert proxy["username"] == "user"
+        assert proxy["password"] == "pass"
+
+    def test_parse_proxy_ignores_unsupported_scheme(self):
+        from app.bots.seller_client import _parse_proxy
+        assert _parse_proxy("https://proxy.example.com:8080") is None
+
+    @pytest.mark.asyncio
+    async def test_set_typing_without_client_logs_debug(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        with patch("app.bots.seller_client.logger.debug") as mock_debug:
+            await client.set_typing(user_id=123)
+        mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_set_online_without_client_logs_debug(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        with patch("app.bots.seller_client.logger.debug") as mock_debug:
+            await client.set_online()
+        mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_read_history_without_client_logs_debug(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        with patch("app.bots.seller_client.logger.debug") as mock_debug:
+            await client.read_history(user_id=123)
+        mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_me_returns_none_when_no_client(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        assert await client.get_me() is None
+
+
 class TestClientPool:
     def test_register_and_get_client(self):
         pool = ClientPool()

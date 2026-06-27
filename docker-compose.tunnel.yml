@@ -1,0 +1,24 @@
+# Docker Compose override that adds a public HTTPS tunnel via localtunnel.
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d
+#
+# The tunnel service exposes http://api:8000 on a public URL.
+# Keep your host running and connected to the internet while the tunnel is needed.
+
+services:
+  tunnel:
+    image: node:20-alpine
+    container_name: ai-sales-tunnel
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        echo "Starting localtunnel to http://api:8000 ..." && \
+        npx localtunnel --port 8000 --local-host api
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - api
+    networks:
+      - default

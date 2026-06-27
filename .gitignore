@@ -51,3 +51,10 @@ redis_data/
 # Temporary fix scripts
 fix_*.py
 
+# Coverage artifacts
+.coverage
+htmlcov/
+
+# Assignment files (kept locally, not committed)
+Assignment_04.md
+

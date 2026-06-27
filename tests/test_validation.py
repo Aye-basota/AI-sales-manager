@@ -93,3 +93,33 @@ async def test_validate_and_enrich_skips_deleted(mock_deleted_user):
 
     result = await validate_and_enrich(["deleted_user"], client=mock_client)
     assert "deleted_user" not in result
+
+
+@pytest.mark.asyncio
+async def test_validate_creates_temp_client_when_needed():
+    with patch("app.services.lead_validation._PYROGRAM_AVAILABLE", True):
+        with patch("app.services.lead_validation.Client") as MockClient:
+            client_inst = MockClient.return_value
+            client_inst.start = AsyncMock()
+            client_inst.stop = AsyncMock()
+            client_inst.get_users = AsyncMock(return_value=[])
+
+            with patch("app.services.lead_validation.get_settings") as mock_settings:
+                mock_settings.return_value.telegram_api_id = 12345
+                mock_settings.return_value.telegram_api_hash = "abc"
+
+                result = await validate_telegram_usernames(["user1"])
+                assert result == []
+                MockClient.assert_called_once()
+                client_inst.start.assert_awaited_once()
+                client_inst.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_validate_handles_batch_exception():
+    mock_client = MagicMock()
+    mock_client.get_users = AsyncMock(side_effect=Exception("API error"))
+
+    with patch("app.services.lead_validation._PYROGRAM_AVAILABLE", True):
+        result = await validate_telegram_usernames(["user1"], client=mock_client)
+    assert result == []
