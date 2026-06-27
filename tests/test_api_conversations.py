@@ -23,7 +23,9 @@ def test_get_conversation_messages(client, mock_db, sample_message):
 def test_update_conversation_status(client, mock_db, sample_conversation):
     mock_db.execute.return_value = MockResult([sample_conversation])
     payload = {"operator_status": "resolved", "operator_notes": "Done"}
-    response = client.put(f"/conversations/{sample_conversation.id}/status", json=payload)
+    response = client.put(
+        f"/conversations/{sample_conversation.id}/status", json=payload
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["operator_status"] == "resolved"
@@ -32,5 +34,7 @@ def test_update_conversation_status(client, mock_db, sample_conversation):
 
 def test_update_conversation_status_not_found(client, mock_db):
     mock_db.execute.return_value = MockResult([])
-    response = client.put(f"/conversations/{uuid4()}/status", json={"operator_status": "resolved"})
+    response = client.put(
+        f"/conversations/{uuid4()}/status", json={"operator_status": "resolved"}
+    )
     assert response.status_code == 404

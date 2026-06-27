@@ -26,4 +26,6 @@ class Contact(Base):
     assigned_script_id = Column(UUID(as_uuid=True), ForeignKey("scripts.id"))
     assigned_account_id = Column(UUID(as_uuid=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

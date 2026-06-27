@@ -1,7 +1,6 @@
 """Dedicated tests for Admin Bot analytics and hot leads commands."""
 
 import uuid
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -161,7 +160,9 @@ class TestFormatHotleads:
         assert "🔥" in text
 
     def test_phone_fallback(self):
-        conv = Conversation(id=uuid.uuid4(), current_state="meeting_booked", sentiment=None)
+        conv = Conversation(
+            id=uuid.uuid4(), current_state="meeting_booked", sentiment=None
+        )
         contact = Contact(id=uuid.uuid4(), telegram_username=None, phone="+123")
         text = _format_hotleads([(conv, contact)])
         assert "+123" in text

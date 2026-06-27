@@ -332,9 +332,9 @@ pytest tests/ -v --cov=app --cov-report=term-missing
 - `app/services/notification_service.py` — 96%
 
 Автоматизированные Quality Requirement Tests (QRTs) находятся в `tests/quality_requirement_tests/` и проверяют:
-- latency health endpoint (QRT-01),
-- availability health endpoint (QRT-02),
-- fault tolerance API на невалидном JSON (QRT-03).
+- latency health endpoint (QRT-001),
+- availability health endpoint (QRT-002),
+- fault tolerance API на невалидном JSON (QRT-003).
 
 ---
 

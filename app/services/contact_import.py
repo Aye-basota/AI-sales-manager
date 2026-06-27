@@ -58,11 +58,7 @@ def _process_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
 
     records: list[dict[str, Any]] = []
     for _, row in df.iterrows():
-        record = {
-            key: value
-            for key, value in row.to_dict().items()
-            if pd.notna(value)
-        }
+        record = {key: value for key, value in row.to_dict().items() if pd.notna(value)}
         if not record:
             continue
 
@@ -144,9 +140,7 @@ async def upsert_contacts(
 
     # Pre-load existing contacts by username and phone to avoid N+1 queries
     usernames = [
-        r["telegram_username"].lower()
-        for r in records
-        if r.get("telegram_username")
+        r["telegram_username"].lower() for r in records if r.get("telegram_username")
     ]
     phones = [r["phone"] for r in records if r.get("phone")]
 
@@ -155,18 +149,14 @@ async def upsert_contacts(
 
     if usernames:
         result = await db.execute(
-            select(Contact).where(
-                Contact.telegram_username.in_(usernames)
-            )
+            select(Contact).where(Contact.telegram_username.in_(usernames))
         )
         for contact in result.scalars().all():
             if contact.telegram_username:
                 existing_by_username[contact.telegram_username.lower()] = contact
 
     if phones:
-        result = await db.execute(
-            select(Contact).where(Contact.phone.in_(phones))
-        )
+        result = await db.execute(select(Contact).where(Contact.phone.in_(phones)))
         for contact in result.scalars().all():
             if contact.phone:
                 existing_by_phone[contact.phone] = contact

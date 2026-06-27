@@ -67,12 +67,16 @@ async def start_inbound_listeners(db_session: AsyncSession | None = None) -> Non
     if db_session is None:
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
-                select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
+                select(TelegramAccount).where(
+                    TelegramAccount.status.in_(["ready", "active"])
+                )
             )
             accounts = result.scalars().all()
     else:
         result = await db_session.execute(
-            select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
+            select(TelegramAccount).where(
+                TelegramAccount.status.in_(["ready", "active"])
+            )
         )
         accounts = result.scalars().all()
 
@@ -148,7 +152,9 @@ async def _handle_inbound_message(
             )
             contact: Contact | None = result.scalar_one_or_none()
             if not contact:
-                logger.info("Creating new contact for telegram_user_id %s", telegram_user_id)
+                logger.info(
+                    "Creating new contact for telegram_user_id %s", telegram_user_id
+                )
                 contact = Contact(
                     telegram_user_id=telegram_user_id,
                     telegram_username=message.from_user.username or "",
@@ -227,7 +233,11 @@ async def _handle_inbound_message(
                 .where(CampaignContact.campaign_id == campaign.id)
             )
             campaign_contact = cc_result.scalar_one_or_none()
-            if campaign_contact and campaign_contact.status in ("pending", "initial_sent", "follow_up_sent"):
+            if campaign_contact and campaign_contact.status in (
+                "pending",
+                "initial_sent",
+                "follow_up_sent",
+            ):
                 campaign_contact.status = "replied"
                 campaign_contact.reply_received_at = datetime.now(timezone.utc)
                 campaign.replied_count = (campaign.replied_count or 0) + 1
@@ -282,7 +292,9 @@ async def _handle_inbound_message(
             context = await get_conversation_context(db, conversation.id, limit=10)
 
             # 10. Generate response
-            conversation_stage = getattr(conversation, "conversation_stage", None) or "hook"
+            conversation_stage = (
+                getattr(conversation, "conversation_stage", None) or "hook"
+            )
             system_prompt = build_system_prompt(
                 script, conversation_stage=conversation_stage
             )
@@ -319,10 +331,13 @@ async def _handle_inbound_message(
             await client.set_online()
 
             last_outbound = [
-                msg.content for msg in context["messages"] if msg.direction == "outbound"
+                msg.content
+                for msg in context["messages"]
+                if msg.direction == "outbound"
             ]
 
             from app.core.funnel import get_max_length_for_stage
+
             max_length = get_max_length_for_stage(script, conversation_stage)
             max_tokens = int(max_length * 1.5) if max_length else None
 
@@ -395,7 +410,9 @@ async def _handle_inbound_message(
             conversation.sentiment = (
                 "positive"
                 if intent in ("positive", "meeting_intent")
-                else "negative" if intent == "negative" else "neutral"
+                else "negative"
+                if intent == "negative"
+                else "neutral"
             )
             current_facts = dict(conversation.facts_extracted or {})
             current_facts["last_intent"] = intent
@@ -405,7 +422,11 @@ async def _handle_inbound_message(
             # 15. Notify if hot lead
             if intent == "meeting_intent" or new_state in ("hot", "meeting_booked"):
                 notif = NotificationService()
-                await notif.send_hot_lead_alert(contact, conversation, last_message_text=text)
+                await notif.send_hot_lead_alert(
+                    contact, conversation, last_message_text=text
+                )
 
         except Exception as exc:
-            logger.exception("Error handling inbound message from %s: %s", telegram_user_id, exc)
+            logger.exception(
+                "Error handling inbound message from %s: %s", telegram_user_id, exc
+            )

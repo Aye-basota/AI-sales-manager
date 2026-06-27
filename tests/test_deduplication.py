@@ -13,19 +13,20 @@ def _build_mock_session_with_results(results):
     """Build an AsyncMock session that returns *results* from execute()."""
     from unittest.mock import MagicMock
     from tests.conftest import MockResult
+
     session = AsyncMock()
     session.execute.return_value = MockResult(results)
     session.add = MagicMock()
 
     async def refresh_side_effect(obj):
-        if hasattr(obj, 'id') and obj.id is None:
+        if hasattr(obj, "id") and obj.id is None:
             obj.id = uuid4()
-        if hasattr(obj, 'created_at') and obj.created_at is None:
+        if hasattr(obj, "created_at") and obj.created_at is None:
             obj.created_at = datetime.now()
-        if hasattr(obj, 'updated_at') and obj.updated_at is None:
+        if hasattr(obj, "updated_at") and obj.updated_at is None:
             obj.updated_at = datetime.now()
-        if hasattr(obj, 'source') and obj.source is None:
-            obj.source = 'csv_import'
+        if hasattr(obj, "source") and obj.source is None:
+            obj.source = "csv_import"
 
     session.refresh.side_effect = refresh_side_effect
     return session

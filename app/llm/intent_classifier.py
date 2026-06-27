@@ -19,7 +19,10 @@ VALID_INTENTS = {
 async def classify_intent(message: str, engine: LLMEngine) -> str:
     prompt = build_intent_classification_prompt(message)
     messages = [
-        {"role": "system", "content": "Ты классифицируешь намерения. Верни только метку."},
+        {
+            "role": "system",
+            "content": "Ты классифицируешь намерения. Верни только метку.",
+        },
         {"role": "user", "content": prompt},
     ]
 
@@ -28,7 +31,7 @@ async def classify_intent(message: str, engine: LLMEngine) -> str:
 
     # Try to extract a label by looking for any valid intent in the text.
     # Prefer exact matches, then substring matches.
-    cleaned = re.sub(r'[^a-z_\s]', '', raw_text)
+    cleaned = re.sub(r"[^a-z_\s]", "", raw_text)
     words = cleaned.split()
 
     for word in words:
@@ -40,5 +43,8 @@ async def classify_intent(message: str, engine: LLMEngine) -> str:
             return intent
 
     # Default fallback if nothing matched
-    logger.warning("Could not classify intent for message, defaulting to 'informational': %s", message)
+    logger.warning(
+        "Could not classify intent for message, defaulting to 'informational': %s",
+        message,
+    )
     return "informational"

@@ -8,8 +8,15 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from app.db.session import engine, Base, AsyncSessionLocal
-from app.api import scripts, campaigns, contacts, conversations, analytics, health, telegram_accounts
+from app.api import (
+    scripts,
+    campaigns,
+    contacts,
+    conversations,
+    analytics,
+    health,
+    telegram_accounts,
+)
 from app.bots import start_bot, stop_bot
 from app.bots.inbound_listener import start_inbound_listeners, stop_inbound_listeners
 from app.db.redis import close_redis
@@ -24,6 +31,7 @@ async def lifespan(app: FastAPI):
     # Tests and some deployment environments run the app in a background thread,
     # where signal handling is not available.
     if threading.current_thread() is threading.main_thread():
+
         def _signal_handler(signum):
             logger.info("Received signal %s, initiating graceful shutdown...", signum)
 

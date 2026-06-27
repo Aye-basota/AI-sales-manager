@@ -48,7 +48,9 @@ async def list_telegram_accounts(db: AsyncSession = Depends(get_db)):
 
 @router.get("/{account_id}", response_model=TelegramAccountResponse)
 async def get_telegram_account(account_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
+    result = await db.execute(
+        select(TelegramAccount).where(TelegramAccount.id == account_id)
+    )
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Telegram account not found")
@@ -72,7 +74,9 @@ async def create_telegram_account(
 async def update_telegram_account(
     account_id: UUID, payload: TelegramAccountUpdate, db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
+    result = await db.execute(
+        select(TelegramAccount).where(TelegramAccount.id == account_id)
+    )
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Telegram account not found")
@@ -88,7 +92,9 @@ async def update_telegram_account(
 
 @router.delete("/{account_id}", status_code=204)
 async def delete_telegram_account(account_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
+    result = await db.execute(
+        select(TelegramAccount).where(TelegramAccount.id == account_id)
+    )
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Telegram account not found")

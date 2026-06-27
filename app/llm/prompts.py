@@ -48,7 +48,9 @@ def build_system_prompt(
     role = script.role_prompt or "Ты менеджер по продажам."
     audience = script.target_audience or ""
     goal = script.goal or "Довести до созвона."
-    criteria = script.success_criteria or "Клиент согласился на демо или назвал удобное время."
+    criteria = (
+        script.success_criteria or "Клиент согласился на демо или назвал удобное время."
+    )
     tone = script.tone or "professional"
     language = getattr(script, "language", None) or "ru"
     emoji_policy = getattr(script, "emoji_policy", None) or "forbidden"
@@ -97,9 +99,9 @@ def build_system_prompt(
         f"анонимно, анонимность, микшеры, P2P, незаметно, не светиться, обойти, обход, "
         f"отмыть, отмывание, скрыть следы, теневой, серый.\n"
         f"13. При возражениях — не дави, используй техники:\n"
-        f"   - Цена: \"Многие так думают, но когда посчитали ROI...\"\n"
-        f"   - Не нужно: \"Понимаю, а как сейчас решаете эту задачу?\"\n"
-        f"   - Позже: \"Конечно, а когда планируете?\"\n\n"
+        f'   - Цена: "Многие так думают, но когда посчитали ROI..."\n'
+        f'   - Не нужно: "Понимаю, а как сейчас решаете эту задачу?"\n'
+        f'   - Позже: "Конечно, а когда планируете?"\n\n'
         f"ИНСТРУКЦИЯ К ТЕКУЩЕМУ ЭТАПУ ({conversation_stage}):\n"
         f"{stage_instructions}"
     )

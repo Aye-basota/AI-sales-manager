@@ -3,7 +3,10 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.lead_validation import validate_telegram_usernames, validate_and_enrich
+from app.services.lead_validation import (
+    validate_telegram_usernames,
+    validate_and_enrich,
+)
 
 
 @pytest.fixture
@@ -44,7 +47,9 @@ async def test_validate_empty_list():
 @pytest.mark.asyncio
 async def test_validate_filters_deleted_users(mock_pyrogram_user, mock_deleted_user):
     mock_client = MagicMock()
-    mock_client.get_users = AsyncMock(return_value=[mock_pyrogram_user, mock_deleted_user])
+    mock_client.get_users = AsyncMock(
+        return_value=[mock_pyrogram_user, mock_deleted_user]
+    )
 
     result = await validate_telegram_usernames(
         ["valid_user", "deleted_user"], client=mock_client
@@ -66,7 +71,7 @@ async def test_validate_batch_processing():
     mock_client.get_users = AsyncMock(return_value=users[:200])
 
     with patch("app.services.lead_validation._PYROGRAM_AVAILABLE", True):
-        result = await validate_telegram_usernames(
+        await validate_telegram_usernames(
             [f"user_{i}" for i in range(250)], client=mock_client
         )
 

@@ -1,7 +1,7 @@
 """Dedicated tests for Admin Bot FSM transitions."""
 
 import uuid
-from datetime import datetime, time as dt_time
+from datetime import time as dt_time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +9,6 @@ from aiogram import types
 from aiogram.fsm.context import FSMContext
 
 from app.bots.admin_bot import (
-    cmd_newscript,
     process_script_name,
     process_script_role,
     process_script_audience,
@@ -17,10 +16,6 @@ from app.bots.admin_bot import (
     process_script_criteria,
     process_script_tone,
     process_script_first_message_goal,
-    process_script_call_to_action,
-    process_script_language,
-    process_script_emoji_policy,
-    process_script_max_first_message_length,
     process_script_max_messages,
     process_script_delay,
     process_work_hours_default,
@@ -35,7 +30,7 @@ from app.bots.admin_bot import (
     CSVImportFSM,
     CampaignCreateFSM,
 )
-from app.models import Script, Campaign
+from app.models import Script
 
 
 @pytest.fixture
@@ -215,7 +210,9 @@ class TestUploadFSM:
         mock_message.document = MagicMock()
         mock_message.document.file_name = "file.txt"
         await process_upload_file(mock_message, mock_state)
-        mock_message.answer.assert_called_once_with("❌ Принимаются только CSV и Excel файлы.")
+        mock_message.answer.assert_called_once_with(
+            "❌ Принимаются только CSV и Excel файлы."
+        )
 
     async def test_upload_transitions_to_preview(self, mock_message, mock_state):
         mock_message.document = MagicMock()

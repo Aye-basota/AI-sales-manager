@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -64,9 +63,7 @@ async def test_handle_inbound_message_existing_conversation():
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
     conversation = Conversation(
         id=uuid.uuid4(),
         contact_id=contact.id,
@@ -132,9 +129,7 @@ async def test_handle_inbound_message_existing_conversation():
                                 "app.bots.inbound_listener.add_message",
                                 new_callable=AsyncMock,
                             ) as mock_add:
-                                await _handle_inbound_message(
-                                    account, client, message
-                                )
+                                await _handle_inbound_message(account, client, message)
 
                                 client.set_online.assert_awaited_once()
                                 client.send_message.assert_awaited_once()
@@ -157,12 +152,8 @@ async def test_handle_inbound_message_new_conversation():
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
-    campaign = Campaign(
-        id=uuid.uuid4(), script_id=uuid.uuid4(), status="running"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    campaign = Campaign(id=uuid.uuid4(), script_id=uuid.uuid4(), status="running")
     cc = CampaignContact(
         id=uuid.uuid4(),
         campaign_id=campaign.id,
@@ -220,9 +211,7 @@ async def test_handle_inbound_message_new_conversation():
                                 "app.bots.inbound_listener.add_message",
                                 new_callable=AsyncMock,
                             ) as mock_add:
-                                await _handle_inbound_message(
-                                    account, client, message
-                                )
+                                await _handle_inbound_message(account, client, message)
 
                                 client.send_message.assert_awaited_once()
                                 mock_add.assert_awaited()
@@ -239,9 +228,7 @@ async def test_handle_inbound_message_paused_campaign_does_not_update_analytics(
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
     conversation = Conversation(
         id=uuid.uuid4(),
         contact_id=contact.id,
@@ -319,9 +306,7 @@ async def test_handle_inbound_message_guardrails_block():
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
     conversation = Conversation(
         id=uuid.uuid4(),
         contact_id=contact.id,
@@ -387,9 +372,7 @@ async def test_handle_inbound_message_guardrails_block():
                                 "app.bots.inbound_listener.add_message",
                                 new_callable=AsyncMock,
                             ):
-                                await _handle_inbound_message(
-                                    account, client, message
-                                )
+                                await _handle_inbound_message(account, client, message)
 
                                 # Fallback text should still be sent
                                 client.send_message.assert_awaited_once()

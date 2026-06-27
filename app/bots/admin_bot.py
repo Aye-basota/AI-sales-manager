@@ -78,6 +78,7 @@ def _get_bot() -> Bot:
 # FSM States
 # ---------------------------------------------------------------------------
 
+
 class ScriptCreateFSM(StatesGroup):
     name = State()
     role_prompt = State()
@@ -117,6 +118,7 @@ class CampaignStartFSM(StatesGroup):
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
+
 
 def _format_scripts(scripts: List) -> str:
     lines = []
@@ -160,21 +162,37 @@ def _build_campaign_buttons(campaign) -> list:
 
     if status == "draft":
         return [
-            types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_start:{campaign.id}"),
-            types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"),
+            types.InlineKeyboardButton(
+                text=f"▶️ {name}", callback_data=f"camp_start:{campaign.id}"
+            ),
+            types.InlineKeyboardButton(
+                text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"
+            ),
         ]
     elif status == "running":
         return [
-            types.InlineKeyboardButton(text=f"⏸ {name}", callback_data=f"camp_pause:{campaign.id}"),
-            types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"),
+            types.InlineKeyboardButton(
+                text=f"⏸ {name}", callback_data=f"camp_pause:{campaign.id}"
+            ),
+            types.InlineKeyboardButton(
+                text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"
+            ),
         ]
     elif status == "paused":
         return [
-            types.InlineKeyboardButton(text=f"▶️ {name}", callback_data=f"camp_resume:{campaign.id}"),
-            types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"),
+            types.InlineKeyboardButton(
+                text=f"▶️ {name}", callback_data=f"camp_resume:{campaign.id}"
+            ),
+            types.InlineKeyboardButton(
+                text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"
+            ),
         ]
     else:
-        return [types.InlineKeyboardButton(text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}")]
+        return [
+            types.InlineKeyboardButton(
+                text=f"🗑 {name}", callback_data=f"camp_delete:{campaign.id}"
+            )
+        ]
 
 
 def _format_hotleads(rows: List) -> str:
@@ -215,6 +233,7 @@ def _format_analytics(
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -279,7 +298,11 @@ async def cmd_scripts(message: types.Message):
     text = _format_scripts(scripts)
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_scripts")]
+            [
+                types.InlineKeyboardButton(
+                    text="🔄 Refresh", callback_data="refresh_scripts"
+                )
+            ]
         ]
     )
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
@@ -395,7 +418,10 @@ async def handle_camp_start(callback: types.CallbackQuery):
             await session.commit()
             await callback.answer("▶️ Запущено")
             from app.core.scheduler import process_campaigns
-            asyncio.create_task(_process_campaign_safely(campaign.id, process_campaigns))
+
+            asyncio.create_task(
+                _process_campaign_safely(campaign.id, process_campaigns)
+            )
         else:
             await callback.answer("❌ Кампания уже запущена или не найдена")
     await _send_or_edit_campaigns(callback.message)
@@ -449,10 +475,14 @@ async def cmd_analytics(message: types.Message):
             select(func.count(Message.id)).where(Message.direction == "inbound")
         )
         hot = await session.scalar(
-            select(func.count(Conversation.id)).where(Conversation.current_state == "hot")
+            select(func.count(Conversation.id)).where(
+                Conversation.current_state == "hot"
+            )
         )
         meetings = await session.scalar(
-            select(func.count(Conversation.id)).where(Conversation.current_state == "meeting_booked")
+            select(func.count(Conversation.id)).where(
+                Conversation.current_state == "meeting_booked"
+            )
         )
         rejected = await session.scalar(
             select(func.count(Message.id))
@@ -460,8 +490,9 @@ async def cmd_analytics(message: types.Message):
             .where(Message.llm_model == "fallback")
         )
         avg_length = await session.scalar(
-            select(func.coalesce(func.avg(func.length(Message.content)), 0))
-            .where(Message.direction == "outbound")
+            select(func.coalesce(func.avg(func.length(Message.content)), 0)).where(
+                Message.direction == "outbound"
+            )
         )
 
     text = _format_analytics(
@@ -475,8 +506,16 @@ async def cmd_analytics(message: types.Message):
     )
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="📋 Экспорт в CSV", callback_data="export_analytics")],
-            [types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_analytics")],
+            [
+                types.InlineKeyboardButton(
+                    text="📋 Экспорт в CSV", callback_data="export_analytics"
+                )
+            ],
+            [
+                types.InlineKeyboardButton(
+                    text="🔄 Refresh", callback_data="refresh_analytics"
+                )
+            ],
         ]
     )
     await message.answer(text, reply_markup=kb)
@@ -503,22 +542,33 @@ async def export_analytics(callback: types.CallbackQuery):
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow([
-        "contact_id", "username", "first_name", "last_name", "company",
-        "position", "campaign", "campaign_status", "contact_status",
-    ])
+    writer.writerow(
+        [
+            "contact_id",
+            "username",
+            "first_name",
+            "last_name",
+            "company",
+            "position",
+            "campaign",
+            "campaign_status",
+            "contact_status",
+        ]
+    )
     for contact, campaign, cc in rows:
-        writer.writerow([
-            str(contact.id),
-            contact.telegram_username,
-            contact.first_name,
-            contact.last_name,
-            contact.company_name,
-            contact.position,
-            campaign.name,
-            campaign.status,
-            cc.status,
-        ])
+        writer.writerow(
+            [
+                str(contact.id),
+                contact.telegram_username,
+                contact.first_name,
+                contact.last_name,
+                contact.company_name,
+                contact.position,
+                campaign.name,
+                campaign.status,
+                cc.status,
+            ]
+        )
 
     bytes_output = io.BytesIO(output.getvalue().encode("utf-8"))
     bytes_output.seek(0)
@@ -552,15 +602,31 @@ async def cmd_hotleads(message: types.Message):
     for conv, contact in rows:
         kb_rows.append(
             [
-                types.InlineKeyboardButton(text="✅ Qualified", callback_data=f"qualify:{conv.id}"),
-                types.InlineKeyboardButton(text="❌ Rejected", callback_data=f"reject:{conv.id}"),
-                types.InlineKeyboardButton(text="📜 История диалога", callback_data=f"history:{conv.id}"),
+                types.InlineKeyboardButton(
+                    text="✅ Qualified", callback_data=f"qualify:{conv.id}"
+                ),
+                types.InlineKeyboardButton(
+                    text="❌ Rejected", callback_data=f"reject:{conv.id}"
+                ),
+                types.InlineKeyboardButton(
+                    text="📜 История диалога", callback_data=f"history:{conv.id}"
+                ),
             ]
         )
         kb_rows.append(
-            [types.InlineKeyboardButton(text="📋 Диалог", callback_data=f"dialog:{conv.id}")]
+            [
+                types.InlineKeyboardButton(
+                    text="📋 Диалог", callback_data=f"dialog:{conv.id}"
+                )
+            ]
         )
-    kb_rows.append([types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_hotleads")])
+    kb_rows.append(
+        [
+            types.InlineKeyboardButton(
+                text="🔄 Refresh", callback_data="refresh_hotleads"
+            )
+        ]
+    )
     kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
@@ -581,7 +647,9 @@ async def handle_qualify(callback: types.CallbackQuery):
         return
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
+        result = await session.execute(
+            select(Conversation).where(Conversation.id == conv_id)
+        )
         conversation = result.scalar_one_or_none()
         if conversation:
             conversation.operator_status = "qualified"
@@ -601,7 +669,9 @@ async def handle_reject(callback: types.CallbackQuery):
         return
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
+        result = await session.execute(
+            select(Conversation).where(Conversation.id == conv_id)
+        )
         conversation = result.scalar_one_or_none()
         if conversation:
             conversation.operator_status = "rejected"
@@ -757,6 +827,7 @@ async def cmd_conversations(message: types.Message):
 # FSM: Create Script
 # ---------------------------------------------------------------------------
 
+
 @router.message(Command("newscript"))
 async def cmd_newscript(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.name)
@@ -767,14 +838,18 @@ async def cmd_newscript(message: types.Message, state: FSMContext):
 async def process_script_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(ScriptCreateFSM.role_prompt)
-    await message.answer("Введите роль (role_prompt), например:\n'Ты менеджер по продажам MedTech решений.'")
+    await message.answer(
+        "Введите роль (role_prompt), например:\n'Ты менеджер по продажам MedTech решений.'"
+    )
 
 
 @router.message(ScriptCreateFSM.role_prompt)
 async def process_script_role(message: types.Message, state: FSMContext):
     await state.update_data(role_prompt=message.text)
     await state.set_state(ScriptCreateFSM.target_audience)
-    await message.answer("Введите целевую аудиторию (или отправьте '-' чтобы пропустить):")
+    await message.answer(
+        "Введите целевую аудиторию (или отправьте '-' чтобы пропустить):"
+    )
 
 
 @router.message(ScriptCreateFSM.target_audience)
@@ -782,7 +857,9 @@ async def process_script_audience(message: types.Message, state: FSMContext):
     text = message.text.strip()
     await state.update_data(target_audience=None if text == "-" else text)
     await state.set_state(ScriptCreateFSM.goal)
-    await message.answer("Введите цель диалога (goal), например:\n'Назначить демонстрацию продукта'")
+    await message.answer(
+        "Введите цель диалога (goal), например:\n'Назначить демонстрацию продукта'"
+    )
 
 
 @router.message(ScriptCreateFSM.goal)
@@ -815,12 +892,20 @@ async def process_script_tone(callback: types.CallbackQuery, state: FSMContext):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                types.InlineKeyboardButton(text="Hook (мягкий контакт)", callback_data="fmg:hook"),
-                types.InlineKeyboardButton(text="Qualification (вопрос)", callback_data="fmg:qualification"),
+                types.InlineKeyboardButton(
+                    text="Hook (мягкий контакт)", callback_data="fmg:hook"
+                ),
+                types.InlineKeyboardButton(
+                    text="Qualification (вопрос)", callback_data="fmg:qualification"
+                ),
             ],
             [
-                types.InlineKeyboardButton(text="Value (ценность)", callback_data="fmg:value"),
-                types.InlineKeyboardButton(text="Call (сразу созвон)", callback_data="fmg:cta"),
+                types.InlineKeyboardButton(
+                    text="Value (ценность)", callback_data="fmg:value"
+                ),
+                types.InlineKeyboardButton(
+                    text="Call (сразу созвон)", callback_data="fmg:cta"
+                ),
             ],
         ]
     )
@@ -829,7 +914,9 @@ async def process_script_tone(callback: types.CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("fmg:"))
-async def process_script_first_message_goal(callback: types.CallbackQuery, state: FSMContext):
+async def process_script_first_message_goal(
+    callback: types.CallbackQuery, state: FSMContext
+):
     goal = callback.data.split(":", 1)[1]
     await state.update_data(first_message_goal=goal)
     await state.set_state(ScriptCreateFSM.call_to_action)
@@ -855,9 +942,17 @@ async def process_script_language(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.emoji_policy)
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="Запрещены", callback_data="emoji:forbidden")],
+            [
+                types.InlineKeyboardButton(
+                    text="Запрещены", callback_data="emoji:forbidden"
+                )
+            ],
             [types.InlineKeyboardButton(text="Редко", callback_data="emoji:rare")],
-            [types.InlineKeyboardButton(text="Разрешены", callback_data="emoji:allowed")],
+            [
+                types.InlineKeyboardButton(
+                    text="Разрешены", callback_data="emoji:allowed"
+                )
+            ],
         ]
     )
     await message.answer("Политика использования эмодзи:", reply_markup=kb)
@@ -875,7 +970,9 @@ async def process_script_emoji_policy(callback: types.CallbackQuery, state: FSMC
 
 
 @router.message(ScriptCreateFSM.max_first_message_length)
-async def process_script_max_first_message_length(message: types.Message, state: FSMContext):
+async def process_script_max_first_message_length(
+    message: types.Message, state: FSMContext
+):
     try:
         val = int(message.text)
     except ValueError:
@@ -883,7 +980,9 @@ async def process_script_max_first_message_length(message: types.Message, state:
         return
     await state.update_data(max_first_message_length=val)
     await state.set_state(ScriptCreateFSM.max_messages)
-    await message.answer("Введите максимальное количество сообщений на контакт (например, 2):")
+    await message.answer(
+        "Введите максимальное количество сообщений на контакт (например, 2):"
+    )
 
 
 @router.message(ScriptCreateFSM.max_messages)
@@ -909,8 +1008,16 @@ async def process_script_delay(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.working_hours)
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="✅ Подтвердить 09:00-18:00", callback_data="workhours:default")],
-            [types.InlineKeyboardButton(text="📝 Указать вручную", callback_data="workhours:manual")],
+            [
+                types.InlineKeyboardButton(
+                    text="✅ Подтвердить 09:00-18:00", callback_data="workhours:default"
+                )
+            ],
+            [
+                types.InlineKeyboardButton(
+                    text="📝 Указать вручную", callback_data="workhours:manual"
+                )
+            ],
         ]
     )
     await message.answer(
@@ -931,7 +1038,9 @@ async def process_work_hours_default(callback: types.CallbackQuery, state: FSMCo
 @router.callback_query(lambda c: c.data == "workhours:manual")
 async def process_work_hours_manual(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(ScriptCreateFSM.working_hours)
-    await callback.message.answer("Введите начало рабочих часов (HH:MM, например 09:00):")
+    await callback.message.answer(
+        "Введите начало рабочих часов (HH:MM, например 09:00):"
+    )
     await callback.answer()
 
 
@@ -953,7 +1062,9 @@ async def process_script_work_start(message: types.Message, state: FSMContext):
             await state.set_state(ScriptCreateFSM.working_hours_end)
             await message.answer("Введите конец рабочих часов (HH:MM, например 18:00):")
     except ValueError:
-        await message.answer("❌ Неверный формат. Введите HH:MM-HH:MM или два отдельных значения.")
+        await message.answer(
+            "❌ Неверный формат. Введите HH:MM-HH:MM или два отдельных значения."
+        )
 
 
 @router.message(ScriptCreateFSM.working_hours_end)
@@ -999,8 +1110,16 @@ async def process_script_timezone(message: types.Message, state: FSMContext):
     )
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="✅ Создать", callback_data="script:create")],
-            [types.InlineKeyboardButton(text="❌ Отмена", callback_data="script:cancel")],
+            [
+                types.InlineKeyboardButton(
+                    text="✅ Создать", callback_data="script:create"
+                )
+            ],
+            [
+                types.InlineKeyboardButton(
+                    text="❌ Отмена", callback_data="script:cancel"
+                )
+            ],
         ]
     )
     await message.answer(summary, reply_markup=kb)
@@ -1034,7 +1153,9 @@ async def confirm_create_script(callback: types.CallbackQuery, state: FSMContext
         await session.refresh(script)
     await state.clear()
     await callback.answer("✅ Скрипт создан!")
-    await callback.message.answer(f"Скрипт <b>{script.name}</b> создан.", parse_mode="HTML")
+    await callback.message.answer(
+        f"Скрипт <b>{script.name}</b> создан.", parse_mode="HTML"
+    )
 
 
 @router.callback_query(lambda c: c.data == "script:cancel")
@@ -1047,6 +1168,7 @@ async def cancel_create_script(callback: types.CallbackQuery, state: FSMContext)
 # ---------------------------------------------------------------------------
 # FSM: Import CSV / Excel
 # ---------------------------------------------------------------------------
+
 
 @router.message(Command("upload"))
 async def cmd_upload(message: types.Message, state: FSMContext):
@@ -1076,6 +1198,7 @@ async def process_upload_file(message: types.Message, state: FSMContext):
     file_bytes = await bot.download_file(file.file_path)
 
     from app.services.contact_import import parse_csv, parse_excel
+
     try:
         contents = file_bytes.read()
         if file_name.endswith(".csv"):
@@ -1111,8 +1234,12 @@ async def process_upload_file(message: types.Message, state: FSMContext):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                types.InlineKeyboardButton(text="✅ Создать кампанию", callback_data="csv:create_campaign"),
-                types.InlineKeyboardButton(text="❌ Отмена", callback_data="csv:cancel"),
+                types.InlineKeyboardButton(
+                    text="✅ Создать кампанию", callback_data="csv:create_campaign"
+                ),
+                types.InlineKeyboardButton(
+                    text="❌ Отмена", callback_data="csv:cancel"
+                ),
             ]
         ]
     )
@@ -1138,17 +1265,26 @@ async def start_campaign_from_csv(callback: types.CallbackQuery, state: FSMConte
     await state.set_state(CampaignCreateFSM.select_script)
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Script).where(Script.is_active == True).order_by(Script.created_at.desc()).limit(20)
+            select(Script)
+            .where(Script.is_active.is_(True))
+            .order_by(Script.created_at.desc())
+            .limit(20)
         )
         scripts = result.scalars().all()
 
     if not scripts:
-        await callback.message.answer("❌ Нет активных скриптов. Сначала создайте скрипт через /newscript")
+        await callback.message.answer(
+            "❌ Нет активных скриптов. Сначала создайте скрипт через /newscript"
+        )
         await state.clear()
         return
 
     kb_rows = [
-        [types.InlineKeyboardButton(text=s.name, callback_data=f"campaign_script:{s.id}")]
+        [
+            types.InlineKeyboardButton(
+                text=s.name, callback_data=f"campaign_script:{s.id}"
+            )
+        ]
         for s in scripts
     ]
     kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
@@ -1160,14 +1296,23 @@ async def start_campaign_from_csv(callback: types.CallbackQuery, state: FSMConte
 # FSM: Campaign creation from import / discover
 # ---------------------------------------------------------------------------
 
+
 def _preview_keyboard() -> types.InlineKeyboardMarkup:
     return types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                types.InlineKeyboardButton(text="✅ Запустить", callback_data="preview:launch"),
-                types.InlineKeyboardButton(text="🔄 Перегенерировать", callback_data="preview:regenerate"),
+                types.InlineKeyboardButton(
+                    text="✅ Запустить", callback_data="preview:launch"
+                ),
+                types.InlineKeyboardButton(
+                    text="🔄 Перегенерировать", callback_data="preview:regenerate"
+                ),
             ],
-            [types.InlineKeyboardButton(text="✏️ Изменить скрипт", callback_data="preview:change_script")],
+            [
+                types.InlineKeyboardButton(
+                    text="✏️ Изменить скрипт", callback_data="preview:change_script"
+                )
+            ],
         ]
     )
 
@@ -1176,8 +1321,16 @@ async def _generate_preview_message(script: Script, record: dict) -> str:
     stage = get_first_stage(script)
     contact = SimpleNamespace(**record)
     messages = [
-        {"role": "system", "content": build_system_prompt(script, conversation_stage=stage)},
-        {"role": "user", "content": build_initial_user_prompt(script, contact, conversation_stage=stage)},
+        {
+            "role": "system",
+            "content": build_system_prompt(script, conversation_stage=stage),
+        },
+        {
+            "role": "user",
+            "content": build_initial_user_prompt(
+                script, contact, conversation_stage=stage
+            ),
+        },
     ]
     try:
         engine = LLMEngine()
@@ -1256,7 +1409,9 @@ async def handle_preview_regenerate(callback: types.CallbackQuery, state: FSMCon
 
 
 @router.callback_query(lambda c: c.data == "preview:change_script")
-async def handle_preview_change_script(callback: types.CallbackQuery, state: FSMContext):
+async def handle_preview_change_script(
+    callback: types.CallbackQuery, state: FSMContext
+):
     await start_campaign_from_csv(callback, state)
 
 
@@ -1289,10 +1444,18 @@ async def process_campaign_name(message: types.Message, state: FSMContext):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                types.InlineKeyboardButton(text="▶️ Запустить", callback_data="campaign:start_now"),
-                types.InlineKeyboardButton(text="⏸ Позже", callback_data="campaign:start_later"),
+                types.InlineKeyboardButton(
+                    text="▶️ Запустить", callback_data="campaign:start_now"
+                ),
+                types.InlineKeyboardButton(
+                    text="⏸ Позже", callback_data="campaign:start_later"
+                ),
             ],
-            [types.InlineKeyboardButton(text="❌ Отмена", callback_data="campaign:cancel")],
+            [
+                types.InlineKeyboardButton(
+                    text="❌ Отмена", callback_data="campaign:cancel"
+                )
+            ],
         ]
     )
     await message.answer(text, reply_markup=kb)
@@ -1323,6 +1486,7 @@ async def campaign_start_later(callback: types.CallbackQuery, state: FSMContext)
         await session.refresh(campaign)
 
         from app.services.contact_import import upsert_contacts
+
         created, updated = await upsert_contacts(session, records, source="csv_import")
         contacts = created + updated
 
@@ -1365,6 +1529,7 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
         await session.refresh(campaign)
 
         from app.services.contact_import import upsert_contacts
+
         created, updated = await upsert_contacts(session, records, source="csv_import")
         contacts = created + updated
 
@@ -1389,6 +1554,7 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
 
     # Process campaign in background so the bot UI stays responsive.
     from app.core.scheduler import process_campaigns
+
     asyncio.create_task(_process_campaign_safely(campaign.id, process_campaigns))
 
 
@@ -1398,12 +1564,15 @@ async def _process_campaign_safely(campaign_id, process_campaigns_fn):
         async with AsyncSessionLocal() as session:
             await process_campaigns_fn(session)
     except Exception:
-        logger.exception("Background process_campaigns failed for campaign %s", campaign_id)
+        logger.exception(
+            "Background process_campaigns failed for campaign %s", campaign_id
+        )
 
 
 # ---------------------------------------------------------------------------
 # FSM: Discover Leads (reuse campaign creation)
 # ---------------------------------------------------------------------------
+
 
 @router.message(Command("discover"))
 async def cmd_discover(message: types.Message, state: FSMContext):
@@ -1428,9 +1597,15 @@ async def process_discover_query(message: types.Message, state: FSMContext):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                types.InlineKeyboardButton(text="🔍 Telegram Search", callback_data="discover:telegram_search"),
-                types.InlineKeyboardButton(text="📢 Мои каналы", callback_data="discover:channel_parse"),
-                types.InlineKeyboardButton(text="🌐 Внешняя база", callback_data="discover:external_api"),
+                types.InlineKeyboardButton(
+                    text="🔍 Telegram Search", callback_data="discover:telegram_search"
+                ),
+                types.InlineKeyboardButton(
+                    text="📢 Мои каналы", callback_data="discover:channel_parse"
+                ),
+                types.InlineKeyboardButton(
+                    text="🌐 Внешняя база", callback_data="discover:external_api"
+                ),
             ]
         ]
     )
@@ -1512,7 +1687,9 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
         preview_lines.append(
             f"{idx}. @{r['telegram_username']} — {r['first_name'] or ''} {r['last_name'] or ''}"
         )
-    preview_text = "\n".join(preview_lines) if preview_lines else "(нет данных для предпросмотра)"
+    preview_text = (
+        "\n".join(preview_lines) if preview_lines else "(нет данных для предпросмотра)"
+    )
 
     text = (
         f"Найдено {len(results)} контактов. Валидно {valid_count}.\n\n"
@@ -1522,10 +1699,19 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                types.InlineKeyboardButton(text="✅ Добавить и создать кампанию", callback_data="discover_confirm:add"),
-                types.InlineKeyboardButton(text="📋 Предпросмотр", callback_data="discover_confirm:preview"),
+                types.InlineKeyboardButton(
+                    text="✅ Добавить и создать кампанию",
+                    callback_data="discover_confirm:add",
+                ),
+                types.InlineKeyboardButton(
+                    text="📋 Предпросмотр", callback_data="discover_confirm:preview"
+                ),
             ],
-            [types.InlineKeyboardButton(text="❌ Отмена", callback_data="discover_confirm:cancel")],
+            [
+                types.InlineKeyboardButton(
+                    text="❌ Отмена", callback_data="discover_confirm:cancel"
+                )
+            ],
         ]
     )
     await message.answer(text, reply_markup=kb)
@@ -1558,6 +1744,7 @@ async def process_discover_confirm(callback: types.CallbackQuery, state: FSMCont
     if action == "add":
         async with AsyncSessionLocal() as session:
             from app.services.contact_import import upsert_contacts
+
             try:
                 created, updated = await upsert_contacts(
                     session, discovered, source=data.get("source", "discover")
@@ -1584,11 +1771,15 @@ async def process_discover_confirm(callback: types.CallbackQuery, state: FSMCont
 # FSM: Start Campaign
 # ---------------------------------------------------------------------------
 
+
 @router.message(Command("startcampaign"))
 async def cmd_startcampaign(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Campaign).where(Campaign.status == "draft").order_by(Campaign.created_at.desc()).limit(20)
+            select(Campaign)
+            .where(Campaign.status == "draft")
+            .order_by(Campaign.created_at.desc())
+            .limit(20)
         )
         campaigns = result.scalars().all()
 
@@ -1599,8 +1790,12 @@ async def cmd_startcampaign(message: types.Message, state: FSMContext):
     await state.set_state(CampaignStartFSM.selecting)
     kb_rows = []
     for c in campaigns:
-        kb_rows.append([types.InlineKeyboardButton(text=c.name, callback_data=f"startcamp:{c.id}")])
-    kb_rows.append([types.InlineKeyboardButton(text="❌ Отмена", callback_data="startcamp:cancel")])
+        kb_rows.append(
+            [types.InlineKeyboardButton(text=c.name, callback_data=f"startcamp:{c.id}")]
+        )
+    kb_rows.append(
+        [types.InlineKeyboardButton(text="❌ Отмена", callback_data="startcamp:cancel")]
+    )
     kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
     await message.answer("Выберите кампанию для запуска:", reply_markup=kb)
 
@@ -1637,6 +1832,7 @@ async def handle_startcamp(callback: types.CallbackQuery, state: FSMContext):
         await session.commit()
 
         from app.core.scheduler import process_campaigns
+
         try:
             await process_campaigns(session)
         except Exception:
@@ -1644,7 +1840,9 @@ async def handle_startcamp(callback: types.CallbackQuery, state: FSMContext):
 
     await state.clear()
     await callback.answer("✅ Кампания запущена!")
-    await callback.message.answer(f"Кампания <b>{campaign.name}</b> запущена.", parse_mode="HTML")
+    await callback.message.answer(
+        f"Кампания <b>{campaign.name}</b> запущена.", parse_mode="HTML"
+    )
 
 
 MENU_HANDLERS = {

@@ -61,7 +61,9 @@ class TestCreateTelegramAccount:
         mock_db.commit.assert_awaited_once()
         mock_db.refresh.assert_awaited_once()
 
-    def test_create_account_encrypts_session_when_key_set(self, client, mock_db, monkeypatch):
+    def test_create_account_encrypts_session_when_key_set(
+        self, client, mock_db, monkeypatch
+    ):
         monkeypatch.setenv("SESSION_ENCRYPTION_KEY", "")
         payload = {
             "phone": "+79991234567",
@@ -86,7 +88,9 @@ class TestUpdateTelegramAccount:
 
     def test_update_account_not_found(self, client, mock_db):
         mock_db.execute.return_value = MockResult([])
-        response = client.put(f"/telegram-accounts/{uuid4()}", json={"status": "active"})
+        response = client.put(
+            f"/telegram-accounts/{uuid4()}", json={"status": "active"}
+        )
         assert response.status_code == 404
 
 

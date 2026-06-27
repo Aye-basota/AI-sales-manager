@@ -46,20 +46,21 @@ class MockResult:
 
 def build_mock_session(results: List[Any] = None, scalar_value: Any = None):
     from unittest.mock import MagicMock
+
     session = AsyncMock()
     result = MockResult(results, scalar_value)
     session.execute.return_value = result
     session.add = MagicMock()
 
     async def refresh_side_effect(obj):
-        if hasattr(obj, 'id') and obj.id is None:
+        if hasattr(obj, "id") and obj.id is None:
             obj.id = uuid.uuid4()
-        if hasattr(obj, 'created_at') and obj.created_at is None:
+        if hasattr(obj, "created_at") and obj.created_at is None:
             obj.created_at = datetime.now()
-        if hasattr(obj, 'updated_at') and obj.updated_at is None:
+        if hasattr(obj, "updated_at") and obj.updated_at is None:
             obj.updated_at = datetime.now()
-        if hasattr(obj, 'source') and obj.source is None:
-            obj.source = 'csv_import'
+        if hasattr(obj, "source") and obj.source is None:
+            obj.source = "csv_import"
 
     session.refresh.side_effect = refresh_side_effect
     return session
@@ -83,6 +84,7 @@ def client(mock_db):
 @pytest.fixture
 def sample_script():
     from app.models.script import Script
+
     script = Script(
         id=uuid.uuid4(),
         name="Test Script",
@@ -110,6 +112,7 @@ def sample_script():
 @pytest.fixture
 def sample_contact():
     from app.models.contact import Contact
+
     contact = Contact(
         id=uuid.uuid4(),
         telegram_username="testuser",
@@ -132,6 +135,7 @@ def sample_contact():
 @pytest.fixture
 def sample_campaign():
     from app.models.campaign import Campaign
+
     campaign = Campaign(
         id=uuid.uuid4(),
         script_id=uuid.uuid4(),
@@ -150,6 +154,7 @@ def sample_campaign():
 @pytest.fixture
 def sample_conversation():
     from app.models.conversation import Conversation
+
     conversation = Conversation(
         id=uuid.uuid4(),
         contact_id=uuid.uuid4(),
@@ -168,6 +173,7 @@ def sample_conversation():
 @pytest.fixture
 def sample_message():
     from app.models.conversation import Message
+
     message = Message(
         id=uuid.uuid4(),
         conversation_id=uuid.uuid4(),

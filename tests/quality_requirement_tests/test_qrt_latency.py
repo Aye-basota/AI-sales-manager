@@ -1,4 +1,4 @@
-"""QRT-01: Health endpoint latency under normal load."""
+"""QRT-001: Health endpoint latency under normal load."""
 
 import time
 from unittest.mock import patch

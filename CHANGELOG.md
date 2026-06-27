@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Automated Quality Requirement Tests (QRTs) in `tests/quality_requirement_tests/`:
-  - QRT-01: health endpoint latency (95th percentile ≤ 500 ms).
-  - QRT-02: health endpoint availability proxy.
-  - QRT-03: API fault tolerance on invalid JSON.
+  - QRT-001: health endpoint latency (95th percentile ≤ 500 ms).
+  - QRT-002: health endpoint availability proxy.
+  - QRT-003: API fault tolerance on invalid JSON.
 - `docs/quality-requirement-tests.md` linking QRTs to quality requirements.
 - `docs/testing.md` documenting testing strategy, critical modules, and coverage thresholds.
 - Additional CI QA check: `bandit` security static analysis.

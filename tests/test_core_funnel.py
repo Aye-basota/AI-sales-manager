@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from app.core.funnel import (
     DEFAULT_FUNNEL_STAGES,

@@ -6,55 +6,51 @@ An automated QRT is a test that runs in CI, produces deterministic pass/fail out
 
 ---
 
-## QRT-01: Health Endpoint Latency
+## QRT-001: Health Endpoint Response Time
 
-* **Linked Quality Requirement:** [QR-01](quality-requirements.md#qr-01-response-time-for-data-retrieval)
-* **ISO/IEC 25010 Sub-characteristic:** Time behaviour
-* **Objective:** Verify that the system responds quickly to a simple health check under normal load.
-* **Test Location:** `tests/quality_requirement_tests/test_qrt_latency.py`
-* **Automated Scenario:**
-  1. Start the FastAPI test client with mocked database and scheduler.
-  2. Send 100 sequential GET requests to `/health`.
-  3. Record response time for each request.
-  4. Assert that 95% of requests complete within 500 ms and all requests succeed (HTTP 200).
-* **Evidence Type:** Automated unit/integration test executed in CI.
+* **Linked quality requirement:** [QR-001](quality-requirements.md#qr-001-health-endpoint-response-time)
+* **Verification method:** Automated integration test using FastAPI `TestClient`.
+* **Test data, setup, or environment:** FastAPI test client with mocked database and scheduler. 100 sequential GET `/health` requests.
+* **Automated command or CI check:** `pytest tests/quality_requirement_tests/test_qrt_latency.py -v`
+* **Expected measurable result:** All 100 requests return HTTP `200 OK` and the 95th percentile response time is ≤ 500 ms.
+* **Evidence location:** Latest protected-default-branch CI run and local coverage report.
 
 ---
 
-## QRT-02: Health Endpoint Availability
+## QRT-002: Core System Availability Proxy
 
-* **Linked Quality Requirement:** [QR-02](quality-requirements.md#qr-02-core-system-availability)
-* **ISO/IEC 25010 Sub-characteristic:** Availability
-* **Objective:** Provide an automated proxy for the long-term availability SLO.
-* **Test Location:** `tests/quality_requirement_tests/test_qrt_availability.py`
-* **Automated Scenario:**
-  1. Start the FastAPI test client with mocked database and a running scheduler.
-  2. Send GET `/health`.
-  3. Assert HTTP 200 OK with `status` equal to `"ok"`.
-  4. Simulate a scheduler failure and assert the endpoint still returns HTTP 200 with `status` equal to `"degraded"`.
-* **Evidence Type:** Automated integration test executed in CI.
+* **Linked quality requirement:** [QR-002](quality-requirements.md#qr-002-core-system-availability-proxy)
+* **Verification method:** Automated integration test using FastAPI `TestClient`.
+* **Test data, setup, or environment:** FastAPI test client with mocked database and a mocked scheduler running state.
+* **Automated command or CI check:** `pytest tests/quality_requirement_tests/test_qrt_availability.py -v`
+* **Expected measurable result:**
+  * Scheduler running → HTTP `200 OK`, `status` is `"ok"`, `scheduler` is `true`.
+  * Scheduler not running → HTTP `200 OK`, `status` is `"degraded"`, `scheduler` is `false`.
+* **Evidence location:** Latest protected-default-branch CI run and local coverage report.
 
 ---
 
-## QRT-03: API Fault Tolerance on Invalid Input
+## QRT-003: API Fault Tolerance on Invalid Input
 
-* **Linked Quality Requirement:** [QR-03](quality-requirements.md#qr-03-api-fault-tolerance)
-* **ISO/IEC 25010 Sub-characteristic:** Fault tolerance
-* **Objective:** Verify that the API rejects malformed JSON without crashing and returns a descriptive 400 Bad Request quickly.
-* **Test Location:** `tests/quality_requirement_tests/test_qrt_fault_tolerance.py`
-* **Automated Scenario:**
-  1. Start the FastAPI test client.
-  2. POST invalid JSON (e.g., malformed body or missing required fields) to `/contacts`.
-  3. Assert HTTP 400 Bad Request.
-  4. Assert response time ≤ 200 ms.
-* **Evidence Type:** Automated integration test executed in CI.
+* **Linked quality requirement:** [QR-003](quality-requirements.md#qr-003-api-fault-tolerance-on-invalid-input)
+* **Verification method:** Automated integration test using FastAPI `TestClient`.
+* **Test data, setup, or environment:** FastAPI test client. POST requests with malformed JSON and with missing required fields.
+* **Automated command or CI check:** `pytest tests/quality_requirement_tests/test_qrt_fault_tolerance.py -v`
+* **Expected measurable result:**
+  * Malformed JSON returns HTTP `400 Bad Request` within 200 ms.
+  * Missing required field returns HTTP `400 Bad Request`.
+* **Evidence location:** Latest protected-default-branch CI run and local coverage report.
 
 ---
 
 ## Running the QRTs
 
 ```bash
+# QRTs only
 pytest tests/quality_requirement_tests/ -v
+
+# Full test suite including QRTs, unit tests, and integration tests
+pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
 The QRTs are included in the default test command used by CI:

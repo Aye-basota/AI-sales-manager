@@ -15,6 +15,7 @@ This document describes how the AI Sales Manager project is tested, what the cri
 - **pytest-mock / unittest.mock** — mocking dependencies.
 - **pytest-cov** — coverage reporting.
 - **FastAPI TestClient** — HTTP-level integration tests.
+- **ruff** — linting and formatting checks.
 - **bandit** — additional security-focused static analysis.
 
 ## Running Tests
@@ -30,37 +31,51 @@ pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=html
 pytest tests/quality_requirement_tests/ -v
 ```
 
-## Critical Modules
+## Critical Modules and Coverage
 
-A module is considered **critical** when a bug in it directly impacts:
+A module is considered **critical** when a bug in it directly impacts customer-facing functionality (API, bots, scheduler), data integrity (models, import), or security/reliability (account management, encryption).
 
-- customer-facing functionality (API, bots, scheduler),
-- data integrity (models, import),
-- security or reliability (account management, encryption).
+| Critical module | Why critical | Required line coverage | Current line coverage | Evidence |
+|---|---|---:|---:|---|
+| `app/api/*.py` | REST API endpoints exposed to users and integrations. | ≥ 30% | 72–100% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/core/scheduler.py` | Campaign processing, account selection, anti-spam logic. | ≥ 50% | 80% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/core/state_machine.py` | Conversation state transitions. | ≥ 90% | 100% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/llm/engine.py` | LLM generation and fallback cascade. | ≥ 90% | 94% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/llm/guardrails.py` | Output safety checks. | ≥ 90% | 90% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/services/notification_service.py` | Hot lead alerts. | ≥ 90% | 94% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/bots/seller_client.py` | Telegram MTProto client wrapper. | ≥ 30% | 70% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| `app/services/lead_validation.py` | Contact validation and enrichment. | ≥ 30% | 72% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
 
-| Module | Responsibility | Coverage Threshold |
-|---|---|---|
-| `app/api/*.py` | REST API endpoints | ≥ 30% |
-| `app/core/scheduler.py` | Campaign processing and anti-spam logic | ≥ 50% |
-| `app/core/state_machine.py` | Conversation state transitions | ≥ 90% |
-| `app/llm/engine.py` | LLM generation and fallback cascade | ≥ 90% |
-| `app/llm/guardrails.py` | Output safety checks | ≥ 90% |
-| `app/services/notification_service.py` | Hot lead alerts | ≥ 90% |
-| `app/bots/seller_client.py` | Telegram MTProto client wrapper | ≥ 30% |
-| `app/services/lead_validation.py` | Contact validation and enrichment | ≥ 30% |
+## Automated Test Status
 
-## Test Locations
+| Test type | Scope | Command or CI check | Latest result | Evidence |
+|---|---|---|---|---|
+| Unit tests | Critical product logic | `pytest tests/test_*.py -v` | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Integration tests | API routes with database and service interaction | `pytest tests/test_api_*.py tests/test_e2e.py -v` | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Automated QRTs | QR-001, QR-002, QR-003 | `pytest tests/quality_requirement_tests/ -v` | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
 
-- Unit tests: `tests/test_*.py`.
-- Integration tests: `tests/test_api_*.py`, `tests/test_e2e.py`.
-- Quality Requirement Tests: `tests/quality_requirement_tests/`.
+## CI and QA Check Status
 
-## Additional QA Check
+| Gate or check | Required for Done? | Latest protected-branch status | Evidence |
+|---|---|---|---|
+| Linting (ruff) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Formatting check (ruff) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Unit and integration tests | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Automated QRTs | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Line coverage (≥ 30%) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Additional QA check (bandit) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
 
-- **Tool:** `bandit`.
-- **Objective:** Detect common security issues in Python code (e.g., weak cryptography, hardcoded passwords, unsafe deserialization).
-- **Why it matters:** The product handles Telegram session strings, API keys, and encrypted credentials. Bandit helps catch accidental security regressions.
-- **CI job:** `.github/workflows/ci.yml` job `bandit`.
+## Additional QA Check Rationale
+
+| QA objective or risk | Additional QA check | Scope | Latest result | Evidence | Limitations or follow-up |
+|---|---|---|---|---|---|
+| Common security issues (hardcoded secrets, weak crypto, unsafe deserialization) may expose Telegram session strings, API keys, or encrypted credentials. | Bandit static security analysis. | `app/` Python source code. | Passing (0 findings) | [CI bandit job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) | Bandit does not replace dependency vulnerability scanning; consider adding `pip-audit` or Dependabot alerts as a follow-up. |
+
+## Manual Evidence That Does Not Count as QRT
+
+| Evidence | Scope | Result | Follow-up PBI or issue |
+|---|---|---|---|
+| Customer UAT observation | End-to-end campaign creation and execution | To be recorded during Sprint Review | TBD |
 
 ## Coverage Reports
 
@@ -70,3 +85,14 @@ Coverage HTML reports are generated in CI and uploaded as artifacts. Local repor
 pytest tests/ -q --cov=app --cov-report=html
 open htmlcov/index.html
 ```
+
+## Assignment 4 Quality Gates for Later Work
+
+The following gates introduced in Assignment 4 remain active for later project work:
+
+- All PRs/MRs and protected-default-branch pushes run linting, formatting checks, tests, coverage, QRTs, and Bandit.
+- Critical modules must maintain at least 30% line coverage.
+- New user-visible changes require a `CHANGELOG.md` entry.
+- New quality requirements require a linked automated QRT.
+
+If a later product change makes a gate obsolete, it will be replaced with an equivalent or stronger check and documented here.

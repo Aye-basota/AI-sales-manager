@@ -25,9 +25,7 @@ class Campaign(Base):
 class CampaignContact(Base):
     __tablename__ = "campaign_contacts"
 
-    __table_args__ = (
-        UniqueConstraint("campaign_id", "contact_id"),
-    )
+    __table_args__ = (UniqueConstraint("campaign_id", "contact_id"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     campaign_id = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"))

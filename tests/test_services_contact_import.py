@@ -59,7 +59,13 @@ class TestParseExcel:
         assert result[0]["telegram_user_id"] == 111
 
     def test_invalid_columns_raises_value_error(self):
-        df = pd.DataFrame({"first_name": ["Alice"], "telegram_user_id": ["123"], "email": ["alice@test.com"]})
+        df = pd.DataFrame(
+            {
+                "first_name": ["Alice"],
+                "telegram_user_id": ["123"],
+                "email": ["alice@test.com"],
+            }
+        )
         buffer = BytesIO()
         df.to_excel(buffer, index=False)
         buffer.seek(0)

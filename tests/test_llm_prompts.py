@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 
-import pytest
 
 from app.llm.prompts import (
     build_intent_classification_prompt,

@@ -63,9 +63,7 @@ async def test_send_initial_message_raises_account_flood_error(sample_entities):
                     client_inst = MockClient.return_value
                     client_inst.start = AsyncMock()
                     client_inst.stop = AsyncMock()
-                    client_inst.send_message = AsyncMock(
-                        side_effect=MockFloodWait(120)
-                    )
+                    client_inst.send_message = AsyncMock(side_effect=MockFloodWait(120))
 
                     with pytest.raises(AccountFloodError) as exc_info:
                         await send_initial_message(
@@ -94,9 +92,7 @@ async def test_send_initial_message_raises_peer_flood_error(sample_entities):
                     client_inst = MockClient.return_value
                     client_inst.start = AsyncMock()
                     client_inst.stop = AsyncMock()
-                    client_inst.send_message = AsyncMock(
-                        side_effect=MockPeerFlood()
-                    )
+                    client_inst.send_message = AsyncMock(side_effect=MockPeerFlood())
 
                     with pytest.raises(AccountPeerFloodError):
                         await send_initial_message(
@@ -117,8 +113,10 @@ def _make_result(items=None, single=None):
     class Result:
         def scalars(self, *args, **kwargs):
             return Scalars()
+
         def scalar_one_or_none(self):
             return single
+
     return Result()
 
 
@@ -129,7 +127,6 @@ async def test_process_campaigns_retries_on_flood_wait():
     from app.models.script import Script
     from app.models.contact import Contact
     from app.models.telegram_account import TelegramAccount
-    from app.models.conversation import Conversation
 
     script_id = uuid4()
     campaign_id = uuid4()
@@ -199,8 +196,12 @@ async def test_process_campaigns_retries_on_flood_wait():
             raise AccountFloodError(account1_id, wait_seconds=120)
         send_calls.append(account.id)
 
-    with patch("app.core.scheduler.send_initial_message", side_effect=fake_send_initial):
-        with patch("app.core.account_manager.mark_account_cooldown", new_callable=AsyncMock) as mock_cooldown:
+    with patch(
+        "app.core.scheduler.send_initial_message", side_effect=fake_send_initial
+    ):
+        with patch(
+            "app.core.account_manager.mark_account_cooldown", new_callable=AsyncMock
+        ) as mock_cooldown:
             await process_campaigns(mock_db)
 
     # First account should be marked cooldown

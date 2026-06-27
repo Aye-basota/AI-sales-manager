@@ -18,7 +18,6 @@ from app.db.session import AsyncSessionLocal
 logger = logging.getLogger(__name__)
 
 
-
 try:
     import asyncio
 
@@ -251,9 +250,7 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 continue
 
             if not contact.telegram_user_id:
-                logger.debug(
-                    "Skipping contact %s (no telegram_user_id)", contact.id
-                )
+                logger.debug("Skipping contact %s (no telegram_user_id)", contact.id)
                 continue
 
             conv_result = await db_session.execute(
@@ -307,9 +304,7 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 account = select_account(accounts)
 
             if account is None:
-                logger.warning(
-                    "No eligible account for contact %s", contact.id
-                )
+                logger.warning("No eligible account for contact %s", contact.id)
                 continue
 
             # Rate limit: 1 message per 30 seconds per account
@@ -410,7 +405,8 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     await _send_with_account(retry_account)
                 except AccountPeerFloodError as exc2:
                     logger.warning(
-                        "Alternative account %s also peer-flood-limited", exc2.account_id
+                        "Alternative account %s also peer-flood-limited",
+                        exc2.account_id,
                     )
                     await mark_account_cooldown(
                         exc2.account_id, db_session, wait_seconds=24 * 3600
@@ -455,13 +451,16 @@ async def send_initial_message(
     from app.models.conversation import Message
 
     from app.llm.engine import LLMEngine
+
     engine = LLMEngine()
 
     conversation_stage = get_first_stage(script)
     conversation.conversation_stage = conversation_stage
 
     system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
-    user_prompt = build_initial_user_prompt(script, contact, conversation_stage=conversation_stage)
+    user_prompt = build_initial_user_prompt(
+        script, contact, conversation_stage=conversation_stage
+    )
 
     max_tokens = None
     if hasattr(script, "max_first_message_length") and script.max_first_message_length:
@@ -492,12 +491,12 @@ async def send_initial_message(
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
     chunk_delays = [
-        int(base_typing_delay * len(chunk) / max(len(text), 1))
-        for chunk in chunks
+        int(base_typing_delay * len(chunk) / max(len(text), 1)) for chunk in chunks
     ]
 
     from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
+
     settings = get_settings()
     client = SellerClient(
         account_id=str(account.id),
@@ -522,9 +521,7 @@ async def send_initial_message(
             )
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
-        logger.warning(
-            "FloodWait on account %s for %ss", account.id, wait_seconds
-        )
+        logger.warning("FloodWait on account %s for %ss", account.id, wait_seconds)
         raise AccountFloodError(account.id, wait_seconds=wait_seconds) from exc
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
@@ -596,11 +593,10 @@ async def send_follow_up_message(
     from app.services.conversation_service import get_conversation_context
 
     from app.llm.engine import LLMEngine
+
     engine = LLMEngine()
 
-    context = await get_conversation_context(
-        db_session, conversation.id, limit=10
-    )
+    context = await get_conversation_context(db_session, conversation.id, limit=10)
 
     conversation_stage = getattr(conversation, "conversation_stage", None) or "hook"
     system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
@@ -638,11 +634,7 @@ async def send_follow_up_message(
     try:
         response = await engine.generate_response_with_guardrails(
             messages,
-            [
-                msg.content
-                for msg in context["messages"]
-                if msg.direction == "outbound"
-            ],
+            [msg.content for msg in context["messages"] if msg.direction == "outbound"],
             max_tokens=max_tokens,
         )
     except Exception as exc:
@@ -661,12 +653,12 @@ async def send_follow_up_message(
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
     chunk_delays = [
-        int(base_typing_delay * len(chunk) / max(len(text), 1))
-        for chunk in chunks
+        int(base_typing_delay * len(chunk) / max(len(text), 1)) for chunk in chunks
     ]
 
     from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
+
     settings = get_settings()
     client = SellerClient(
         account_id=str(account.id),
@@ -689,9 +681,7 @@ async def send_follow_up_message(
             )
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
-        logger.warning(
-            "FloodWait on account %s for %ss", account.id, wait_seconds
-        )
+        logger.warning("FloodWait on account %s for %ss", account.id, wait_seconds)
         raise AccountFloodError(account.id, wait_seconds=wait_seconds) from exc
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
@@ -800,9 +790,7 @@ class CampaignScheduler:
     """APScheduler wrapper that processes running campaigns and maintains resilience."""
 
     def __init__(self) -> None:
-        jobstores = {
-            "default": SQLAlchemyJobStore(url=_get_sync_db_url())
-        }
+        jobstores = {"default": SQLAlchemyJobStore(url=_get_sync_db_url())}
         self._scheduler = AsyncIOScheduler(jobstores=jobstores)
 
     def start(self) -> None:
@@ -843,7 +831,6 @@ class CampaignScheduler:
     @staticmethod
     async def _run_process_campaigns() -> None:
 
-
         try:
             async with AsyncSessionLocal() as session:
                 await process_campaigns(session)
@@ -876,7 +863,6 @@ class CampaignScheduler:
 
     @staticmethod
     async def _run_auto_close_conversations() -> None:
-
 
         try:
             async with AsyncSessionLocal() as session:

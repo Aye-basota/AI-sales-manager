@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -8,9 +8,7 @@ from app.llm.intent_classifier import classify_intent
 @pytest.mark.asyncio
 async def test_classify_intent_exact_label():
     engine = MagicMock()
-    engine.generate_with_fallback = AsyncMock(
-        return_value={"text": "meeting_intent"}
-    )
+    engine.generate_with_fallback = AsyncMock(return_value={"text": "meeting_intent"})
 
     result = await classify_intent("Давайте встретимся", engine)
     assert result == "meeting_intent"
@@ -52,9 +50,7 @@ async def test_classify_intent_unknown_defaults_to_informational():
 @pytest.mark.asyncio
 async def test_classify_intent_prompt_structure():
     engine = MagicMock()
-    engine.generate_with_fallback = AsyncMock(
-        return_value={"text": "question"}
-    )
+    engine.generate_with_fallback = AsyncMock(return_value={"text": "question"})
 
     await classify_intent("Сколько стоит?", engine)
 

@@ -81,9 +81,9 @@ No outstanding feedback was left unaddressed from the Week 3 review.
 ## 7. Quality Model
 
 Quality requirements use three different ISO/IEC 25010 sub-characteristics:
-- **Time behaviour** (QR-01)
-- **Availability** (QR-02)
-- **Fault tolerance** (QR-03)
+- **Time behaviour** (QR-001)
+- **Availability** (QR-002)
+- **Fault tolerance** (QR-003)
 
 See [`docs/quality-requirements.md`](../../docs/quality-requirements.md) for details.
 

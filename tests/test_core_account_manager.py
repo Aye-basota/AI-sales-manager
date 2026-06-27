@@ -1,7 +1,10 @@
-import pytest
 from dataclasses import dataclass
 
-from app.core.account_manager import select_account, mark_message_sent, reset_daily_counters
+from app.core.account_manager import (
+    select_account,
+    mark_message_sent,
+    reset_daily_counters,
+)
 
 
 @dataclass

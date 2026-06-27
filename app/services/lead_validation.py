@@ -17,7 +17,6 @@ try:
         asyncio.set_event_loop(_tmp_loop)
 
     from pyrogram import Client
-    from pyrogram.types import User
 
     _PYROGRAM_AVAILABLE = True
 except ImportError:  # pragma: no cover

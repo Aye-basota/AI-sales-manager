@@ -1,7 +1,5 @@
-import random
 from unittest.mock import patch
 
-import pytest
 
 from app.core.humanizer import (
     add_casual_markers,
@@ -63,7 +61,17 @@ class TestMaybeSelfCorrect:
         text = "This is a message"
         result = maybe_self_correct(text, rate=1.0)
         assert result != text
-        assert any(result.startswith(p) for p in ["Точнее, ", "*точнее, ", "Уточню, ", "*уточню, ", "Поправка, ", "*поправка, "])
+        assert any(
+            result.startswith(p)
+            for p in [
+                "Точнее, ",
+                "*точнее, ",
+                "Уточню, ",
+                "*уточню, ",
+                "Поправка, ",
+                "*поправка, ",
+            ]
+        )
 
     def test_empty_string_returns_empty(self):
         assert maybe_self_correct("", rate=1.0) == ""
@@ -86,20 +94,29 @@ class TestAddCasualMarkers:
     def test_marker_injected_when_rate_is_one(self):
         text = "Hello. How are you?"
         result = add_casual_markers(text, rate=1.0)
-        assert any(marker.lower() in result.lower() for marker in ["кстати", "слушайте", "если честно"])
+        assert any(
+            marker.lower() in result.lower()
+            for marker in ["кстати", "слушайте", "если честно"]
+        )
 
     def test_single_sentence_gets_marker(self):
         text = "This is a single sentence."
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = add_casual_markers(text, rate=0.15)
-        assert any(marker.lower() in result.lower() for marker in ["кстати", "слушайте", "если честно"])
+        assert any(
+            marker.lower() in result.lower()
+            for marker in ["кстати", "слушайте", "если честно"]
+        )
 
     def test_multiple_sentences_only_one_marker(self):
         text = "First sentence. Second sentence. Third sentence."
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = add_casual_markers(text, rate=0.15)
         # Should have exactly one marker added
-        count = sum(result.lower().count(marker) for marker in ["кстати", "слушайте", "если честно"])
+        count = sum(
+            result.lower().count(marker)
+            for marker in ["кстати", "слушайте", "если честно"]
+        )
         assert count == 1
 
     def test_no_change_when_random_above_rate(self):

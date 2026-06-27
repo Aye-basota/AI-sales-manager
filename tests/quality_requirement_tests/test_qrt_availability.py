@@ -1,4 +1,4 @@
-"""QRT-02: Health endpoint availability proxy."""
+"""QRT-002: Health endpoint availability proxy."""
 
 from unittest.mock import patch
 

@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 
 from app.core.humanizer import (
     calculate_typing_delay,

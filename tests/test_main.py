@@ -17,8 +17,12 @@ class TestMainApp:
             with patch("app.main.scheduler.shutdown"):
                 with patch("app.main.start_bot", return_value=AsyncMock()):
                     with patch("app.main.stop_bot", new=AsyncMock()):
-                        with patch("app.main.start_inbound_listeners", return_value=AsyncMock()):
-                            with patch("app.main.stop_inbound_listeners", new=AsyncMock()):
+                        with patch(
+                            "app.main.start_inbound_listeners", return_value=AsyncMock()
+                        ):
+                            with patch(
+                                "app.main.stop_inbound_listeners", new=AsyncMock()
+                            ):
                                 with patch("app.main.close_redis", new=AsyncMock()):
                                     with TestClient(app) as client:
                                         yield client

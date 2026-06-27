@@ -1,4 +1,4 @@
-import io
+import logging
 from typing import Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -10,10 +10,11 @@ from app.db.session import get_db
 from app.models.contact import Contact
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.contact_import import parse_csv, parse_excel, upsert_contacts
-from app.services.lead_discovery import LeadCriteria, DiscoveredContact, discover_leads, enrich_contact
+from app.services.lead_discovery import LeadCriteria, discover_leads
 from app.services.lead_validation import validate_and_enrich
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
+logger = logging.getLogger(__name__)
 
 
 class DiscoverRequest(BaseModel):
@@ -52,7 +53,9 @@ async def create_contact(payload: ContactCreate, db: AsyncSession = Depends(get_
 
 
 @router.put("/{contact_id}", response_model=ContactResponse)
-async def update_contact(contact_id: UUID, payload: ContactUpdate, db: AsyncSession = Depends(get_db)):
+async def update_contact(
+    contact_id: UUID, payload: ContactUpdate, db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(select(Contact).where(Contact.id == contact_id))
     contact = result.scalar_one_or_none()
     if not contact:
@@ -76,7 +79,9 @@ async def delete_contact(contact_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/import", response_model=List[ContactResponse], status_code=201)
-async def import_contacts(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def import_contacts(
+    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
@@ -87,7 +92,9 @@ async def import_contacts(file: UploadFile = File(...), db: AsyncSession = Depen
         elif file.filename.endswith((".xlsx", ".xls")):
             records = parse_excel(contents)
         else:
-            raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
+            raise HTTPException(
+                status_code=400, detail="Only CSV and Excel files are supported"
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -142,7 +149,9 @@ async def discover_contacts(payload: DiscoverRequest):
 
 
 @router.post("/discover/confirm", response_model=List[ContactResponse], status_code=201)
-async def confirm_discovered_contacts(payload: DiscoverConfirmRequest, db: AsyncSession = Depends(get_db)):
+async def confirm_discovered_contacts(
+    payload: DiscoverConfirmRequest, db: AsyncSession = Depends(get_db)
+):
     """Save discovered contacts to the database with deduplication."""
     records = []
     for item in payload.contacts:

@@ -38,6 +38,7 @@ def mock_pyrogram_message(mock_pyrogram_user):
 # GenericJSONAdapter
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_generic_json_adapter_empty_when_no_url():
     adapter = GenericJSONAdapter(api_url="", api_key="")
@@ -97,6 +98,7 @@ async def test_generic_json_adapter_handles_error():
 # RosprofileAdapter
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_rosprofile_adapter_is_generic():
     adapter = RosprofileAdapter(api_url="http://rosprofile.test/api")
@@ -106,6 +108,7 @@ async def test_rosprofile_adapter_is_generic():
 # ---------------------------------------------------------------------------
 # TelegramPublicSearch
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_telegram_public_search_no_pyrogram():
@@ -156,6 +159,7 @@ async def test_telegram_public_search_dedup_usernames():
 # ChannelMembersParser
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_channel_parser_no_pyrogram():
     with patch("app.services.lead_discovery._PYROGRAM_AVAILABLE", False):
@@ -203,6 +207,7 @@ async def test_channel_parser_keyword_filter():
 # enrich_contact
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enrich_contact_no_pyrogram():
     contact = DiscoveredContact(telegram_username="test")
@@ -227,6 +232,7 @@ async def test_enrich_contact_fills_fields(mock_pyrogram_user):
 # ---------------------------------------------------------------------------
 # discover_leads dispatcher
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_discover_leads_unknown_source():

@@ -71,17 +71,13 @@ class LLMEngine:
         if self.provider == "dashscope":
             self.api_key = api_key or settings.dashscope_api_key or ""
             self.base_url = (
-                base_url
-                or settings.dashscope_base_url
-                or DEFAULT_DASHSCOPE_BASE_URL
+                base_url or settings.dashscope_base_url or DEFAULT_DASHSCOPE_BASE_URL
             )
             self.models = list(DASHSCOPE_MODELS)
         else:
             self.api_key = api_key or settings.openrouter_api_key or ""
             self.base_url = (
-                base_url
-                or settings.openrouter_base_url
-                or DEFAULT_OPENROUTER_BASE_URL
+                base_url or settings.openrouter_base_url or DEFAULT_OPENROUTER_BASE_URL
             )
             self.models = list(OPENROUTER_MODELS)
 
@@ -95,7 +91,9 @@ class LLMEngine:
                 "Content-Type": "application/json",
             }
             if self.provider == "openrouter":
-                headers.setdefault("HTTP-Referer", "https://github.com/Aye-basota/AI-sales-manager")
+                headers.setdefault(
+                    "HTTP-Referer", "https://github.com/Aye-basota/AI-sales-manager"
+                )
                 headers.setdefault("X-Title", "AI Sales Manager")
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
@@ -148,7 +146,7 @@ class LLMEngine:
             except Exception as exc:
                 last_exception = exc
                 if _is_retryable_error(exc) and retries_done < _MAX_RETRIES:
-                    wait = min(2 ** retries_done, 8)
+                    wait = min(2**retries_done, 8)
                     logger.warning(
                         "LLM call failed for model %s (attempt %d/%d), retrying in %ss: %s",
                         model,
@@ -190,7 +188,9 @@ class LLMEngine:
         }
 
         for attempt in range(max_retries + 1):
-            result = await self.generate_with_fallback(current_messages, max_tokens=max_tokens)
+            result = await self.generate_with_fallback(
+                current_messages, max_tokens=max_tokens
+            )
             text = result["text"]
             gr = evaluate_guardrails(text, last_messages)
 

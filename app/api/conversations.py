@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.conversation import Conversation, Message
-from app.schemas.conversation import ConversationResponse, ConversationUpdateStatus, MessageResponse
+from app.schemas.conversation import (
+    ConversationResponse,
+    ConversationUpdateStatus,
+    MessageResponse,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -18,16 +22,26 @@ async def list_conversations(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{conversation_id}/messages", response_model=List[MessageResponse])
-async def get_conversation_messages(conversation_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_conversation_messages(
+    conversation_id: UUID, db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(
-        select(Message).where(Message.conversation_id == conversation_id).order_by(Message.sent_at)
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.sent_at)
     )
     return result.scalars().all()
 
 
 @router.put("/{conversation_id}/status", response_model=ConversationResponse)
-async def update_conversation_status(conversation_id: UUID, payload: ConversationUpdateStatus, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
+async def update_conversation_status(
+    conversation_id: UUID,
+    payload: ConversationUpdateStatus,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
     conversation = result.scalar_one_or_none()
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")

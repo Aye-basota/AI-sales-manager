@@ -82,7 +82,9 @@ def get_first_stage(script: Any) -> str:
     configured = get_funnel_stages(script)
     first = configured[0].get("stage", "hook")
     first_message_goal = getattr(script, "first_message_goal", None)
-    if first_message_goal and any(s.get("stage") == first_message_goal for s in configured):
+    if first_message_goal and any(
+        s.get("stage") == first_message_goal for s in configured
+    ):
         return first_message_goal
     return first
 

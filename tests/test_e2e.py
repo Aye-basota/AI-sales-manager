@@ -117,7 +117,9 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
         created_at=datetime.now(),
     )
     mock_db.execute.return_value = MockResult([campaign])
-    resp = client.post(f"/campaigns/{campaign_id}/contacts", json={"contact_ids": contact_ids})
+    resp = client.post(
+        f"/campaigns/{campaign_id}/contacts", json={"contact_ids": contact_ids}
+    )
     assert resp.status_code == 201
 
     # Start campaign
@@ -141,16 +143,18 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
     ]
 
     scheduler_results = [
-        MockResult([campaign]),       # running campaigns
-        MockResult([e2e_script]),     # script
-        MockResult(ccs),              # campaign contacts
+        MockResult([campaign]),  # running campaigns
+        MockResult([e2e_script]),  # script
+        MockResult(ccs),  # campaign contacts
     ]
     for contact in e2e_contacts:
-        scheduler_results.extend([
-            MockResult([contact]),        # contact
-            MockResult([]),               # conversation not found
-            MockResult([e2e_account]),    # account
-        ])
+        scheduler_results.extend(
+            [
+                MockResult([contact]),  # contact
+                MockResult([]),  # conversation not found
+                MockResult([e2e_account]),  # account
+            ]
+        )
     # Extra padding in case additional execute() calls happen
     scheduler_results.extend([MockResult([]) for _ in range(10)])
 
@@ -164,7 +168,11 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
         with patch("app.llm.engine.LLMEngine") as MockEngine:
             engine_inst = MockEngine.return_value
             engine_inst.generate_response_with_guardrails = AsyncMock(
-                return_value={"text": "Hello from E2E", "model": "gpt-4", "tokens_used": 10}
+                return_value={
+                    "text": "Hello from E2E",
+                    "model": "gpt-4",
+                    "tokens_used": 10,
+                }
             )
 
             with patch("app.bots.seller_client.SellerClient") as MockClient:
@@ -179,6 +187,7 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
 
                 base_dt = datetime(2024, 6, 1, 12, 0, 0)
                 call_idx = 0
+
                 def _now_side_effect(*args, **kwargs):
                     nonlocal call_idx
                     t = base_dt + timedelta(seconds=call_idx * 31)
@@ -210,11 +219,11 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
 
     inbound_db = build_mock_session()
     inbound_db.execute.side_effect = [
-        MockResult([target_contact]),     # find contact by telegram_user_id
-        MockResult([conversation]),       # find latest conversation
-        MockResult([campaign]),           # find campaign
-        MockResult([cc]),                 # find campaign contact for analytics
-        MockResult([e2e_script]),         # find script
+        MockResult([target_contact]),  # find contact by telegram_user_id
+        MockResult([conversation]),  # find latest conversation
+        MockResult([campaign]),  # find campaign
+        MockResult([cc]),  # find campaign contact for analytics
+        MockResult([e2e_script]),  # find script
     ]
 
     # Mock Pyrogram message

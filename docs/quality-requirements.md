@@ -1,21 +1,24 @@
 # Quality Requirements
 
-This document defines the quality requirements for our product to ensure it meets stakeholder expectations.
+This document defines the measurable quality requirements for the AI Sales Manager product. Each requirement uses a stable ID, an ISO/IEC 25010 sub-characteristic, a measurable scenario, and links to automated quality requirement tests.
 
-## QR-01: Response Time for Data Retrieval
-* **ISO/IEC 25010 Sub-characteristic:** Time behaviour
-* **Rationale:** Users need fast feedback when interacting with the application to prevent frustration and abandonment.
-* **Measurable Scenario:** When a user requests data under normal load conditions, the system must process the request and return the complete payload within 500 milliseconds for 95% of the requests.
-* **Linked QRTs:** [QRT-01](quality-requirement-tests.md#qrt-01)
+## QR-001: Health Endpoint Response Time
 
-## QR-02: Core System Availability
-* **ISO/IEC 25010 Sub-characteristic:** Availability
-* **Rationale:** The application must be reliably accessible so that clients can perform their tasks without business disruption.
-* **Measurable Scenario:** During normal operation over a 30-day period, the core web application must be accessible and successfully return a 200 OK status to health checks 99.9% of the time. As an automated proxy for this long-term SLO, every CI run must verify that the `/health` endpoint returns HTTP 200 OK within 200 milliseconds.
-* **Linked QRTs:** [QRT-02](quality-requirement-tests.md#qrt-02)
+* **ISO/IEC 25010 sub-characteristic:** Time behaviour
+* **Scenario:** When an API client sends a GET request to the `/health` endpoint under normal load conditions with the scheduler running, the system shall return a complete `200 OK` response within 500 milliseconds for at least 95% of requests.
+* **Why this matters:** Users and external health monitors need fast feedback about system liveness. Slow health checks can hide outages and trigger false alarms.
+* **Linked quality requirement tests:** [QRT-001](quality-requirement-tests.md#qrt-001-health-endpoint-response-time)
 
-## QR-03: API Fault Tolerance
-* **ISO/IEC 25010 Sub-characteristic:** Fault tolerance
-* **Rationale:** The backend must gracefully handle malformed data from the frontend or third-party integrations without crashing.
-* **Measurable Scenario:** When the API receives a POST request with invalid or missing required JSON fields, the system must not crash, but instead return a 400 Bad Request response with a descriptive error message within 200 milliseconds.
-* **Linked QRTs:** [QRT-03](quality-requirement-tests.md#qrt-03)
+## QR-002: Core System Availability Proxy
+
+* **ISO/IEC 25010 sub-characteristic:** Availability
+* **Scenario:** When the APScheduler task is running under normal operation, the `/health` endpoint shall return HTTP `200 OK` with status `"ok"`; when the scheduler is not running, the endpoint shall still return HTTP `200 OK` with status `"degraded"` within 200 milliseconds.
+* **Why this matters:** The application must remain inspectable even when background scheduling is unavailable, so operators can distinguish total outage from partial degradation.
+* **Linked quality requirement tests:** [QRT-002](quality-requirement-tests.md#qrt-002-core-system-availability-proxy)
+
+## QR-003: API Fault Tolerance on Invalid Input
+
+* **ISO/IEC 25010 sub-characteristic:** Fault tolerance
+* **Scenario:** When the API receives a POST request with invalid or missing required JSON fields under normal operation, the system shall not crash but shall return a `400 Bad Request` response with a descriptive error message within 200 milliseconds.
+* **Why this matters:** The backend integrates with frontends and third-party systems that may send malformed payloads. Graceful rejection prevents cascading failures and improves debuggability.
+* **Linked quality requirement tests:** [QRT-003](quality-requirement-tests.md#qrt-003-api-fault-tolerance-on-invalid-input)

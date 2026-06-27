@@ -16,7 +16,9 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     total_contacts = total_contacts_result.scalar() or 0
 
     campaigns_by_status = {}
-    campaigns_result = await db.execute(select(Campaign.status, func.count()).group_by(Campaign.status))
+    campaigns_result = await db.execute(
+        select(Campaign.status, func.count()).group_by(Campaign.status)
+    )
     for status, count in campaigns_result.all():
         campaigns_by_status[status] = count
 
