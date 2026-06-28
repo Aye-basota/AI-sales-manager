@@ -145,8 +145,8 @@ Place screenshots in `reports/week4/images/`:
 ## 13. Team Reflection
 
 - [`reflection.md`](reflection.md) *(team should update)*
-- [`retrospective.md`](retrospective.md) *(team should update)*
-- [`llm-report.md`](llm-report.md) *(team should update)*
+- [`retrospective.md`](retrospective.md) — Sprint 2 retrospective (Assignment 4 Part 12)
+- [`llm-report.md`](llm-report.md) — AI/LLM usage disclosure (Assignment 4 Part 16)
 
 ---
 
