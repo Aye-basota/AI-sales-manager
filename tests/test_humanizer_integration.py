@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 
 from app.core.humanizer import (
     calculate_typing_delay,
@@ -26,22 +25,24 @@ def test_thinking_delay_within_range():
         assert 3000 <= delay <= 15000
 
 
-def test_self_correction_probability_with_mock_random():
+def test_self_correction_disabled_by_default():
+    text = "This is the original message."
+    # Default rate is 0.0, so even with low random no self-correction is applied.
+    with patch("app.core.humanizer.random.random", return_value=0.01):
+        result = maybe_self_correct(text)
+        assert result == text
+
+
+def test_self_correction_respects_explicit_rate():
     text = "This is the original message."
     with patch("app.core.humanizer.random.random", return_value=0.01):
         with patch("app.core.humanizer.random.choice", return_value="Точнее, "):
-            result = maybe_self_correct(text)
+            result = maybe_self_correct(text, rate=0.5)
             assert result != text
-            # Check for Russian self-correction keywords (with or without asterisk)
-            keywords = [
-                "\u0422\u043e\u0447\u043d\u0435\u0435",
-                "\u0423\u0442\u043e\u0447\u043d\u044e",
-                "\u041f\u043e\u043f\u0440\u0430\u0432\u043a\u0430",
-            ]
-            assert any(kw in result for kw in keywords)
+            assert "Точнее" in result
 
     with patch("app.core.humanizer.random.random", return_value=0.99):
-        result = maybe_self_correct(text)
+        result = maybe_self_correct(text, rate=0.5)
         assert result == text
 
 

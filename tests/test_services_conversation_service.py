@@ -1,7 +1,7 @@
 """Tests for conversation service business logic."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -95,7 +95,9 @@ async def test_update_lead_facts_merges_jsonb():
     mock_db.execute.return_value = MockResult([conversation])
     mock_db.refresh = AsyncMock()
 
-    updated = await update_lead_facts(mock_db, conv_id, {"needs": "CRM", "budget": "15k"})
+    updated = await update_lead_facts(
+        mock_db, conv_id, {"needs": "CRM", "budget": "15k"}
+    )
 
     assert updated.facts_extracted == {"budget": "15k", "needs": "CRM"}
     mock_db.commit.assert_awaited_once()

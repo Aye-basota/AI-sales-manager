@@ -70,7 +70,7 @@ def test_delete_contact_not_found(client, mock_db):
 
 
 def test_import_contacts_csv(client, mock_db):
-    csv_content = "first_name,last_name,phone,status\nAlice,Wonderland,+1111111111,new\nBob,Builder,+2222222222,new"
+    csv_content = "first_name,last_name,phone,telegram_user_id,status\nAlice,Wonderland,+1111111111,111,new\nBob,Builder,+2222222222,222,new"
     response = client.post(
         "/contacts/import",
         files={"file": ("contacts.csv", io.BytesIO(csv_content.encode()), "text/csv")},

@@ -13,15 +13,12 @@ try:
     # Pyrogram's sync module calls asyncio.get_event_loop() at import time.
     # When uvloop is the active policy and no loop exists yet, this raises.
     # Create a temporary loop so the import succeeds; uvicorn will replace it later.
-    import asyncio
-
     try:
         asyncio.get_event_loop()
     except RuntimeError:
         _tmp_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_tmp_loop)
 
-    from pyrogram import Client
     from pyrogram.types import Message
 
     _PYROGRAM_AVAILABLE = True
@@ -30,7 +27,6 @@ except ImportError:  # pragma: no cover
 
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
-from app.db.redis import get_redis, invalidate_conversation_cache
 from app.models.telegram_account import TelegramAccount
 from app.models.contact import Contact
 from app.models.conversation import Conversation
@@ -39,12 +35,13 @@ from app.models.script import Script
 from app.bots.seller_client import SellerClient
 from app.llm.engine import LLMEngine
 from app.llm.intent_classifier import classify_intent
-from app.llm.prompts import build_system_prompt, build_user_prompt
+from app.llm.prompts import build_system_prompt, build_reply_user_prompt
 from app.core.humanizer import (
     calculate_typing_delay,
     calculate_thinking_delay,
     split_message_into_chunks,
 )
+from app.core.funnel import next_stage
 from app.core.state_machine import transition
 from app.services.notification_service import NotificationService
 from app.services.conversation_service import (
@@ -70,12 +67,16 @@ async def start_inbound_listeners(db_session: AsyncSession | None = None) -> Non
     if db_session is None:
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
-                select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
+                select(TelegramAccount).where(
+                    TelegramAccount.status.in_(["ready", "active"])
+                )
             )
             accounts = result.scalars().all()
     else:
         result = await db_session.execute(
-            select(TelegramAccount).where(TelegramAccount.status.in_(["ready", "active"]))
+            select(TelegramAccount).where(
+                TelegramAccount.status.in_(["ready", "active"])
+            )
         )
         accounts = result.scalars().all()
 
@@ -151,7 +152,9 @@ async def _handle_inbound_message(
             )
             contact: Contact | None = result.scalar_one_or_none()
             if not contact:
-                logger.info("Creating new contact for telegram_user_id %s", telegram_user_id)
+                logger.info(
+                    "Creating new contact for telegram_user_id %s", telegram_user_id
+                )
                 contact = Contact(
                     telegram_user_id=telegram_user_id,
                     telegram_username=message.from_user.username or "",
@@ -170,6 +173,7 @@ async def _handle_inbound_message(
                 select(Conversation)
                 .where(Conversation.contact_id == contact.id)
                 .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(1)
             )
             conversation: Conversation | None = result.scalar_one_or_none()
 
@@ -214,19 +218,6 @@ async def _handle_inbound_message(
             # 4. Save inbound message
             await add_message(db, conversation.id, "inbound", text, message_type="text")
 
-            # 4.5 Update campaign contact status and analytics
-            cc_result = await db.execute(
-                select(CampaignContact)
-                .where(CampaignContact.contact_id == contact.id)
-                .where(CampaignContact.campaign_id == campaign.id)
-            )
-            campaign_contact = cc_result.scalar_one_or_none()
-            if campaign_contact and campaign_contact.status in ("pending", "initial_sent", "follow_up_sent"):
-                campaign_contact.status = "replied"
-                campaign_contact.reply_received_at = datetime.now(timezone.utc)
-                campaign.replied_count = (campaign.replied_count or 0) + 1
-                await db.commit()
-
             if campaign.status not in ("running",):
                 logger.info(
                     "Campaign %s is not running (%s), skipping automated reply",
@@ -235,9 +226,26 @@ async def _handle_inbound_message(
                 )
                 return
 
+            # 4.5 Update campaign contact status and analytics only for running campaigns
+            cc_result = await db.execute(
+                select(CampaignContact)
+                .where(CampaignContact.contact_id == contact.id)
+                .where(CampaignContact.campaign_id == campaign.id)
+            )
+            campaign_contact = cc_result.scalar_one_or_none()
+            if campaign_contact and campaign_contact.status in (
+                "pending",
+                "initial_sent",
+                "follow_up_sent",
+            ):
+                campaign_contact.status = "replied"
+                campaign_contact.reply_received_at = datetime.now(timezone.utc)
+                campaign.replied_count = (campaign.replied_count or 0) + 1
+                await db.commit()
+
             # 5. Mark message as read after a short human-like delay
             user_id = int(contact.telegram_user_id)
-            await asyncio.sleep(random.uniform(2.0, 5.0))
+            await asyncio.sleep(random.uniform(2.0, 5.0))  # nosec B311
             await client.read_history(user_id)
 
             # 6. Extract facts from inbound message
@@ -257,15 +265,39 @@ async def _handle_inbound_message(
                 logger.warning("No script for campaign %s", campaign.id)
                 return
 
+            # 7.5 Inbound daily limit guard
+            settings = get_settings()
+            daily_limit = getattr(settings, "daily_message_limit", None) or 50
+            current_daily = getattr(account, "daily_messages_sent", 0) or 0
+            if current_daily >= daily_limit:
+                logger.warning(
+                    "Account %s reached daily limit (%s), skipping inbound reply",
+                    account.id,
+                    daily_limit,
+                )
+                return
+
             # 8. Classify intent
             engine = LLMEngine()
             intent = await classify_intent(text, engine)
+
+            # 8.5 Update funnel stage based on intent
+            conversation.conversation_stage = next_stage(
+                script,
+                getattr(conversation, "conversation_stage", None) or "hook",
+                intent,
+            )
 
             # 9. Build context
             context = await get_conversation_context(db, conversation.id, limit=10)
 
             # 10. Generate response
-            system_prompt = build_system_prompt(script)
+            conversation_stage = (
+                getattr(conversation, "conversation_stage", None) or "hook"
+            )
+            system_prompt = build_system_prompt(
+                script, conversation_stage=conversation_stage
+            )
 
             history = [
                 {
@@ -281,11 +313,13 @@ async def _handle_inbound_message(
                     last_agent_msg = msg["content"]
                     break
 
-            user_prompt = build_user_prompt(
+            user_prompt = build_reply_user_prompt(
+                script=script,
                 conversation_history=history,
                 lead_facts=context["facts"] or {},
                 last_agent_message=last_agent_msg,
                 lead_message=text,
+                conversation_stage=conversation_stage,
             )
 
             messages = [
@@ -297,12 +331,22 @@ async def _handle_inbound_message(
             await client.set_online()
 
             last_outbound = [
-                msg.content for msg in context["messages"] if msg.direction == "outbound"
+                msg.content
+                for msg in context["messages"]
+                if msg.direction == "outbound"
             ]
+
+            from app.core.funnel import get_max_length_for_stage
+
+            max_length = get_max_length_for_stage(script, conversation_stage)
+            max_tokens = int(max_length * 1.5) if max_length else None
 
             try:
                 response = await engine.generate_response_with_guardrails(
-                    messages, last_messages=last_outbound, max_retries=1
+                    messages,
+                    last_messages=last_outbound,
+                    max_retries=1,
+                    max_tokens=max_tokens,
                 )
             except Exception as exc:
                 logger.exception("LLM generation failed: %s", exc)
@@ -324,17 +368,20 @@ async def _handle_inbound_message(
                 for chunk in chunks
             ]
 
+            from app.core.humanizer import chunk_pause_seconds
+
             # 12. Send with human-like delays, one chunk at a time
             # "typing" indicator is kept alive during the chunk delays.
+            if thinking_delay > 0:
+                await asyncio.sleep(thinking_delay / 1000.0)
             for idx, chunk in enumerate(chunks):
                 if idx > 0:
-                    await asyncio.sleep(random.uniform(1.5, 3.5))
+                    await asyncio.sleep(chunk_pause_seconds())
                 await client.send_message(
                     user_id=user_id,
                     text=chunk,
-                    typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+                    typing_delay_ms=chunk_delays[idx],
                 )
-                thinking_delay = 0  # only apply thinking delay to the first chunk
 
             # 13. Save outbound message (whole text for conversation history)
             await add_message(
@@ -363,7 +410,9 @@ async def _handle_inbound_message(
             conversation.sentiment = (
                 "positive"
                 if intent in ("positive", "meeting_intent")
-                else "negative" if intent == "negative" else "neutral"
+                else "negative"
+                if intent == "negative"
+                else "neutral"
             )
             current_facts = dict(conversation.facts_extracted or {})
             current_facts["last_intent"] = intent
@@ -373,7 +422,11 @@ async def _handle_inbound_message(
             # 15. Notify if hot lead
             if intent == "meeting_intent" or new_state in ("hot", "meeting_booked"):
                 notif = NotificationService()
-                await notif.send_hot_lead_alert(contact, conversation, last_message_text=text)
+                await notif.send_hot_lead_alert(
+                    contact, conversation, last_message_text=text
+                )
 
         except Exception as exc:
-            logger.exception("Error handling inbound message from %s: %s", telegram_user_id, exc)
+            logger.exception(
+                "Error handling inbound message from %s: %s", telegram_user_id, exc
+            )

@@ -12,6 +12,7 @@ class Conversation(Base):
     contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.id"))
     campaign_id = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"))
     current_state = Column(String(20), default="cold")
+    conversation_stage = Column(String(30), default="hook")
     sentiment = Column(String(20))
     facts_extracted = Column(JSON, default={})
     operator_status = Column(String(20))

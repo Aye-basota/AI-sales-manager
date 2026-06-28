@@ -19,8 +19,10 @@ def _make_result(items=None, single=None):
     class Result:
         def scalars(self, *args, **kwargs):
             return Scalars()
+
         def scalar_one_or_none(self):
             return single
+
     return Result()
 
 

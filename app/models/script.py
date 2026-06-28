@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Text, Integer, Time, Boolean, DateTime
+from sqlalchemy import Column, String, Text, Integer, Time, Boolean, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -21,4 +21,13 @@ class Script(Base):
     working_hours_end = Column(Time, default="18:00")
     timezone = Column(String(50), default="Europe/Moscow")
     is_active = Column(Boolean, default=True)
+
+    # Sales funnel configuration
+    sales_funnel = Column(JSON, default=dict)
+    first_message_goal = Column(String(20), default="hook")
+    call_to_action = Column(String(200), default="15-минутный созвон")
+    language = Column(String(10), default="ru")
+    emoji_policy = Column(String(20), default="forbidden")
+    max_first_message_length = Column(Integer, default=200)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -24,7 +24,9 @@ class NotificationService:
 
     def __init__(self, bot: Bot | None = None, chat_id: str | None = None):
         self._bot = bot
-        self._chat_id = chat_id or settings.admin_notification_chat_id
+        self._chat_id = (
+            chat_id if chat_id is not None else settings.admin_notification_chat_id
+        )
 
     def _get_bot(self) -> Bot | None:
         if self._bot is None:
@@ -56,7 +58,7 @@ class NotificationService:
                     raise
             except TelegramAPIError:
                 if attempt < _MAX_RETRIES:
-                    wait = min(2 ** attempt, 8)
+                    wait = min(2**attempt, 8)
                     logger.warning(
                         "Telegram API error, retrying in %ss (attempt %d/%d)",
                         wait,
@@ -81,7 +83,9 @@ class NotificationService:
             last_message_text: The last message text to include in the alert.
         """
         if not self._chat_id:
-            logger.warning("ADMIN_NOTIFICATION_CHAT_ID is not set, hot lead alert not sent.")
+            logger.warning(
+                "ADMIN_NOTIFICATION_CHAT_ID is not set, hot lead alert not sent."
+            )
             return
 
         bot = self._get_bot()
@@ -89,7 +93,11 @@ class NotificationService:
             logger.warning("ADMIN_BOT_TOKEN is not set, cannot send alert.")
             return
 
-        status_label = "Согласился на созвон" if conversation.current_state == "meeting_booked" else "Горячий лид"
+        status_label = (
+            "Согласился на созвон"
+            if conversation.current_state == "meeting_booked"
+            else "Горячий лид"
+        )
         text = (
             f"🔥 Новый Hot Lead!\n"
             f"{contact.first_name or ''} {contact.last_name or ''}, {contact.company_name or 'N/A'}\n"
@@ -99,14 +107,22 @@ class NotificationService:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="📋 Диалог", callback_data=f"dialog:{conversation.id}"),
-                    InlineKeyboardButton(text="✅ Qualified", callback_data=f"qualify:{conversation.id}"),
-                    InlineKeyboardButton(text="❌ Rejected", callback_data=f"reject:{conversation.id}"),
+                    InlineKeyboardButton(
+                        text="📋 Диалог", callback_data=f"dialog:{conversation.id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="✅ Qualified", callback_data=f"qualify:{conversation.id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ Rejected", callback_data=f"reject:{conversation.id}"
+                    ),
                 ]
             ]
         )
         try:
-            await self._send_with_retry(bot, chat_id=self._chat_id, text=text, reply_markup=kb)
+            await self._send_with_retry(
+                bot, chat_id=self._chat_id, text=text, reply_markup=kb
+            )
         except Exception:
             logger.exception("Failed to send hot lead alert")
 
@@ -122,7 +138,9 @@ class NotificationService:
             conversation: The related conversation.
         """
         if not self._chat_id:
-            logger.warning("ADMIN_NOTIFICATION_CHAT_ID is not set, meeting booked alert not sent.")
+            logger.warning(
+                "ADMIN_NOTIFICATION_CHAT_ID is not set, meeting booked alert not sent."
+            )
             return
 
         bot = self._get_bot()
@@ -138,14 +156,22 @@ class NotificationService:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="📋 Диалог", callback_data=f"dialog:{conversation.id}"),
-                    InlineKeyboardButton(text="✅ Qualified", callback_data=f"qualify:{conversation.id}"),
-                    InlineKeyboardButton(text="❌ Rejected", callback_data=f"reject:{conversation.id}"),
+                    InlineKeyboardButton(
+                        text="📋 Диалог", callback_data=f"dialog:{conversation.id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="✅ Qualified", callback_data=f"qualify:{conversation.id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ Rejected", callback_data=f"reject:{conversation.id}"
+                    ),
                 ]
             ]
         )
         try:
-            await self._send_with_retry(bot, chat_id=self._chat_id, text=text, reply_markup=kb)
+            await self._send_with_retry(
+                bot, chat_id=self._chat_id, text=text, reply_markup=kb
+            )
         except Exception:
             logger.exception("Failed to send meeting booked alert")
 
@@ -153,7 +179,9 @@ class NotificationService:
 _service = NotificationService()
 
 
-async def notify_operator_hot_lead(contact: Contact, conversation: Conversation) -> None:
+async def notify_operator_hot_lead(
+    contact: Contact, conversation: Conversation
+) -> None:
     """Notify operators that a hot lead has been identified.
 
     Backward-compatible wrapper around :class:`NotificationService`.
@@ -165,7 +193,9 @@ async def notify_operator_hot_lead(contact: Contact, conversation: Conversation)
     await _service.send_hot_lead_alert(contact, conversation)
 
 
-async def notify_operator_meeting_booked(contact: Contact, conversation: Conversation) -> None:
+async def notify_operator_meeting_booked(
+    contact: Contact, conversation: Conversation
+) -> None:
     """Notify operators that a meeting has been booked with a lead.
 
     Backward-compatible wrapper around :class:`NotificationService`.

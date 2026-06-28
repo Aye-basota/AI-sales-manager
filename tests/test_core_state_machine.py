@@ -1,5 +1,3 @@
-import pytest
-
 from app.core.state_machine import transition, is_terminal
 
 

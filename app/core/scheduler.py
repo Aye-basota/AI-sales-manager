@@ -1,7 +1,6 @@
 """Campaign scheduling and anti-spam logic."""
 
 import logging
-import random
 from datetime import datetime, timedelta, time, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -17,7 +16,6 @@ from app.config import get_settings
 from app.db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
-
 
 
 try:
@@ -53,6 +51,21 @@ class AccountPeerFloodError(Exception):
     def __init__(self, account_id) -> None:
         self.account_id = account_id
         super().__init__(f"Account {account_id} peer flood error")
+
+
+def _is_eligible_account(account, now: datetime) -> bool:
+    """Return True if *account* can be used to send a message right now."""
+    if account.status not in ("ready", "active"):
+        return False
+    if not account.session_string:
+        return False
+    cooldown = account.cooldown_until
+    if cooldown is not None:
+        if cooldown.tzinfo is None:
+            cooldown = cooldown.replace(tzinfo=timezone.utc)
+        if cooldown > now:
+            return False
+    return True
 
 
 def should_send_to_contact(
@@ -237,9 +250,7 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 continue
 
             if not contact.telegram_user_id:
-                logger.debug(
-                    "Skipping contact %s (no telegram_user_id)", contact.id
-                )
+                logger.debug("Skipping contact %s (no telegram_user_id)", contact.id)
                 continue
 
             conv_result = await db_session.execute(
@@ -263,15 +274,26 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 )
                 continue
 
-            # Select account
+            # Select account. If a contact has an assigned account, prefer it
+            # only when it is eligible; otherwise fall back to any eligible account.
+            account = None
             if contact.assigned_account_id:
                 acc_result = await db_session.execute(
                     select(TelegramAccount).where(
                         TelegramAccount.id == contact.assigned_account_id
                     )
                 )
-                account = acc_result.scalar_one_or_none()
-            else:
+                assigned_account = acc_result.scalar_one_or_none()
+                if assigned_account and _is_eligible_account(assigned_account, now):
+                    account = assigned_account
+                else:
+                    logger.debug(
+                        "Assigned account %s for contact %s is not eligible, falling back",
+                        contact.assigned_account_id,
+                        contact.id,
+                    )
+
+            if account is None:
                 acc_result = await db_session.execute(
                     select(TelegramAccount).where(
                         TelegramAccount.status.in_(["ready", "active"]),
@@ -282,9 +304,7 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 account = select_account(accounts)
 
             if account is None:
-                logger.warning(
-                    "No eligible account for contact %s", contact.id
-                )
+                logger.warning("No eligible account for contact %s", contact.id)
                 continue
 
             # Rate limit: 1 message per 30 seconds per account
@@ -300,6 +320,10 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                         elapsed,
                     )
                     continue
+
+            # Track whether this is the first message to the contact so that
+            # processed_contacts counts unique contacts, not outbound messages.
+            was_first_message = cc.status == "pending"
 
             async def _send_with_account(acc):
                 if cc.status == "pending":
@@ -381,7 +405,8 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     await _send_with_account(retry_account)
                 except AccountPeerFloodError as exc2:
                     logger.warning(
-                        "Alternative account %s also peer-flood-limited", exc2.account_id
+                        "Alternative account %s also peer-flood-limited",
+                        exc2.account_id,
                     )
                     await mark_account_cooldown(
                         exc2.account_id, db_session, wait_seconds=24 * 3600
@@ -395,7 +420,8 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 await db_session.rollback()
                 continue
 
-            campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
+            if was_first_message:
+                campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
             await db_session.commit()
 
 
@@ -409,7 +435,7 @@ async def send_initial_message(
 ) -> None:
     """Generate, guardrail, humanise and send an initial outbound message."""
 
-    from app.llm.prompts import build_system_prompt
+    from app.llm.prompts import build_system_prompt, build_initial_user_prompt
     from app.core.humanizer import (
         calculate_typing_delay,
         calculate_thinking_delay,
@@ -418,36 +444,37 @@ async def send_initial_message(
         maybe_double_take,
         split_message_into_chunks,
     )
+    from app.core.funnel import get_first_stage
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
     from app.models.conversation import Message
 
     from app.llm.engine import LLMEngine
+
     engine = LLMEngine()
 
-    system_prompt = build_system_prompt(script)
-    user_prompt_parts = [
-        "Напиши первое сообщение для потенциального клиента."
-    ]
-    if contact.first_name:
-        user_prompt_parts.append(f"Имя: {contact.first_name}")
-    if contact.company_name:
-        user_prompt_parts.append(f"Компания: {contact.company_name}")
-    if contact.position:
-        user_prompt_parts.append(f"Должность: {contact.position}")
-    if contact.city:
-        user_prompt_parts.append(f"Город: {contact.city}")
-    if contact.industry:
-        user_prompt_parts.append(f"Индустрия: {contact.industry}")
+    conversation_stage = get_first_stage(script)
+    conversation.conversation_stage = conversation_stage
+
+    system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
+    user_prompt = build_initial_user_prompt(
+        script, contact, conversation_stage=conversation_stage
+    )
+
+    max_tokens = None
+    if hasattr(script, "max_first_message_length") and script.max_first_message_length:
+        max_tokens = int(script.max_first_message_length * 1.5)
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "\n".join(user_prompt_parts)},
+        {"role": "user", "content": user_prompt},
     ]
 
     try:
-        response = await engine.generate_response_with_guardrails(messages, [])
+        response = await engine.generate_response_with_guardrails(
+            messages, [], max_tokens=max_tokens
+        )
     except Exception as exc:
         logger.exception("LLM generation failed for initial message: %s", exc)
         raise
@@ -463,13 +490,13 @@ async def send_initial_message(
     chunks = split_message_into_chunks(text)
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
-    total_delay = base_typing_delay + thinking_delay
     chunk_delays = [
-        int(base_typing_delay * len(chunk) / max(len(text), 1))
-        for chunk in chunks
+        int(base_typing_delay * len(chunk) / max(len(text), 1)) for chunk in chunks
     ]
 
+    from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
+
     settings = get_settings()
     client = SellerClient(
         account_id=str(account.id),
@@ -480,20 +507,21 @@ async def send_initial_message(
     )
     try:
         await client.start()
+        # Thinking delay is applied before typing so the lead does not see
+        # "typing..." while the agent is supposedly thinking.
+        if thinking_delay > 0:
+            await asyncio.sleep(thinking_delay / 1000.0)
         for idx, chunk in enumerate(chunks):
             if idx > 0:
-                await asyncio.sleep(random.uniform(1.5, 3.5))
+                await asyncio.sleep(chunk_pause_seconds())
             await client.send_message(
                 user_id=int(contact.telegram_user_id),
                 text=chunk,
-                typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+                typing_delay_ms=chunk_delays[idx],
             )
-            thinking_delay = 0
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
-        logger.warning(
-            "FloodWait on account %s for %ss", account.id, wait_seconds
-        )
+        logger.warning("FloodWait on account %s for %ss", account.id, wait_seconds)
         raise AccountFloodError(account.id, wait_seconds=wait_seconds) from exc
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
@@ -525,7 +553,7 @@ async def send_initial_message(
         message_type="text",
         llm_model=response.get("model"),
         tokens_used=response.get("tokens_used"),
-        typing_delay_ms=total_delay,
+        typing_delay_ms=base_typing_delay + thinking_delay,
     )
     db_session.add(message)
 
@@ -535,7 +563,7 @@ async def send_initial_message(
         redis = await get_redis()
         await invalidate_conversation_cache(redis, conversation.id)
     except Exception:
-        pass
+        logger.debug("Failed to invalidate conversation cache", exc_info=True)
 
 
 async def send_follow_up_message(
@@ -548,7 +576,7 @@ async def send_follow_up_message(
 ) -> None:
     """Generate, guardrail, humanise and send a follow-up outbound message."""
 
-    from app.llm.prompts import build_system_prompt, build_user_prompt
+    from app.llm.prompts import build_system_prompt, build_follow_up_user_prompt
     from app.core.humanizer import (
         calculate_typing_delay,
         calculate_thinking_delay,
@@ -557,6 +585,7 @@ async def send_follow_up_message(
         maybe_double_take,
         split_message_into_chunks,
     )
+    from app.core.funnel import get_max_length_for_stage
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
@@ -564,13 +593,13 @@ async def send_follow_up_message(
     from app.services.conversation_service import get_conversation_context
 
     from app.llm.engine import LLMEngine
+
     engine = LLMEngine()
 
-    context = await get_conversation_context(
-        db_session, conversation.id, limit=10
-    )
+    context = await get_conversation_context(db_session, conversation.id, limit=10)
 
-    system_prompt = build_system_prompt(script)
+    conversation_stage = getattr(conversation, "conversation_stage", None) or "hook"
+    system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
 
     history = [
         {
@@ -586,16 +615,16 @@ async def send_follow_up_message(
             last_agent_msg = msg["content"]
             break
 
-    user_prompt = build_user_prompt(
+    user_prompt = build_follow_up_user_prompt(
+        script=script,
         conversation_history=history,
         lead_facts=context["facts"] or {},
         last_agent_message=last_agent_msg,
-        lead_message="",
+        conversation_stage=conversation_stage,
     )
-    user_prompt = (
-        "Напиши короткое follow-up сообщение. Клиент пока не ответил.\n\n"
-        + user_prompt
-    )
+
+    max_length = get_max_length_for_stage(script, conversation_stage)
+    max_tokens = int(max_length * 1.5) if max_length else None
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -605,11 +634,8 @@ async def send_follow_up_message(
     try:
         response = await engine.generate_response_with_guardrails(
             messages,
-            [
-                msg.content
-                for msg in context["messages"]
-                if msg.direction == "outbound"
-            ],
+            [msg.content for msg in context["messages"] if msg.direction == "outbound"],
+            max_tokens=max_tokens,
         )
     except Exception as exc:
         logger.exception("LLM generation failed for follow-up message: %s", exc)
@@ -626,13 +652,13 @@ async def send_follow_up_message(
     chunks = split_message_into_chunks(text)
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
-    total_delay = base_typing_delay + thinking_delay
     chunk_delays = [
-        int(base_typing_delay * len(chunk) / max(len(text), 1))
-        for chunk in chunks
+        int(base_typing_delay * len(chunk) / max(len(text), 1)) for chunk in chunks
     ]
 
+    from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
+
     settings = get_settings()
     client = SellerClient(
         account_id=str(account.id),
@@ -643,20 +669,19 @@ async def send_follow_up_message(
     )
     try:
         await client.start()
+        if thinking_delay > 0:
+            await asyncio.sleep(thinking_delay / 1000.0)
         for idx, chunk in enumerate(chunks):
             if idx > 0:
-                await asyncio.sleep(random.uniform(1.5, 3.5))
+                await asyncio.sleep(chunk_pause_seconds())
             await client.send_message(
                 user_id=int(contact.telegram_user_id),
                 text=chunk,
-                typing_delay_ms=chunk_delays[idx] + thinking_delay if idx == 0 else chunk_delays[idx],
+                typing_delay_ms=chunk_delays[idx],
             )
-            thinking_delay = 0
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
-        logger.warning(
-            "FloodWait on account %s for %ss", account.id, wait_seconds
-        )
+        logger.warning("FloodWait on account %s for %ss", account.id, wait_seconds)
         raise AccountFloodError(account.id, wait_seconds=wait_seconds) from exc
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
@@ -688,7 +713,7 @@ async def send_follow_up_message(
         message_type="text",
         llm_model=response.get("model"),
         tokens_used=response.get("tokens_used"),
-        typing_delay_ms=total_delay,
+        typing_delay_ms=base_typing_delay + thinking_delay,
     )
     db_session.add(message)
 
@@ -698,7 +723,7 @@ async def send_follow_up_message(
         redis = await get_redis()
         await invalidate_conversation_cache(redis, conversation.id)
     except Exception:
-        pass
+        logger.debug("Failed to invalidate conversation cache", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -765,9 +790,7 @@ class CampaignScheduler:
     """APScheduler wrapper that processes running campaigns and maintains resilience."""
 
     def __init__(self) -> None:
-        jobstores = {
-            "default": SQLAlchemyJobStore(url=_get_sync_db_url())
-        }
+        jobstores = {"default": SQLAlchemyJobStore(url=_get_sync_db_url())}
         self._scheduler = AsyncIOScheduler(jobstores=jobstores)
 
     def start(self) -> None:
@@ -808,7 +831,6 @@ class CampaignScheduler:
     @staticmethod
     async def _run_process_campaigns() -> None:
 
-
         try:
             async with AsyncSessionLocal() as session:
                 await process_campaigns(session)
@@ -841,7 +863,6 @@ class CampaignScheduler:
 
     @staticmethod
     async def _run_auto_close_conversations() -> None:
-
 
         try:
             async with AsyncSessionLocal() as session:

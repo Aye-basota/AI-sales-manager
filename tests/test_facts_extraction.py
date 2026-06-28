@@ -73,7 +73,9 @@ async def test_extract_facts_ignores_empty_values():
 async def test_extract_facts_graceful_on_llm_failure():
     with patch("app.services.conversation_service.LLMEngine") as MockEngine:
         engine_inst = MockEngine.return_value
-        engine_inst.generate_with_fallback = AsyncMock(side_effect=Exception("API error"))
+        engine_inst.generate_with_fallback = AsyncMock(
+            side_effect=Exception("API error")
+        )
 
         result = await extract_facts_from_message("Some message")
 

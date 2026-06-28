@@ -8,6 +8,7 @@ class ConversationBase(BaseModel):
     contact_id: Optional[UUID] = None
     campaign_id: Optional[UUID] = None
     current_state: str = "cold"
+    conversation_stage: str = "hook"
     sentiment: Optional[str] = None
     facts_extracted: Dict[str, Any] = {}
     operator_status: Optional[str] = None

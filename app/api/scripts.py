@@ -36,7 +36,9 @@ async def create_script(payload: ScriptCreate, db: AsyncSession = Depends(get_db
 
 
 @router.put("/{script_id}", response_model=ScriptResponse)
-async def update_script(script_id: UUID, payload: ScriptUpdate, db: AsyncSession = Depends(get_db)):
+async def update_script(
+    script_id: UUID, payload: ScriptUpdate, db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(select(Script).where(Script.id == script_id))
     script = result.scalar_one_or_none()
     if not script:

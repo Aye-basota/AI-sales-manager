@@ -1,4 +1,3 @@
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -80,7 +79,9 @@ async def test_generate_with_fallback_primary_succeeds(engine):
     mock_client.post.return_value = mock_response
 
     with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
-        result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
+        result = await engine.generate_with_fallback(
+            [{"role": "user", "content": "Hi"}]
+        )
 
     assert result["text"] == "Primary ok"
     assert mock_client.post.call_count == 1
@@ -106,7 +107,9 @@ async def test_generate_with_fallback_retries_on_failure(engine):
     mock_client.post.side_effect = [fail_response, ok_response]
 
     with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
-        result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
+        result = await engine.generate_with_fallback(
+            [{"role": "user", "content": "Hi"}]
+        )
 
     assert result["text"] == "Fallback ok"
     assert mock_client.post.call_count == 2
@@ -182,7 +185,7 @@ async def test_generate_response_with_guardrails_fallback_after_retries(engine):
             max_retries=1,
         )
 
-    assert result["text"] == "Извините, не совсем понял, могу ли я уточнить..."
+    assert result["text"] == FALLBACK_TEXT
     assert result["model"] == "fallback"
     # initial + 1 retry = 2 calls
     assert mock_client.post.call_count == 2
@@ -239,7 +242,9 @@ async def test_generate_with_fallback_retry_429_then_success(engine):
 
     with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         with patch("app.llm.engine.asyncio.sleep") as mock_sleep:
-            result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
+            result = await engine.generate_with_fallback(
+                [{"role": "user", "content": "Hi"}]
+            )
 
     assert result["text"] == "Retry success"
     assert mock_client.post.call_count == 2
@@ -263,7 +268,9 @@ async def test_generate_with_fallback_all_retryable_exhausted_returns_fallback(e
 
     with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client):
         with patch("app.llm.engine.asyncio.sleep") as mock_sleep:
-            result = await engine.generate_with_fallback([{"role": "user", "content": "Hi"}])
+            result = await engine.generate_with_fallback(
+                [{"role": "user", "content": "Hi"}]
+            )
 
     assert result["text"] == FALLBACK_TEXT
     assert result["model"] == "fallback"

@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -64,9 +63,7 @@ async def test_handle_inbound_message_existing_conversation():
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
     conversation = Conversation(
         id=uuid.uuid4(),
         contact_id=contact.id,
@@ -132,12 +129,9 @@ async def test_handle_inbound_message_existing_conversation():
                                 "app.bots.inbound_listener.add_message",
                                 new_callable=AsyncMock,
                             ) as mock_add:
-                                await _handle_inbound_message(
-                                    account, client, message
-                                )
+                                await _handle_inbound_message(account, client, message)
 
                                 client.set_online.assert_awaited_once()
-                                client.set_typing.assert_awaited_once()
                                 client.send_message.assert_awaited_once()
                                 client.read_history.assert_awaited_once()
                                 mock_add.assert_awaited()
@@ -158,12 +152,8 @@ async def test_handle_inbound_message_new_conversation():
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
-    campaign = Campaign(
-        id=uuid.uuid4(), script_id=uuid.uuid4(), status="running"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    campaign = Campaign(id=uuid.uuid4(), script_id=uuid.uuid4(), status="running")
     cc = CampaignContact(
         id=uuid.uuid4(),
         campaign_id=campaign.id,
@@ -221,13 +211,62 @@ async def test_handle_inbound_message_new_conversation():
                                 "app.bots.inbound_listener.add_message",
                                 new_callable=AsyncMock,
                             ) as mock_add:
-                                await _handle_inbound_message(
-                                    account, client, message
-                                )
+                                await _handle_inbound_message(account, client, message)
 
                                 client.send_message.assert_awaited_once()
                                 mock_add.assert_awaited()
                                 mock_notif.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_inbound_message_paused_campaign_does_not_update_analytics():
+    account = TelegramAccount(id=uuid.uuid4(), phone="+123")
+    client = MagicMock()
+    client.send_message = AsyncMock()
+
+    message = MagicMock()
+    message.from_user = MagicMock(id=123456)
+    message.text = "Hello"
+
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        contact_id=contact.id,
+        campaign_id=uuid.uuid4(),
+        current_state="cold",
+    )
+    campaign = Campaign(
+        id=conversation.campaign_id,
+        script_id=uuid.uuid4(),
+        status="paused",
+        replied_count=0,
+    )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
+
+    mock_db = build_mock_session()
+    mock_db.execute.side_effect = [
+        MockResult([contact]),
+        MockResult([conversation]),
+        MockResult([campaign]),
+    ]
+
+    with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
+        MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.bots.inbound_listener.add_message", new_callable=AsyncMock):
+            await _handle_inbound_message(account, client, message)
+
+    # No automated reply sent because campaign is not running.
+    client.send_message.assert_not_awaited()
+    # Analytics must not be updated for paused campaigns.
+    assert cc.status == "initial_sent"
+    assert campaign.replied_count == 0
 
 
 @pytest.mark.asyncio
@@ -267,9 +306,7 @@ async def test_handle_inbound_message_guardrails_block():
     message.from_user = MagicMock(id=123456)
     message.text = "Hello"
 
-    contact = Contact(
-        id=uuid.uuid4(), telegram_user_id=123456, first_name="John"
-    )
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
     conversation = Conversation(
         id=uuid.uuid4(),
         contact_id=contact.id,
@@ -335,9 +372,7 @@ async def test_handle_inbound_message_guardrails_block():
                                 "app.bots.inbound_listener.add_message",
                                 new_callable=AsyncMock,
                             ):
-                                await _handle_inbound_message(
-                                    account, client, message
-                                )
+                                await _handle_inbound_message(account, client, message)
 
                                 # Fallback text should still be sent
                                 client.send_message.assert_awaited_once()

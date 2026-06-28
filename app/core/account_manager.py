@@ -24,7 +24,10 @@ def select_account(
     fewer than *daily_limit* messages today.
     """
     for account in accounts:
-        if account.status in ("ready", "active") and account.daily_messages_sent < daily_limit:
+        if (
+            account.status in ("ready", "active")
+            and account.daily_messages_sent < daily_limit
+        ):
             return account
     return None
 
@@ -82,9 +85,7 @@ async def mark_account_ready(account_id, session: AsyncSession) -> None:
 
 async def reset_daily_counters_db(session: AsyncSession) -> None:
     """Reset ``daily_messages_sent`` to ``0`` for all accounts in the database."""
-    await session.execute(
-        update(TelegramAccount).values(daily_messages_sent=0)
-    )
+    await session.execute(update(TelegramAccount).values(daily_messages_sent=0))
     await session.commit()
 
 

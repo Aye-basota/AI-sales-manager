@@ -37,16 +37,24 @@ class TestSellerClient:
         # Simulate an initialized Pyrogram client
         client._client = AsyncMock()
         client._client.send_message = AsyncMock(
-            return_value=MagicMock(id=1, date=1, chat=MagicMock(id=123, type="private"), text="hello")
+            return_value=MagicMock(
+                id=1, date=1, chat=MagicMock(id=123, type="private"), text="hello"
+            )
         )
-        with patch("app.bots.seller_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await client.send_message(user_id=123, text="hello", typing_delay_ms=500)
+        with patch(
+            "app.bots.seller_client.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep:
+            result = await client.send_message(
+                user_id=123, text="hello", typing_delay_ms=500
+            )
         mock_sleep.assert_awaited_once_with(0.5)
         assert result["text"] == "hello"
 
     @pytest.mark.asyncio
     async def test_ensure_connected_with_exponential_backoff(self):
-        client = SellerClient(account_id="acc1", session_string="sess1", api_id=1, api_hash="hash")
+        client = SellerClient(
+            account_id="acc1", session_string="sess1", api_id=1, api_hash="hash"
+        )
         mock_client = MagicMock()
         mock_client.is_connected = False
         mock_client.start = AsyncMock()
@@ -61,7 +69,9 @@ class TestSellerClient:
 
     @pytest.mark.asyncio
     async def test_heartbeat_reconnects_on_disconnect(self):
-        client = SellerClient(account_id="acc1", session_string="sess1", api_id=1, api_hash="hash")
+        client = SellerClient(
+            account_id="acc1", session_string="sess1", api_id=1, api_hash="hash"
+        )
         mock_client = MagicMock()
         mock_client.is_connected = False
         mock_client.start = AsyncMock()
@@ -78,7 +88,9 @@ class TestSellerClient:
 
     @pytest.mark.asyncio
     async def test_with_reconnect_retries_on_connection_error(self):
-        client = SellerClient(account_id="acc1", session_string="sess1", api_id=1, api_hash="hash")
+        client = SellerClient(
+            account_id="acc1", session_string="sess1", api_id=1, api_hash="hash"
+        )
         mock_client = MagicMock()
         mock_client.is_connected = False
         mock_client.start = AsyncMock()
@@ -101,7 +113,9 @@ class TestSellerClient:
 
     @pytest.mark.asyncio
     async def test_send_message_reconnects_on_connection_error(self):
-        client = SellerClient(account_id="acc1", session_string="sess1", api_id=1, api_hash="hash")
+        client = SellerClient(
+            account_id="acc1", session_string="sess1", api_id=1, api_hash="hash"
+        )
         mock_client = MagicMock()
         mock_client.is_connected = False
         mock_client.start = AsyncMock()
@@ -114,7 +128,9 @@ class TestSellerClient:
             call_count += 1
             if call_count == 1:
                 raise ConnectionError("boom")
-            return MagicMock(id=1, date=1, chat=MagicMock(id=123, type="private"), text="hello")
+            return MagicMock(
+                id=1, date=1, chat=MagicMock(id=123, type="private"), text="hello"
+            )
 
         mock_client.send_message = AsyncMock(side_effect=flaky_send)
 
@@ -131,6 +147,55 @@ class TestSellerClient:
         assert client._heartbeat_task is not None
         await client.stop()
         assert client._heartbeat_task is None
+
+
+class TestSellerClientHelpers:
+    def test_parse_proxy_returns_none_for_empty_url(self):
+        from app.bots.seller_client import _parse_proxy
+
+        assert _parse_proxy(None) is None
+        assert _parse_proxy("") is None
+
+    def test_parse_proxy_parses_socks5_url(self):
+        from app.bots.seller_client import _parse_proxy
+
+        proxy = _parse_proxy("socks5://user:pass@proxy.example.com:1080")
+        assert proxy["scheme"] == "socks5"
+        assert proxy["hostname"] == "proxy.example.com"
+        assert proxy["port"] == 1080
+        assert proxy["username"] == "user"
+        assert proxy["password"] == "pass"
+
+    def test_parse_proxy_ignores_unsupported_scheme(self):
+        from app.bots.seller_client import _parse_proxy
+
+        assert _parse_proxy("https://proxy.example.com:8080") is None
+
+    @pytest.mark.asyncio
+    async def test_set_typing_without_client_logs_debug(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        with patch("app.bots.seller_client.logger.debug") as mock_debug:
+            await client.set_typing(user_id=123)
+        mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_set_online_without_client_logs_debug(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        with patch("app.bots.seller_client.logger.debug") as mock_debug:
+            await client.set_online()
+        mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_read_history_without_client_logs_debug(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        with patch("app.bots.seller_client.logger.debug") as mock_debug:
+            await client.read_history(user_id=123)
+        mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_me_returns_none_when_no_client(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        assert await client.get_me() is None
 
 
 class TestClientPool:

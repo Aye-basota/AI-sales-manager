@@ -1,7 +1,6 @@
 """Dedicated tests for Admin Bot analytics and hot leads commands."""
 
 import uuid
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -36,7 +35,7 @@ def _make_mock_session(result_mock):
 class TestAnalyticsCommand:
     async def test_returns_correct_metrics(self, mock_message):
         session = AsyncMock()
-        session.scalar.side_effect = [150, 142, 18, 3, 1]
+        session.scalar.side_effect = [150, 142, 18, 3, 1, 5, 120.5]
         context = AsyncMock()
         context.__aenter__ = AsyncMock(return_value=session)
         context.__aexit__ = AsyncMock(return_value=False)
@@ -51,10 +50,12 @@ class TestAnalyticsCommand:
         assert "Ответили: 18 (12.7%)" in text
         assert "Hot leads: 3" in text
         assert "Встречи: 1" in text
+        assert "Guardrails отказов: 5" in text
+        assert "Средняя длина сообщения: 120 симв." in text
 
     async def test_zero_division_handling(self, mock_message):
         session = AsyncMock()
-        session.scalar.side_effect = [0, 0, 0, 0, 0]
+        session.scalar.side_effect = [0, 0, 0, 0, 0, 0, 0.0]
         context = AsyncMock()
         context.__aenter__ = AsyncMock(return_value=session)
         context.__aexit__ = AsyncMock(return_value=False)
@@ -135,12 +136,14 @@ class TestHotleadsCommand:
 
 class TestFormatAnalytics:
     def test_format_with_various_numbers(self):
-        text = _format_analytics(1000, 950, 120, 15, 8)
+        text = _format_analytics(1000, 950, 120, 15, 8, 2, 110.7)
         assert "Всего контактов: 1000" in text
         assert "Отправлено: 950" in text
         assert "Ответили: 120 (12.6%)" in text
         assert "Hot leads: 15" in text
         assert "Встречи: 8" in text
+        assert "Guardrails отказов: 2" in text
+        assert "Средняя длина сообщения: 111 симв." in text
 
     def test_format_rounds_reply_rate(self):
         text = _format_analytics(100, 50, 1, 0, 0)
@@ -157,7 +160,9 @@ class TestFormatHotleads:
         assert "🔥" in text
 
     def test_phone_fallback(self):
-        conv = Conversation(id=uuid.uuid4(), current_state="meeting_booked", sentiment=None)
+        conv = Conversation(
+            id=uuid.uuid4(), current_state="meeting_booked", sentiment=None
+        )
         contact = Contact(id=uuid.uuid4(), telegram_username=None, phone="+123")
         text = _format_hotleads([(conv, contact)])
         assert "+123" in text

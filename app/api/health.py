@@ -19,7 +19,7 @@ async def health(db: AsyncSession = Depends(get_db)):
     scheduler_ok = scheduler.is_running()
 
     return {
-        "status": "ok" if db_ok else "degraded",
+        "status": "ok" if (db_ok and scheduler_ok) else "degraded",
         "scheduler": scheduler_ok,
         "db": db_ok,
     }

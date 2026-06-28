@@ -1,4 +1,4 @@
-﻿from uuid import uuid4
+from uuid import uuid4
 from app.models.campaign import CampaignContact
 from tests.conftest import MockResult
 
@@ -84,7 +84,9 @@ def test_add_contacts_to_campaign(client, mock_db, sample_campaign, sample_conta
 
 def test_add_contacts_to_campaign_not_found(client, mock_db):
     mock_db.execute.return_value = MockResult([])
-    response = client.post(f"/campaigns/{uuid4()}/contacts", json={"contact_ids": [str(uuid4())]})
+    response = client.post(
+        f"/campaigns/{uuid4()}/contacts", json={"contact_ids": [str(uuid4())]}
+    )
     assert response.status_code == 404
 
 

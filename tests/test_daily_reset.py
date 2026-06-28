@@ -1,13 +1,10 @@
 """Tests for daily reset and cooldown recovery scheduler jobs."""
 
-from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
 
 import pytest
 
 from app.core.scheduler import CampaignScheduler
-from app.models.telegram_account import TelegramAccount
 
 
 @pytest.mark.asyncio
@@ -17,7 +14,9 @@ async def test_scheduler_adds_reset_job():
         with patch.object(scheduler._scheduler, "start"):
             scheduler.start()
 
-    job_ids = {call.kwargs.get("id") or call.args[3] for call in mock_add_job.call_args_list}
+    job_ids = {
+        call.kwargs.get("id") or call.args[3] for call in mock_add_job.call_args_list
+    }
     assert "reset_daily_counters" in job_ids
     assert "recover_cooldown_accounts" in job_ids
     assert "auto_close_conversations" in job_ids

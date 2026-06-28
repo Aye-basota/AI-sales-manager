@@ -119,7 +119,11 @@ def check_no_cjk_arabic(text: str) -> bool:
         if 0xAC00 <= code <= 0xD7AF:
             return False
         # Arabic / Arabic Supplement / Extended-A
-        if 0x0600 <= code <= 0x06FF or 0x0750 <= code <= 0x077F or 0x08A0 <= code <= 0x08FF:
+        if (
+            0x0600 <= code <= 0x06FF
+            or 0x0750 <= code <= 0x077F
+            or 0x08A0 <= code <= 0x08FF
+        ):
             return False
     return True
 

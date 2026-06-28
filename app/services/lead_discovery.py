@@ -22,7 +22,7 @@ try:
         asyncio.set_event_loop(_tmp_loop)
 
     from pyrogram import Client
-    from pyrogram.types import User, ChatMember
+    from pyrogram.types import User
 
     _PYROGRAM_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -74,7 +74,6 @@ class GenericJSONAdapter(ExternalLeadSource):
         api_url: str | None = None,
         api_key: str | None = None,
     ) -> None:
-        settings = get_settings()
         self.api_url = api_url or os.getenv("EXTERNAL_LEAD_API_URL", "")
         self.api_key = api_key or os.getenv("EXTERNAL_LEAD_API_KEY", "")
 
@@ -94,7 +93,9 @@ class GenericJSONAdapter(ExternalLeadSource):
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(self.api_url, headers=headers, params=params)
+                response = await client.get(
+                    self.api_url, headers=headers, params=params
+                )
                 response.raise_for_status()
                 data = response.json()
         except Exception as exc:
@@ -139,9 +140,7 @@ class TelegramPublicSearch:
     def __init__(self, client: Any | None = None) -> None:
         self._client = client
 
-    async def search(
-        self, query: str, limit: int = 20
-    ) -> List[DiscoveredContact]:
+    async def search(self, query: str, limit: int = 20) -> List[DiscoveredContact]:
         """Search Telegram globally for users matching *query*.
 
         If a Pyrogram *client* was provided at init, it is used directly.
@@ -214,7 +213,9 @@ class TelegramPublicSearch:
                 try:
                     await client.stop()
                 except Exception:
-                    logger.warning("Failed to stop lead discovery client", exc_info=True)
+                    logger.warning(
+                        "Failed to stop lead discovery client", exc_info=True
+                    )
 
         return results
 
@@ -284,7 +285,9 @@ class ChannelMembersParser:
                     )
                 ).lower()
 
-                if keywords_lower and not any(k in profile_text for k in keywords_lower):
+                if keywords_lower and not any(
+                    k in profile_text for k in keywords_lower
+                ):
                     continue
 
                 results.append(
@@ -301,13 +304,17 @@ class ChannelMembersParser:
                 if len(results) >= limit:
                     break
         except Exception as exc:
-            logger.warning("Channel members parsing failed for %s: %s", channel_username, exc)
+            logger.warning(
+                "Channel members parsing failed for %s: %s", channel_username, exc
+            )
         finally:
             if temporary_client:
                 try:
                     await client.stop()
                 except Exception:
-                    logger.warning("Failed to stop channel parser client", exc_info=True)
+                    logger.warning(
+                        "Failed to stop channel parser client", exc_info=True
+                    )
 
         return results
 

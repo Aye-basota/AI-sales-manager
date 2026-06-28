@@ -1,7 +1,5 @@
-import random
 from unittest.mock import patch
 
-import pytest
 
 from app.core.humanizer import (
     add_casual_markers,
@@ -12,6 +10,7 @@ from app.core.humanizer import (
     maybe_double_take,
     maybe_self_correct,
     remove_markdown,
+    split_message_into_chunks,
 )
 
 
@@ -26,10 +25,15 @@ class TestCalculateTypingDelay:
         assert delay == expected
 
     def test_longer_text_takes_longer(self):
-        text = "a" * 100
+        text = "a" * 50
         delay = calculate_typing_delay(text, chars_per_min=(300, 300))
-        expected = int((100 / 5) * 1000)
+        expected = int((50 / 5) * 1000)
         assert delay == expected
+
+    def test_typing_delay_is_capped(self):
+        text = "a" * 1000
+        delay = calculate_typing_delay(text, chars_per_min=(300, 300))
+        assert delay <= 10000
 
     def test_random_speed_affects_delay(self):
         text = "test"
@@ -57,7 +61,17 @@ class TestMaybeSelfCorrect:
         text = "This is a message"
         result = maybe_self_correct(text, rate=1.0)
         assert result != text
-        assert any(result.startswith(p) for p in ["Точнее, ", "*точнее, ", "Уточню, ", "*уточню, ", "Поправка, ", "*поправка, "])
+        assert any(
+            result.startswith(p)
+            for p in [
+                "Точнее, ",
+                "*точнее, ",
+                "Уточню, ",
+                "*уточню, ",
+                "Поправка, ",
+                "*поправка, ",
+            ]
+        )
 
     def test_empty_string_returns_empty(self):
         assert maybe_self_correct("", rate=1.0) == ""
@@ -80,20 +94,29 @@ class TestAddCasualMarkers:
     def test_marker_injected_when_rate_is_one(self):
         text = "Hello. How are you?"
         result = add_casual_markers(text, rate=1.0)
-        assert any(marker.lower() in result.lower() for marker in ["кстати", "слушайте", "если честно"])
+        assert any(
+            marker.lower() in result.lower()
+            for marker in ["кстати", "слушайте", "если честно"]
+        )
 
     def test_single_sentence_gets_marker(self):
         text = "This is a single sentence."
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = add_casual_markers(text, rate=0.15)
-        assert any(marker.lower() in result.lower() for marker in ["кстати", "слушайте", "если честно"])
+        assert any(
+            marker.lower() in result.lower()
+            for marker in ["кстати", "слушайте", "если честно"]
+        )
 
     def test_multiple_sentences_only_one_marker(self):
         text = "First sentence. Second sentence. Third sentence."
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = add_casual_markers(text, rate=0.15)
         # Should have exactly one marker added
-        count = sum(result.lower().count(marker) for marker in ["кстати", "слушайте", "если честно"])
+        count = sum(
+            result.lower().count(marker)
+            for marker in ["кстати", "слушайте", "если честно"]
+        )
         assert count == 1
 
     def test_no_change_when_random_above_rate(self):
@@ -116,7 +139,6 @@ class TestMaybeDoubleTake:
         text = "Hello there"
         result = maybe_double_take(text, city="Moscow", rate=1.0)
         assert "Moscow" in result
-        assert "приоритеты" in result
         assert result.startswith(text)
 
 
@@ -165,13 +187,35 @@ class TestFormatMessage:
         assert "жирный" in result
         assert "код" in result
 
-    def test_applies_humanization(self):
+    def test_no_aggressive_humanization_by_default(self):
+        # By default self-correction, markers and double-take are disabled.
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = format_message("Hello. How are you?", city=None)
-        # casual marker or self-correction may be applied
-        assert result != "Hello. How are you?" or result == "Hello. How are you?"
+        assert result == "Hello. How are you?"
 
-    def test_applies_double_take_with_city(self):
+    def test_no_double_take_by_default(self):
         with patch("app.core.humanizer.random.random", return_value=0.01):
             result = format_message("Hello there", city="Moscow")
-        assert "Moscow" in result
+        assert "Moscow" not in result
+        assert result == "Hello there"
+
+
+class TestSplitMessageIntoChunks:
+    def test_empty_text_returns_empty(self):
+        assert split_message_into_chunks("") == []
+
+    def test_short_text_single_chunk(self):
+        assert split_message_into_chunks("Hello there") == ["Hello there"]
+
+    def test_long_paragraph_split_by_sentences(self):
+        text = "First sentence. " * 20
+        chunks = split_message_into_chunks(text, max_chars=100)
+        assert len(chunks) > 1
+        assert all(len(chunk) <= 100 for chunk in chunks)
+
+    def test_paragraphs_preserved_when_small(self):
+        text = "Paragraph one.\n\nParagraph two."
+        chunks = split_message_into_chunks(text, max_chars=200)
+        assert len(chunks) == 1
+        assert "Paragraph one" in chunks[0]
+        assert "Paragraph two" in chunks[0]

@@ -156,14 +156,18 @@ class SellerClient:
                     self._client = self._init_client()
                 if self._client is not None:
                     if self._is_connected():
-                        logger.debug("SellerClient %s: already connected", self.account_id)
+                        logger.debug(
+                            "SellerClient %s: already connected", self.account_id
+                        )
                         return
                     await self._client.start()
                     logger.warning("SellerClient %s: connected", self.account_id)
                     return
             except Exception as exc:
                 logger.warning(
-                    "SellerClient %s: connection attempt failed: %s", self.account_id, exc
+                    "SellerClient %s: connection attempt failed: %s",
+                    self.account_id,
+                    exc,
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, self._max_backoff)
@@ -187,7 +191,9 @@ class SellerClient:
                     )
                     await self._ensure_connected()
             except Exception as exc:
-                logger.warning("SellerClient %s: heartbeat error: %s", self.account_id, exc)
+                logger.warning(
+                    "SellerClient %s: heartbeat error: %s", self.account_id, exc
+                )
 
     async def start(self) -> None:
         """Initialise the client session and start heartbeat."""
@@ -260,6 +266,7 @@ class SellerClient:
                 elapsed += tick
 
         if self._client is not None:
+
             async def _send():
                 msg = await self._client.send_message(chat_id=user_id, text=text)
                 return {
@@ -285,11 +292,14 @@ class SellerClient:
                 )
                 raise
 
-        raise RuntimeError("SellerClient not initialized: missing api_id/api_hash or invalid session")
+        raise RuntimeError(
+            "SellerClient not initialized: missing api_id/api_hash or invalid session"
+        )
 
     async def set_typing(self, user_id: int) -> None:
         """Notify that the account is typing in a chat."""
         if self._client is not None:
+
             async def _do_set_typing():
                 peer = InputPeerUser(user_id=user_id, access_hash=0)
                 await self._client.invoke(
@@ -299,24 +309,32 @@ class SellerClient:
             try:
                 await self._with_reconnect(_do_set_typing)
             except Exception as exc:
-                logger.warning("SellerClient %s: set_typing error %s", self.account_id, exc)
-        logger.debug("SellerClient %s: set_typing for user %s", self.account_id, user_id)
+                logger.warning(
+                    "SellerClient %s: set_typing error %s", self.account_id, exc
+                )
+        logger.debug(
+            "SellerClient %s: set_typing for user %s", self.account_id, user_id
+        )
 
     async def set_online(self) -> None:
         """Set the account status to online."""
         if self._client is not None:
+
             async def _do_set_online():
                 await self._client.invoke(UpdateStatus(offline=False))
 
             try:
                 await self._with_reconnect(_do_set_online)
             except Exception as exc:
-                logger.warning("SellerClient %s: set_online error %s", self.account_id, exc)
+                logger.warning(
+                    "SellerClient %s: set_online error %s", self.account_id, exc
+                )
         logger.debug("SellerClient %s: set_online", self.account_id)
 
     async def read_history(self, user_id: int) -> None:
         """Mark messages in the chat as read."""
         if self._client is not None:
+
             async def _do_read_history():
                 peer = InputPeerUser(user_id=user_id, access_hash=0)
                 await self._client.invoke(ReadHistory(peer=peer, max_id=0))
@@ -324,8 +342,12 @@ class SellerClient:
             try:
                 await self._with_reconnect(_do_read_history)
             except Exception as exc:
-                logger.warning("SellerClient %s: read_history error %s", self.account_id, exc)
-        logger.debug("SellerClient %s: read_history for user %s", self.account_id, user_id)
+                logger.warning(
+                    "SellerClient %s: read_history error %s", self.account_id, exc
+                )
+        logger.debug(
+            "SellerClient %s: read_history for user %s", self.account_id, user_id
+        )
 
     async def get_me(self) -> Any | None:
         """Return the current Telegram user if the session is valid."""
@@ -341,6 +363,7 @@ class SellerClient:
         """Register a Pyrogram message handler."""
         if _PYROGRAM_AVAILABLE and self._client is not None:
             from pyrogram.handlers import MessageHandler
+
             self._client.add_handler(MessageHandler(callback))
 
 
