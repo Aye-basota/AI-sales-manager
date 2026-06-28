@@ -29,9 +29,9 @@ AI Sales Manager is an automated B2B outbound sales system that conducts human-l
 
 | Artifact | Link |
 |---|---|
-| Product Backlog board | _(link to GitHub/GitLab board)_ |
-| Sprint Backlog board | _(link to GitHub Projects / GitLab board)_ |
-| Assignment 4 Sprint milestone | _(link to Sprint milestone)_ |
+| Product Backlog board | [_(link to GitHub/GitLab board)_](https://github.com/users/Aye-basota/projects/1) |
+| Sprint Backlog board | [_(link to GitHub Projects / GitLab board)_](https://github.com/users/MuS0rKa/projects/1) |
+| Assignment 4 Sprint milestone | [_(link to Sprint milestone)_](https://github.com/Aye-basota/AI-sales-manager/milestone/2) |
 | Deployed product / run instructions | See [`LAUNCH_GUIDE.md`](../../LAUNCH_GUIDE.md) |
 | `docs/roadmap.md` | [`docs/roadmap.md`](../../docs/roadmap.md) _(to be created)_ |
 | `docs/definition-of-done.md` | [`docs/definition-of-done.md`](../../docs/definition-of-done.md) _(to be created)_ |
