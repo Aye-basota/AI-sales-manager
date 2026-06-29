@@ -33,16 +33,16 @@ AI Sales Manager is an automated B2B outbound sales system that conducts human-l
 | Sprint Backlog board | [_(link to GitHub Projects / GitLab board)_](https://github.com/users/MuS0rKa/projects/1) |
 | Assignment 4 Sprint milestone | [_(link to Sprint milestone)_](https://github.com/Aye-basota/AI-sales-manager/milestone/2) |
 | Deployed product / run instructions | See [`LAUNCH_GUIDE.md`](../../LAUNCH_GUIDE.md) |
-| `docs/roadmap.md` | [`docs/roadmap.md`](../../docs/roadmap.md) _(to be created)_ |
-| `docs/definition-of-done.md` | [`docs/definition-of-done.md`](../../docs/definition-of-done.md) _(to be created)_ |
+| `docs/roadmap.md` | [`docs/roadmap.md`](../../docs/roadmap.md)  |
+| `docs/definition-of-done.md` | [`docs/definition-of-done.md`](../../docs/definition-of-done.md) |
 | `docs/quality-requirements.md` | [`docs/quality-requirements.md`](../../docs/quality-requirements.md) |
 | `docs/quality-requirement-tests.md` | [`docs/quality-requirement-tests.md`](../../docs/quality-requirement-tests.md) |
 | `docs/testing.md` | [`docs/testing.md`](../../docs/testing.md) |
-| `docs/user-acceptance-tests.md` | [`docs/user-acceptance-tests.md`](../../docs/user-acceptance-tests.md) _(to be created)_ |
-| CI pipeline | _(link to CI pipeline)_ |
-| Latest CI run | _(link to latest protected-branch CI run)_ |
-| SemVer release | _(link to v0.4.0 release tag)_ |
-| `CHANGELOG.md` | [`CHANGELOG.md`](../../CHANGELOG.md) _(to be created)_ |
+| `docs/user-acceptance-tests.md` | [`docs/user-acceptance-tests.md`](../../docs/user-acceptance-tests.md)  |
+| CI pipeline | [_(link to CI pipeline)_ ] |
+| Latest CI run | [_(link to latest protected-branch CI run)_](https://github.com/Aye-basota/AI-sales-manager/actions/runs/28367590679) |
+| SemVer release | [_(link to v0.4.0 release tag)_](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.2.0) |
+| `CHANGELOG.md` | [`CHANGELOG.md`](../../CHANGELOG.md) |
 
 ---
 
@@ -157,7 +157,7 @@ These gates may only be changed by an explicit team decision with a documented r
 - Data: use sanitized demo data only (no real customer names, phone numbers, or Telegram IDs)
 - Format: screen recording with voice-over or captions
 
-**Link:** _(add public video link here after recording — YouTube unlisted or similar)_
+**Link:** https://drive.google.com/drive/folders/1QJ67zFq9l60jJkN71bvllTOd_u2pCauu?usp=sharing
 
 Link this video from the SemVer release mapped to the Assignment 4 Sprint increment (v0.4.0).
 
