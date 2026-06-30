@@ -39,9 +39,6 @@ nav:
   - Development Process: development-process.md
   - Architecture:
       - Overview: architecture/README.md
-      - Static View: architecture/static-view/README.md
-      - Dynamic View: architecture/dynamic-view/README.md
-      - Deployment View: architecture/deployment-view/README.md
       - Decisions:
           - ADR-001: architecture/adr/ADR-001.md
           - ADR-002: architecture/adr/ADR-002.md

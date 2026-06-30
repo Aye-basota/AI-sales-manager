@@ -152,10 +152,10 @@ Place screenshots in `reports/week5/images/`:
 
 MVP v2 runs as a Docker Compose stack (FastAPI + Admin Bot + APScheduler + Pyrogram) with PostgreSQL and Redis. Architecture is documented with diagrams-as-code and linked ADRs:
 
-- **Overview:** [`docs/architecture/README.md`](../../docs/architecture/README.md)
-- **Static view (component diagram):** [`docs/architecture/static-view/`](../../docs/architecture/static-view/)
-- **Dynamic view (inbound reply sequence):** [`docs/architecture/dynamic-view/`](../../docs/architecture/dynamic-view/)
-- **Deployment view (VPS Docker stack):** [`docs/architecture/deployment-view/`](../../docs/architecture/deployment-view/)
+- **Overview (static, dynamic, deployment views):** [`docs/architecture/README.md`](../../docs/architecture/README.md)
+- **Component diagram source:** [`docs/architecture/static-view/component-diagram.puml`](../../docs/architecture/static-view/component-diagram.puml)
+- **Sequence diagram source:** [`docs/architecture/dynamic-view/inbound-reply-sequence.puml`](../../docs/architecture/dynamic-view/inbound-reply-sequence.puml)
+- **Deployment diagram source:** [`docs/architecture/deployment-view/deployment-diagram.puml`](../../docs/architecture/deployment-view/deployment-diagram.puml)
 - **ADRs:** [`docs/architecture/adr/`](../../docs/architecture/adr/)
 
 Quality requirements QR-01–QR-04 map to ADR-001–ADR-004 (guardrails, state machine, scheduler, anti-repetition) and are verified by QRTs in CI. See [`docs/quality-requirements.md`](../../docs/quality-requirements.md).

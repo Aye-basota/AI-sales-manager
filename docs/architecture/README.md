@@ -4,16 +4,15 @@ This document is the maintained architecture overview for **AI Sales Manager** â
 
 ## Architectural Views
 
-| View | Location | Purpose |
+| View | Diagram source | Purpose |
 |---|---|---|
-| Static view | [`static-view/`](static-view/) | Components, external systems, and communication paths |
-| Dynamic view | [`dynamic-view/`](dynamic-view/) | Runtime flows (sequence diagrams) for important workflows |
-| Deployment view | [`deployment-view/`](deployment-view/) | Runtime deployment, datastores, and customer access path |
+| Static view | [`static-view/component-diagram.puml`](static-view/component-diagram.puml) | Components, external systems, and communication paths |
+| Dynamic view | [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml) | Runtime flows (sequence diagrams) for important workflows |
+| Deployment view | [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml) | Runtime deployment, datastores, and customer access path |
 
 ## Component Diagram (Static View)
 
-**Diagram source:** [`static-view/component-diagram.puml`](static-view/component-diagram.puml)  
-**Detailed view doc:** [`static-view/README.md`](static-view/README.md)
+**Diagram source:** [`static-view/component-diagram.puml`](static-view/component-diagram.puml)
 
 ### What the diagram shows
 
@@ -54,8 +53,7 @@ Admin Bot and REST API are **sibling entry points** â€” both call shared service
 
 ## Sequence Diagram (Dynamic View)
 
-**Diagram source:** [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml)  
-**Detailed view doc:** [`dynamic-view/README.md`](dynamic-view/README.md)
+**Diagram source:** [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml)
 
 ### Scenario
 
@@ -85,8 +83,7 @@ The sequence follows one inbound message from Telegram delivery through persiste
 
 ## Deployment Diagram (Deployment View)
 
-**Diagram source:** [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml)  
-**Detailed view doc:** [`deployment-view/README.md`](deployment-view/README.md)
+**Diagram source:** [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml)
 
 ### What the diagram shows
 
