@@ -1,44 +1,88 @@
-# Definition of Done (DoD)
+# Definition of Done — AI Sales Manager
 
-This document defines the team's shared minimum completion standard for the AI Sales Manager project. A Product Backlog Item (PBI) or User Story is only considered "Done" when all the following criteria are met.
+A Product Backlog Item (PBI) may only be marked **Done** when every item in this checklist is satisfied.
+This Definition of Done applies to all Sprint work from Assignment 4 onward.
 
-## 1. Code & Implementation
-- [ ] The code implements the clear expected outcome and description specified in the PBI.
-- [ ] For User Stories: All linked supporting PBIs required to satisfy its acceptance criteria are fully completed.
-- [ ] The work is successfully integrated without breaking existing functionality (e.g., Telegram/WhatsApp agent integrations, campaign scheduling, inbound message handling).
-- [ ] New or changed code follows the existing project style and passes linting (`ruff check`) and formatting checks (`ruff format --check`).
+---
 
-## 2. Testing & Verification
-- [ ] All specific, observable, and testable Acceptance Criteria attached to the PBI are fully satisfied.
-- [ ] Verification evidence proving that the Acceptance Criteria are met is recorded and linked (e.g., attached to the PR/MR or issue).
-- [ ] Automated tests are added or updated for the changed product area. Tests must credibly cover the new behavior and would fail without the change.
-- [ ] All tests pass locally and in CI: unit tests, integration tests, and automated Quality Requirement Tests (QRTs).
-- [ ] Line coverage for critical modules remains at or above the project threshold (currently ≥ 30%).
-- [ ] Relevant quality requirements and QRTs are satisfied, or explicitly documented as not applicable.
+## Checklist
 
-## 3. Architecture & Quality
-- [ ] If the PBI changes architecture, critical modules, deployment model, workflow, or CI configuration, the architecture documentation and/or related Architecture Decision Records (ADRs) are updated.
-- [ ] Each affected quality requirement links to at least one related ADR where applicable (see [`docs/quality-requirements.md`](quality-requirements.md)).
+### 1. Acceptance Criteria Verification
+- [ ] All acceptance criteria defined on the issue are met and verified by the implementer
+- [ ] Edge cases described in the acceptance criteria have been manually tested or covered by automated tests
 
-## 4. Workflow & Review
-- [ ] A Pull Request (PR) / Merge Request (MR) is created and explicitly linked to the issue to maintain full traceability.
-- [ ] The code is reviewed and approved by a **different** team member than the implementer.
-- [ ] All review comments, questions, and discussions on the PR/MR are resolved.
-- [ ] CI quality gates pass before merge:
-  - Linting and formatting (`ruff`)
-  - Unit, integration, and QRT tests with coverage (`pytest`)
-  - Security static analysis (`bandit`)
-  - Dependency vulnerability scan (`pip-audit`)
-  - Broken-link check (`lychee`)
+### 2. Review by Another Team Member
+- [ ] The PR/MR has been reviewed and approved by at least one team member who is **not** the implementer
+- [ ] A named backup reviewer is available if the primary reviewer is blocked for more than 24 hours
+- [ ] All reviewer comments are resolved before merge
 
-## 5. Documentation
-- [ ] **`CHANGELOG.md` is updated** with a clear entry for any user-visible changes.
-- [ ] Traceability is maintained (e.g., stable User Story IDs are preserved; `docs/user-stories.md` is updated if the requirement status or Sprint assignment changed).
-- [ ] System documentation ([`README.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/README.md), [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md), or [`docs/interface.md`](interface.md)) is updated if the PBI introduces architectural, workflow, configuration, or usage changes.
-- [ ] [`docs/testing.md`](testing.md), [`docs/quality-requirements.md`](quality-requirements.md), and [`docs/quality-requirement-tests.md`](quality-requirement-tests.md) are updated if the PBI affects quality requirements, test coverage, or CI gates.
-- [ ] The Week 5 public report ([`reports/week5/README.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/reports/week5/README.md)) is updated with relevant links, screenshots, and status when the PBI is part of the delivered `MVP v2` increment.
+### 3. Passing CI Checks
+- [ ] The `test` CI job passes — all pytest tests green with no regressions
+- [ ] The `security` CI job passes — Bandit reports no new medium or high severity issues (`bandit -r app/ -ll`)
+- [ ] The `pip-audit` CI job passes — no known vulnerabilities in dependencies
+- [ ] The `lint` CI job passes — flake8 reports no errors (`flake8 app/ --max-line-length=120`)
+- [ ] The `link-check` CI job passes — no broken links in Markdown files (`lychee`)
+- [ ] CI runs on the protected default branch (`main`) and shows a green status before merge
 
-## 6. Release & Deployment
-- [ ] For PBIs included in `MVP v2`: the code is merged into the protected default branch (`main`).
-- [ ] A SemVer release (`v0.3.0`) is created for the `MVP v2` increment and links to the Sprint 3 milestone, deployment instructions, public demo video, and Week 5 report.
-- [ ] The current product increment remains deployed and accessible to the customer and TA until grading is complete.
+### 4. Relevant Automated Tests
+- [ ] New logic is covered by at least one automated unit or integration test
+- [ ] All existing tests continue to pass after the change
+- [ ] Tests are stored in `tests/` following the existing naming convention (`test_<module>.py`)
+- [ ] Tests are linked from `docs/testing.md` if they cover a new module or component
+
+### 5. Relevant Automated Quality Requirement Tests
+- [ ] If the change affects `app/core/state_machine.py` → `tests/test_core_state_machine.py` still passes (QRT-02)
+- [ ] If the change affects `app/llm/guardrails.py` → `tests/test_llm_guardrails.py` still passes (QRT-01, QRT-04)
+- [ ] If the change affects `app/core/scheduler.py` → `tests/test_core_scheduler.py` still passes (QRT-03)
+- [ ] If the change introduces a new quality requirement → a linked QRT is defined in `docs/quality-requirement-tests.md`
+- [ ] If the change introduces or affects an architecture decision → the related ADR in `docs/architecture/adr/` is updated or created
+
+### 6. Coverage Expectations for Critical Modules
+- [ ] Each critical module maintains at least **30% line coverage** after the change:
+
+  | Module | Minimum coverage |
+  |---|---|
+  | `app/core/state_machine.py` | 30% (currently ~100%) |
+  | `app/llm/engine.py` | 30% (currently ~99%) |
+  | `app/llm/guardrails.py` | 30% (currently ~98%) |
+  | `app/services/notification_service.py` | 30% (currently ~96%) |
+  | `app/core/scheduler.py` | 30% (currently ~80%) |
+  | `app/bots/inbound_listener.py` | 30% (currently ~75%) |
+  | `app/services/conversation_service.py` | 30% (currently ~70%) |
+  | `app/core/humanizer.py` | 30% (currently ~68%) |
+
+- [ ] Coverage report is visible in CI artifacts or PR/MR comments
+
+### 7. Testing Evidence Preserved
+- [ ] CI run link is attached to the PR/MR or issue before closing
+- [ ] Coverage report or screenshot is included in the PR/MR description or linked from the CI run
+- [ ] If a QRT was added or modified, the evidence is linked from `docs/quality-requirement-tests.md`
+
+### 8. Changelog Update for User-Visible Changes
+- [ ] If the change is user-visible (new feature, bug fix, behavior change), an entry is added to `CHANGELOG.md` under `[Unreleased]`
+- [ ] Format follows Keep a Changelog: `### Added`, `### Fixed`, `### Changed`, `### Removed`
+- [ ] Internal refactors, test additions, and documentation-only changes do not require a changelog entry
+
+### 9. Release and Deployment Evidence (for `MVP v2` increments)
+- [ ] The change is merged into the protected default branch (`main`) through an issue-linked PR/MR
+- [ ] A SemVer release (`v0.3.0`) is created for the `MVP v2` increment and links to:
+  - Sprint 3 milestone
+  - Deployment or run instructions
+  - Public sanitized demo video
+  - Week 5 public report (`reports/week5/README.md`)
+- [ ] The current product increment remains deployed and accessible to the customer and TA until grading is complete
+- [ ] The Week 5 public report is updated with relevant links, screenshots, and status
+
+---
+
+## Maintenance
+
+If later project work changes any of the following, this file must be updated **in the same PR/MR**:
+
+- Product stack (new language, framework, or runtime)
+- Quality requirements (`docs/quality-requirements.md`)
+- Critical modules list or coverage thresholds
+- CI configuration (`.github/workflows/ci.yml`)
+- QRT files (`docs/quality-requirement-tests.md`)
+
+Do not leave Assignment 4 gates stale when the product evolves.

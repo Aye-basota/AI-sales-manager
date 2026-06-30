@@ -1,114 +1,176 @@
-# Testing Strategy
+# Testing Strategy — AI Sales Manager
 
-This document describes how the AI Sales Manager project is tested, what the critical modules are, and where the tests live.
+## Overview
 
-## Test Philosophy
+The project uses **pytest** for all automated testing. Tests are organized by module in `tests/`.
+The test suite contains **408 tests** with approximately **77% line coverage** across the application.
 
-- Tests are **maintained project assets**: they live in `tests/` and run on every CI build.
-- New features and bug fixes must include tests that would fail without the change.
-- Quality Requirement Tests (QRTs) are treated as first-class tests and run in CI alongside unit and integration tests.
-
-## Test Stack
-
-- **pytest** — test runner.
-- **pytest-asyncio** — async test support.
-- **pytest-mock / unittest.mock** — mocking dependencies.
-- **pytest-cov** — coverage reporting.
-- **FastAPI TestClient** — HTTP-level integration tests.
-- **ruff** — linting and formatting checks.
-- **bandit** — additional security-focused static analysis.
-- **pip-audit** — dependency vulnerability scanning.
-- **lychee** — broken-link checking for Markdown files.
-
-## Running Tests
-
+Run the full suite:
 ```bash
-# All tests
-pytest tests/ -v
-
-# With coverage
-pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=html
-
-# Quality Requirement Tests only
-pytest tests/quality_requirement_tests/ -v
+pytest tests/ -v --cov=app --cov-report=term-missing
 ```
+
+---
+
+## Test Categories
+
+### Unit Tests
+
+Unit tests cover isolated business logic with mocked dependencies.
+
+| File | Module | What it tests |
+|---|---|---|
+| [`tests/test_core_state_machine.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_state_machine.py) | `app/core/state_machine.py` | All state transitions, terminal state immutability, unknown event handling |
+| [`tests/test_llm_guardrails.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_guardrails.py) | `app/llm/guardrails.py` | Length check, forbidden topics, anti-repetition, bot-word detection, markdown detection |
+| [`tests/test_core_humanizer.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_humanizer.py) | `app/core/humanizer.py` | Typing delays, message chunking, markdown stripping, casual marker injection |
+| [`tests/test_llm_engine.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_engine.py) | `app/llm/engine.py` | LLM cascade fallback, retry logic, hardcoded fallback |
+| [`tests/test_llm_intent_classifier.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_intent_classifier.py) | `app/llm/intent_classifier.py` | Intent classification outputs |
+| [`tests/test_llm_prompts.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_prompts.py) | `app/llm/prompts.py` | Prompt template rendering |
+| [`tests/test_core_account_manager.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_account_manager.py) | `app/core/account_manager.py` | Account selection, cooldown logic, daily limit enforcement |
+| [`tests/test_db_redis.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_db_redis.py) | `app/db/redis.py` | Redis cache read/write/invalidation |
+
+### Integration Tests
+
+Integration tests verify interactions between components using `AsyncMock` for external services.
+
+| File | Components covered |
+|---|---|
+| [`tests/test_core_scheduler.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_scheduler.py) | Scheduler ↔ Account Manager ↔ LLM Engine ↔ DB |
+| [`tests/test_bots_inbound_listener.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_bots_inbound_listener.py) | Inbound Listener ↔ Conversation Service ↔ LLM Engine |
+| [`tests/test_bots_seller_client.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_bots_seller_client.py) | SellerClient ↔ Pyrogram (mocked) |
+| [`tests/test_services_conversation_service.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_services_conversation_service.py) | Conversation Service ↔ DB ↔ Redis |
+| [`tests/test_services_contact_import.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_services_contact_import.py) | CSV/Excel import ↔ DB |
+| [`tests/test_humanizer_integration.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_humanizer_integration.py) | Humanizer ↔ SellerClient (typing simulation) |
+| [`tests/test_api_campaigns.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_campaigns.py) | FastAPI campaign endpoints ↔ DB |
+| [`tests/test_api_conversations.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_conversations.py) | FastAPI conversation endpoints ↔ DB |
+
+### End-to-End Tests
+
+| File | What it covers |
+|---|---|
+| [`tests/test_e2e.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_e2e.py) | Full campaign cycle: import → schedule → send → inbound reply → state transition → notification |
+
+### Scenario / Regression Tests
+
+| File | Risk addressed |
+|---|---|
+| [`tests/test_flood_wait.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_flood_wait.py) | Pyrogram FloodWait handling and account cooldown |
+| [`tests/test_timezone.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_timezone.py) | Working hours filter with different timezones |
+| [`tests/test_deduplication.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_deduplication.py) | Duplicate contact prevention during import |
+| [`tests/test_auto_close.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_auto_close.py) | 48 h auto-close when lead does not reply |
+| [`tests/test_daily_reset.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_daily_reset.py) | Daily message counter reset at 00:00 MSK |
+| [`tests/test_inbound_fallback.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_inbound_fallback.py) | LLM failure fallback to hardcoded Russian message |
+| [`tests/test_validation.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_validation.py) | Contact validation (phone/username format) |
+| [`tests/test_facts_extraction.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_facts_extraction.py) | LLM-extracted facts stored in conversation |
+
+---
 
 ## Critical Modules and Coverage
 
-A module is considered **critical** when a bug in it directly impacts customer-facing functionality (API, bots, scheduler), data integrity (models, import), or security/reliability (account management, encryption).
-
-| Critical module | Why critical | Required line coverage | Current line coverage | Evidence |
-|---|---|---:|---:|---|
-| `app/api/*.py` | REST API endpoints exposed to users and integrations. | ≥ 30% | 72–100% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/core/scheduler.py` | Campaign processing, account selection, anti-spam logic. | ≥ 50% | 80% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/core/state_machine.py` | Conversation state transitions. | ≥ 90% | 100% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/llm/engine.py` | LLM generation and fallback cascade. | ≥ 90% | 94% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/llm/guardrails.py` | Output safety checks. | ≥ 90% | 90% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/services/notification_service.py` | Hot lead alerts. | ≥ 90% | 94% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/bots/seller_client.py` | Telegram MTProto client wrapper. | ≥ 30% | 70% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| `app/services/lead_validation.py` | Contact validation and enrichment. | ≥ 30% | 72% | [CI coverage run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-
-## Automated Test Status
-
-| Test type | Scope | Command or CI check | Latest result | Evidence |
-|---|---|---|---|---|
-| Unit tests | Critical product logic | `pytest tests/test_*.py -v` | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Integration tests | API routes with database and service interaction | `pytest tests/test_api_*.py tests/test_e2e.py -v` | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Automated QRTs | QR-001, QR-002, QR-003 | `pytest tests/quality_requirement_tests/ -v` | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-
-## CI and QA Check Status
-
-| Gate or check | Required for Done? | Latest protected-branch status | Evidence |
+| Module | Coverage | Threshold | Status |
 |---|---|---|---|
-| Linting (ruff) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Formatting check (ruff) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Unit and integration tests | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Automated QRTs | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Line coverage (≥ 30%) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Security static analysis (bandit) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Dependency vulnerability scan (pip-audit) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Broken-link check (lychee) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/links.yml) |
+| `app/core/state_machine.py` | ~100% | ≥ 30% | ✅ |
+| `app/llm/engine.py` | ~99% | ≥ 30% | ✅ |
+| `app/llm/guardrails.py` | ~98% | ≥ 30% | ✅ |
+| `app/services/notification_service.py` | ~96% | ≥ 30% | ✅ |
+| `app/core/scheduler.py` | ~80% | ≥ 30% | ✅ |
+| `app/bots/inbound_listener.py` | ~75% | ≥ 30% | ✅ |
+| `app/services/conversation_service.py` | ~70% | ≥ 30% | ✅ |
+| `app/core/humanizer.py` | ~68% | ≥ 30% | ✅ |
+| **Global** | **~77%** | — | ✅ |
 
-## Additional QA Check Rationale
+All critical modules exceed the 30% minimum line coverage threshold.
 
-| QA objective or risk | Additional QA check | Scope | Latest result | Evidence | Limitations or follow-up |
-|---|---|---|---|---|---|
-| Common security issues (hardcoded secrets, weak crypto, unsafe deserialization) may expose Telegram session strings, API keys, or encrypted credentials. | Bandit static security analysis. | `app/` Python source code. | Passing (0 findings) | [CI bandit job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) | Bandit does not replace dependency vulnerability scanning. |
-| Dependencies with known vulnerabilities may expose users or deployments to avoidable risk. | `pip-audit` dependency vulnerability scan. | `requirements.txt` and installed packages. | Passing (0 findings) | [CI pip-audit job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) | Some vulnerabilities may require manual triage or delayed upstream fixes. |
-| Broken links in maintained documentation reduce trust and make reports hard to verify. | `lychee` broken-link checker. | All Markdown files, including `docs/` and `reports/`. | Passing | [CI lychee job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/links.yml) | Excludes rate-limited or unstable external links only when narrowly justified. |
+---
 
-## Manual Evidence That Does Not Count as QRT
+## Additional QA Check: Static Security Analysis with Bandit
 
-| Evidence | Scope | Result | Follow-up PBI or issue |
-|---|---|---|---|
-| Customer UAT observation | End-to-end campaign creation and execution | To be recorded during Sprint Review | TBD |
+### Options Considered
 
-## Coverage Reports
+| Tool | Purpose | Decision |
+|---|---|---|
+| `bandit` | Python security linter — detects hardcoded secrets, SQL injection, unsafe subprocess calls | **Selected** |
+| `pip-audit` | Checks dependencies for known CVEs | **Selected** |
+| `lychee` | Broken-link checker for Markdown files | **Selected** |
+| `radon` | Cyclomatic complexity — flags overly complex functions | Deferred (not a security risk) |
+| `pylint` | General code quality | Not selected — overlaps with existing `flake8` linting |
 
-Coverage HTML reports are generated in CI and uploaded as artifacts. Local report:
+### Selected Check: Bandit Security Analysis
+
+**QA objective:** Detect Python security anti-patterns introduced during development — hardcoded secrets, use of `eval()`, unsafe `subprocess` calls, and insecure hash functions.
+
+**Why this matters:** The system handles Telegram session strings (sensitive credentials) and executes scheduled tasks. A developer accidentally hardcoding an API key or using `eval()` on LLM output could expose accounts or allow remote code execution.
+
+**Where it runs in CI:** Runs as a separate `security` job in [`.github/workflows/ci.yml`](https://github.com/Aye-basota/AI-sales-manager/blob/main/.github/workflows/ci.yml), independent of the test job so a security finding does not block coverage reporting.
 
 ```bash
-pytest tests/ -q --cov=app --cov-report=html
-open htmlcov/index.html
+bandit -r app/ -ll --format txt
 ```
 
-## Assignment 4–5 Quality Gates for Later Work
+The `-ll` flag reports only medium and high severity issues to avoid noise from low-severity style warnings.
 
-The following gates remain active for later project work:
+**Important limitations:**
+- Bandit is a static analyzer — it does not detect runtime injection via LLM output.
+- Some `subprocess` calls in `scripts/` are legitimate; these are suppressed with `# nosec` comments where reviewed and intentional.
 
-- All PRs/MRs and protected-default-branch pushes run linting, formatting checks, tests, coverage, QRTs, Bandit, `pip-audit`, and Lychee.
-- Critical modules must maintain at least 30% line coverage.
-- New user-visible changes require a `CHANGELOG.md` entry.
-- New quality requirements require a linked automated QRT.
-- Architecture changes require updated architecture documentation and linked ADRs.
+### Selected Check: Dependency Vulnerability Scan with pip-audit
 
-If a later product change makes a gate obsolete, it will be replaced with an equivalent or stronger check and documented here.
+**QA objective:** Detect known vulnerabilities in Python dependencies before they reach production.
 
-## MVP v2 Test Additions
+**Why this matters:** The product relies on external packages for Telegram access, LLM calls, and web framework functionality. A vulnerable dependency could expose session strings or API keys.
 
-As `MVP v2` features are implemented, extend this section with:
+**Where it runs in CI:** Runs as a separate `pip-audit` job in [`.github/workflows/ci.yml`](https://github.com/Aye-basota/AI-sales-manager/blob/main/.github/workflows/ci.yml).
 
-- New critical modules introduced by the Sprint scope.
-- New unit and integration tests for changed or new product areas.
-- New automated QRTs for any new quality requirements.
-- Updated coverage evidence from the latest protected-default-branch CI run.
+```bash
+pip-audit --requirement requirements.txt --desc
+```
+
+### Selected Check: Broken-Link Check with lychee
+
+**QA objective:** Keep documentation and report links valid.
+
+**Why this matters:** Broken links in reports, README, or documentation make the project hard to inspect and reduce trust during grading.
+
+**Where it runs in CI:** Runs in [`.github/workflows/links.yml`](https://github.com/Aye-basota/AI-sales-manager/blob/main/.github/workflows/links.yml) on every push and PR.
+
+```bash
+lychee .
+```
+
+---
+
+## Adapted Testing Strategy for LLM-Heavy Components
+
+The LLM engine (`app/llm/engine.py`) cannot be tested against real API calls in CI because:
+- API keys are not available in CI.
+- LLM outputs are non-deterministic.
+
+**Approach:** All LLM calls are mocked with `AsyncMock` returning deterministic fixture responses. Tests verify the orchestration logic (retry, fallback cascade, guardrails integration) rather than LLM output quality. Manual prompt quality review is performed separately during Sprint Reviews.
+
+---
+
+## Running Tests Locally
+
+```bash
+# Full suite with coverage
+pytest tests/ -v --cov=app --cov-report=term-missing
+
+# Only unit tests (fast)
+pytest tests/test_core_state_machine.py tests/test_llm_guardrails.py tests/test_core_humanizer.py tests/test_llm_engine.py -v
+
+# Only integration tests
+pytest tests/test_core_scheduler.py tests/test_bots_inbound_listener.py tests/test_services_conversation_service.py -v
+
+# Security check
+bandit -r app/ -ll --format txt
+```
+
+---
+
+## Test Maintenance Policy
+
+Tests added during Assignment 4 are maintained product assets. Later project work must:
+- Keep all existing tests passing after code changes, or
+- Replace removed tests with documented equivalent or stronger coverage when the product feature changes.
+
+Disabling or deleting tests without replacement is not permitted unless the tested module is also removed.

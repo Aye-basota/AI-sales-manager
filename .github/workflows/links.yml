@@ -38,6 +38,7 @@ jobs:
             --exclude "https://github.com/Aye-basota/AI-sales-manager/releases/tag/*"
             --exclude "https://github.com/Aye-basota/AI-sales-manager/milestone/*"
             --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/reports/week5/README.md"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/.github/workflows/links.yml"
             --exclude "https://aye-basota.github.io/AI-sales-manager/*"
             .
         env:

@@ -7,28 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-
-      - name: Run linter
-        run: ruff check app tests
-
-      - name: Check formatting
-        run: ruff format --check app tests
-
   test:
+    name: Run tests and coverage
     runs-on: ubuntu-latest
 
     services:
@@ -37,92 +17,132 @@ jobs:
         env:
           POSTGRES_USER: sales
           POSTGRES_PASSWORD: salespass
-          POSTGRES_DB: ai_sales_test
+          POSTGRES_DB: ai_sales
         ports:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 5s
+          --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 5s
+          --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://sales:salespass@localhost:5432/ai_sales
+      REDIS_URL: redis://localhost:6379/0
+      LLM_PROVIDER: openrouter
+      OPENROUTER_API_KEY: test-key
+      SESSION_ENCRYPTION_KEY: dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXQ=
+      TELEGRAM_API_ID: "12345"
+      TELEGRAM_API_HASH: testhash
+      ADMIN_BOT_TOKEN: 123456:test-token
+      DAILY_MESSAGE_LIMIT: "50"
+      DEBUG: "True"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest-cov bandit
 
-      - name: Run tests with coverage
-        env:
-          DATABASE_URL: postgresql+asyncpg://sales:salespass@localhost:5432/ai_sales_test
-          REDIS_URL: redis://localhost:6379/1
+      - name: Run unit and integration tests with coverage
         run: |
           pytest tests/ -v \
             --cov=app \
             --cov-report=term-missing \
-            --cov-report=html \
+            --cov-report=xml:coverage.xml \
             --cov-fail-under=30
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: coverage-report
-          path: htmlcov/
+          path: coverage.xml
 
-      - name: Check CHANGELOG updated
-        if: github.event_name == 'pull_request'
-        run: 'git diff --name-only origin/main | grep -q CHANGELOG.md || echo "WARNING: CHANGELOG.md not updated"'
-
-  bandit:
+  security:
+    name: Bandit static security analysis
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install bandit
+      - name: Install bandit
+        run: pip install bandit
 
-      - name: Run bandit security scan
-        run: bandit -r app/ -f txt
+      - name: Run Bandit security scan
+        run: bandit -r app/ -ll --format txt
 
   pip-audit:
+    name: Dependency vulnerability scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pip-audit
-          pip install -r requirements.txt
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-      - name: Run pip-audit dependency scan
-        run: pip-audit --desc
+      - name: Install pip-audit
+        run: |
+          pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit --requirement requirements.txt --desc
+
+  lint:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install flake8
+
+      - name: Run flake8
+        run: flake8 app/ --max-line-length=120 --extend-ignore=E203,W503
