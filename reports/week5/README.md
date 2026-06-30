@@ -54,9 +54,17 @@ Deliver the `MVP v2` increment for Assignment 5 by implementing the selected Spr
 
 ## 5. Customer Feedback Response
 
-| Feedback point | Resulting PBI or issue | Status | Response |
-|---|---|---|---|
-| *(to be filled)* | *(issue link)* | *(Done / Deferred)* | *(response)* |
+| Feedback point                                             | Resulting PBI or issue                                         | Status      | Response                                                                                        |
+| ---------------------------------------------------------- | -------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
+| AI responses felt too sales-oriented and unnatural         | #51 US-017 Improve AI Prompt Quality for Lead Nurturing        | In Progress | Improved prompt structure to make responses more natural, contextual, and less sales-driven.    |
+| Conversation does not gradually build trust before selling | #52 US-018 Implement Natural Multi-Stage Conversation Flow     | In Progress | Introduced structured multi-stage dialogue to gradually nurture leads before presenting offers. |
+| No production deployment / system not always available     | #53 TECH-11 Deploy Application to Production VPS               | To Do       | Added VPS deployment to ensure 24/7 availability and production readiness.                      |
+| No system monitoring or reliability guarantees             | #54 TECH-12 Configure Production Infrastructure and Monitoring | To Do       | Added monitoring, health checks, and auto-restart to improve system reliability.                |
+| Prompt quality is inconsistent across conversations        | #55 TECH-13 Prompt Configuration and Versioning                | To Do       | Introduced centralized prompt management and versioning system.                                 |
+| Lack of structured sales funnel understanding              | #24 TECH-04 / #25 TECH-05                                      | In Progress | Improved funnel structure and validation for better lead qualification flow.                    |
+| Advanced analytics dashboard not available                 | —                                                              | Deferred    | Deferred due to MVP v2 focus on production stability and AI conversation quality.               |
+| CRM integrations not implemented                           | —                                                              | Deferred    | Out of scope for MVP v2; planned for future iterations.                                         |
+
 
 ### Feedback not addressed
 
