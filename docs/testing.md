@@ -17,6 +17,8 @@ This document describes how the AI Sales Manager project is tested, what the cri
 - **FastAPI TestClient** — HTTP-level integration tests.
 - **ruff** — linting and formatting checks.
 - **bandit** — additional security-focused static analysis.
+- **pip-audit** — dependency vulnerability scanning.
+- **lychee** — broken-link checking for Markdown files.
 
 ## Running Tests
 
@@ -63,13 +65,17 @@ A module is considered **critical** when a bug in it directly impacts customer-f
 | Unit and integration tests | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
 | Automated QRTs | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
 | Line coverage (≥ 30%) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
-| Additional QA check (bandit) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Security static analysis (bandit) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Dependency vulnerability scan (pip-audit) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) |
+| Broken-link check (lychee) | Yes | Passing | [CI run](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/links.yml) |
 
 ## Additional QA Check Rationale
 
 | QA objective or risk | Additional QA check | Scope | Latest result | Evidence | Limitations or follow-up |
 |---|---|---|---|---|---|
-| Common security issues (hardcoded secrets, weak crypto, unsafe deserialization) may expose Telegram session strings, API keys, or encrypted credentials. | Bandit static security analysis. | `app/` Python source code. | Passing (0 findings) | [CI bandit job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) | Bandit does not replace dependency vulnerability scanning; consider adding `pip-audit` or Dependabot alerts as a follow-up. |
+| Common security issues (hardcoded secrets, weak crypto, unsafe deserialization) may expose Telegram session strings, API keys, or encrypted credentials. | Bandit static security analysis. | `app/` Python source code. | Passing (0 findings) | [CI bandit job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) | Bandit does not replace dependency vulnerability scanning. |
+| Dependencies with known vulnerabilities may expose users or deployments to avoidable risk. | `pip-audit` dependency vulnerability scan. | `requirements.txt` and installed packages. | Passing (0 findings) | [CI pip-audit job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml) | Some vulnerabilities may require manual triage or delayed upstream fixes. |
+| Broken links in maintained documentation reduce trust and make reports hard to verify. | `lychee` broken-link checker. | All Markdown files, including `docs/` and `reports/`. | Passing | [CI lychee job](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/links.yml) | Excludes rate-limited or unstable external links only when narrowly justified. |
 
 ## Manual Evidence That Does Not Count as QRT
 
@@ -86,13 +92,23 @@ pytest tests/ -q --cov=app --cov-report=html
 open htmlcov/index.html
 ```
 
-## Assignment 4 Quality Gates for Later Work
+## Assignment 4–5 Quality Gates for Later Work
 
-The following gates introduced in Assignment 4 remain active for later project work:
+The following gates remain active for later project work:
 
-- All PRs/MRs and protected-default-branch pushes run linting, formatting checks, tests, coverage, QRTs, and Bandit.
+- All PRs/MRs and protected-default-branch pushes run linting, formatting checks, tests, coverage, QRTs, Bandit, `pip-audit`, and Lychee.
 - Critical modules must maintain at least 30% line coverage.
 - New user-visible changes require a `CHANGELOG.md` entry.
 - New quality requirements require a linked automated QRT.
+- Architecture changes require updated architecture documentation and linked ADRs.
 
 If a later product change makes a gate obsolete, it will be replaced with an equivalent or stronger check and documented here.
+
+## MVP v2 Test Additions
+
+As `MVP v2` features are implemented, extend this section with:
+
+- New critical modules introduced by the Sprint scope.
+- New unit and integration tests for changed or new product areas.
+- New automated QRTs for any new quality requirements.
+- Updated coverage evidence from the latest protected-default-branch CI run.

@@ -55,6 +55,9 @@ fix_*.py
 .coverage
 htmlcov/
 
+# Documentation build output
+site_docs/
+
 # Assignment files (kept locally, not committed)
 Assignment_04.md
 

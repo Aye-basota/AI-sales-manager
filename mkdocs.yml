@@ -1,0 +1,63 @@
+site_name: AI Sales Manager Docs
+site_url: https://aye-basota.github.io/AI-sales-manager/
+repo_url: https://github.com/Aye-basota/AI-sales-manager
+repo_name: Aye-basota/AI-sales-manager
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+# Use a separate build directory so we do not overwrite the promo landing page in site/.
+site_dir: site_docs
+
+nav:
+  - Home: index.md
+  - Roadmap: roadmap.md
+  - Development Process: development-process.md
+  - Architecture:
+      - Overview: architecture/README.md
+      - Static View: architecture/static-view/README.md
+      - Dynamic View: architecture/dynamic-view/README.md
+      - Deployment View: architecture/deployment-view/README.md
+      - Decisions:
+          - ADR-001: architecture/adr/ADR-001.md
+          - ADR-002: architecture/adr/ADR-002.md
+          - ADR-003: architecture/adr/ADR-003.md
+  - Quality:
+      - Quality Requirements: quality-requirements.md
+      - Quality Requirement Tests: quality-requirement-tests.md
+  - Testing: testing.md
+  - User Acceptance Tests: user-acceptance-tests.md
+  - Definition of Done: definition-of-done.md
+  - Interface: interface.md
+  - User Stories: user-stories.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Aye-basota/AI-sales-manager
+
+copyright: Copyright &copy; 2026 Neural Lead Team
