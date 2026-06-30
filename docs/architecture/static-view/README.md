@@ -29,7 +29,7 @@ Key relations:
 |---|---|---|
 | Scheduler | LLM Engine → Guardrails → SellerClient | in-process calls; HTTPS to LLM APIs |
 | Inbound Listener | Intent Classifier → State Machine → LLM Engine | in-process; event-driven from Pyrogram |
-| Admin Bot / API | PostgreSQL | async SQLAlchemy |
+| Admin Bot / API | PostgreSQL / shared services | async SQLAlchemy; direct in-process imports |
 | SellerClient | Telegram | MTProto user sessions |
 
 ## Coupling, Cohesion, and Maintainability

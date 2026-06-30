@@ -13,33 +13,111 @@ This document is the maintained architecture overview for **AI Sales Manager** �
 ## Component Diagram (Static View)
 
 **Diagram source:** [`static-view/component-diagram.puml`](static-view/component-diagram.puml)  
-**Full explanation:** [`static-view/README.md`](static-view/README.md)
+**Detailed view doc:** [`static-view/README.md`](static-view/README.md)
 
-The component diagram shows internal modules (Admin Bot, REST API, scheduler, inbound listener, LLM engine, guardrails, state machine, humanizer, services) and external systems (Telegram MTProto, LLM APIs, PostgreSQL, Redis). Outbound and inbound paths both pass through guardrails before Pyrogram dispatch.
+### What the diagram shows
 
-Coupling is lowest at the guardrails boundary; cohesion is highest within `app/llm/`, `app/core/`, and `app/bots/`. The monolithic container simplifies VPS deployment but couples scheduler restarts with inbound listeners.
+The component diagram groups the product into four layers:
+
+1. **External actors and platforms** — Sales Director/Operator, Telegram leads, Telegram MTProto network, and LLM provider APIs (OpenRouter / DashScope).
+2. **Application components** — Admin Bot, REST API, scheduler, inbound listener, SellerClient (Pyrogram), LLM engine, guardrails, state machine, humanizer, intent classifier, funnel manager, and supporting services.
+3. **Data stores** — PostgreSQL (primary persistence and APScheduler job store) and Redis (conversation cache invalidation).
+4. **Communication paths** — outbound campaign processing (scheduler path), inbound reply handling (listener path), and operator management (Admin Bot and REST API both use shared services directly).
+
+Important protocols: **MTProto** (Pyrogram user sessions), **HTTPS** (LLM APIs), **async SQLAlchemy** (PostgreSQL), **in-process calls** between core modules.
+
+### Coupling and cohesion
+
+**Cohesion** is high within bounded packages: `app/llm/` (generation, guardrails, prompts), `app/core/` (scheduler, state machine, humanizer), `app/bots/` (Telegram integration), `app/services/` (persistence, notifications).
+
+**Coupling** is lowest at the **guardrails boundary** ([ADR-001](adr/ADR-001.md), [ADR-004](adr/ADR-004.md)): every outbound and inbound message passes through `apply_guardrails()` before Pyrogram dispatch. The **state machine** ([ADR-002](adr/ADR-002.md)) is a pure module with no I/O, consumed by scheduler and inbound handler alike.
+
+Admin Bot and REST API are **sibling entry points** — both call shared services and the scheduler directly; the bot does not route through the HTTP API.
+
+### Maintainability implications
+
+- New funnel stages require explicit state-machine transitions and tests — predictable but not configurable at runtime.
+- LLM provider changes stay isolated in `app/llm/engine.py`.
+- Scheduler logic ([ADR-003](adr/ADR-003.md)) centralises anti-spam and working-hours rules.
+- **Trade-off:** monolithic `api` container simplifies VPS deployment but couples scheduler restarts with inbound listeners.
+
+### Quality requirements supported or constrained
+
+| QR | Effect of current structure |
+|---|---|
+| [QR-01](../quality-requirements.md#qr-01) | Guardrails component is the single pre-send gate |
+| [QR-02](../quality-requirements.md#qr-02) | Isolated state machine; terminal states enforced centrally |
+| [QR-03](../quality-requirements.md#qr-03) | Scheduler owns bounded cycle; LLM latency affects whole pipeline |
+| [QR-04](../quality-requirements.md#qr-04) | Anti-repetition inside guardrails on both inbound and outbound paths |
 
 ---
 
 ## Sequence Diagram (Dynamic View)
 
 **Diagram source:** [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml)  
-**Full explanation:** [`dynamic-view/README.md`](dynamic-view/README.md)
+**Detailed view doc:** [`dynamic-view/README.md`](dynamic-view/README.md)
 
-The sequence diagram documents the **inbound lead reply** flow — the primary MVP v2 conversational path supporting improved prompts, natural dialogue pacing, and structured lead nurturing. A lead message triggers intent classification, state machine transition, funnel stage update, LLM generation with guardrail retry, humanized send, and optional hot-lead notification.
+### Scenario
 
-This scenario crosses [ADR-001](adr/ADR-001.md), [ADR-002](adr/ADR-002.md), and [ADR-004](adr/ADR-004.md) and illustrates [QR-01](../quality-requirements.md#qr-01)–[QR-04](../quality-requirements.md#qr-04) in a single user-visible workflow.
+A lead replies to an outbound campaign message in Telegram. The system receives the message via Pyrogram, matches the sender to a campaign conversation, classifies intent, updates state and funnel stage, generates an LLM reply with guardrails, applies human-like delays, and sends the response.
+
+### Why this scenario is important
+
+This is the core **MVP v2 conversational path** (improved prompts, natural pacing, structured lead nurturing). It crosses five integration boundaries — Telegram, PostgreSQL, LLM APIs, guardrails, notifications — and failures are immediately visible to leads and operators.
+
+### Architecture decisions, boundaries, and quality requirements
+
+| Step | ADR / QR |
+|---|---|
+| Intent → state transition | [ADR-002](adr/ADR-002.md), [QR-02](../quality-requirements.md#qr-02) |
+| Funnel stage advancement | Multi-stage nurturing (hook → qualification → value → CTA) |
+| LLM cascade fallback | Latency and resilience ([QR-03](../quality-requirements.md#qr-03)) |
+| `apply_guardrails()` with retry | [ADR-001](adr/ADR-001.md), [QR-01](../quality-requirements.md#qr-01) |
+| Anti-repetition (last 5 messages) | [ADR-004](adr/ADR-004.md), [QR-04](../quality-requirements.md#qr-04) |
+| Humanizer delays | Natural dialogue pacing (MVP v2 product goal) |
+| Hot-lead notification | Operator handover boundary |
+
+### What the diagram shows
+
+The sequence follows one inbound message from Telegram delivery through persistence, intent-driven state update, LLM generation with guardrail retry, humanized send, and optional operator notification — involving Inbound Listener, Conversation Service, State Machine, LLM Engine, Guardrails, Humanizer, SellerClient, and Notification Service.
 
 ---
 
 ## Deployment Diagram (Deployment View)
 
 **Diagram source:** [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml)  
-**Full explanation:** [`deployment-view/README.md`](deployment-view/README.md)
+**Detailed view doc:** [`deployment-view/README.md`](deployment-view/README.md)
 
-The deployment diagram shows the Docker Compose stack on a production VPS (or local host): `api`, `postgres`, and `redis` containers; external Telegram and LLM endpoints; and customer access via Admin Bot, MTProto sessions, and HTTP port 8000. Hosted MkDocs documentation deploys separately to GitHub Pages.
+### What the diagram shows
 
-Single-VPS Docker Compose supports MVP v2 **24/7 availability** without Kubernetes overhead. Operators must manage secrets via environment variables, run Alembic migrations, and back up PostgreSQL volumes.
+Docker Compose stack on a **production VPS** (Sprint 3 target) or local host:
+
+| Node | Role |
+|---|---|
+| `api` container | FastAPI :8000, Admin Bot, APScheduler, Pyrogram sessions, static promo site |
+| `postgres` container | PostgreSQL 15 — app data + APScheduler job store |
+| `redis` container | Redis 7 — cache |
+| External | Telegram (MTProto + Bot API), LLM APIs (HTTPS), GitHub Pages (docs only) |
+
+**Customer-facing access:** Telegram Admin Bot, MTProto lead sessions, HTTP :8000 (health/REST/landing page).
+
+### Why this deployment model was chosen
+
+**Single-VPS Docker Compose** matches MVP v2 goals (24/7 availability) without Kubernetes overhead. All runtime components share PostgreSQL state and start together ([ADR-003](adr/ADR-003.md)). The same `docker-compose.yml` used locally deploys to production with environment-specific secrets.
+
+### How deployment supports or constrains the product
+
+**Supports:** `restart: unless-stopped`, dependency health checks, env-based secrets, co-located scheduler job store.
+
+**Constrains:** single-process monolith — deploy restarts all subsystems; no horizontal scaling without shared session management; LLM/Telegram latency depends on external networks.
+
+### Operational considerations for the customer
+
+1. Provide secrets via `.env` (Telegram API, LLM keys, bot token, encryption key).
+2. Run `alembic upgrade head` on first deploy and after schema changes.
+3. Monitor `/health` (degraded when scheduler is down).
+4. Back up PostgreSQL volume (`postgres_data`).
+5. Hosted MkDocs docs deploy separately via CI — not part of the runtime VPS stack.
 
 ---
 

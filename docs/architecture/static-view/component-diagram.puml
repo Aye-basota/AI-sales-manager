@@ -46,11 +46,11 @@ Operator --> API : REST operations\n(future web UI)
 Lead <--> Telegram : send / receive\nmessages
 Seller <--> Telegram : MTProto sessions\n(outbound + inbound)
 
-' --- API layer ---
-AdminBot --> API : internal calls
+' --- API and bot layers (shared DB/core, not HTTP between bot and API) ---
+AdminBot --> ConvSvc
+AdminBot --> AccMgr
+AdminBot --> Scheduler : trigger immediate\nprocess_campaigns
 API --> ConvSvc
-API --> AccMgr
-API --> Scheduler : trigger immediate\nprocess_campaigns
 
 ' --- Outbound path (ADR-003) ---
 Scheduler --> ConvSvc : load campaigns,\ncontacts, conversations
@@ -82,6 +82,6 @@ AccMgr --> PG
 Scheduler --> PG : read/write state,\njob store
 API --> PG
 Inbound --> PG
-Scheduler --> Redis : optional cache
+Scheduler --> Redis : cache invalidation
 
 @enduml
