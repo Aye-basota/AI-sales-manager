@@ -15,7 +15,7 @@
 
 ### Sprint Goal
 
-Deliver the `MVP v2` increment for Assignment 5 by implementing the selected Sprint scope, responding to customer feedback, and extending testing, QA, and deployment evidence.
+Deliver MVP v2 by deploying the application to a production VPS for reliable 24/7 availability and enhancing the AI assistant with improved prompts, a more natural conversational flow, and a structured lead nurturing process that builds trust before guiding users through the sales funnel.
 
 ### Sprint dates
 
@@ -150,21 +150,23 @@ Place screenshots in `reports/week5/images/`:
 
 ## 13. Architecture Summary
 
-*(Short summary of the current architecture and how it supports MVP v2. Link to component, sequence, and deployment diagrams.)*
+MVP v2 runs as a Docker Compose stack (FastAPI + Admin Bot + APScheduler + Pyrogram) with PostgreSQL and Redis. Architecture is documented with diagrams-as-code and linked ADRs:
 
-- Static view: [`docs/architecture/static-view/`](../../docs/architecture/static-view/)
-- Dynamic view: [`docs/architecture/dynamic-view/`](../../docs/architecture/dynamic-view/)
-- Deployment view: [`docs/architecture/deployment-view/`](../../docs/architecture/deployment-view/)
+- **Overview:** [`docs/architecture/README.md`](../../docs/architecture/README.md)
+- **Static view (component diagram):** [`docs/architecture/static-view/`](../../docs/architecture/static-view/)
+- **Dynamic view (inbound reply sequence):** [`docs/architecture/dynamic-view/`](../../docs/architecture/dynamic-view/)
+- **Deployment view (VPS Docker stack):** [`docs/architecture/deployment-view/`](../../docs/architecture/deployment-view/)
+- **ADRs:** [`docs/architecture/adr/`](../../docs/architecture/adr/)
 
-*(Explain how quality requirements are linked to architecture decisions.)*
+Quality requirements QR-01–QR-04 map to ADR-001–ADR-004 (guardrails, state machine, scheduler, anti-repetition) and are verified by QRTs in CI. See [`docs/quality-requirements.md`](../../docs/quality-requirements.md).
 
 ---
 
 ## 14. Team Reflection
 
 - [`reflection.md`](reflection.md) *(team should update)*
-- [`retrospective.md`](retrospective.md) *(team should update)*
-- [`llm-report.md`](llm-report.md) *(team should update)*
+- [`retrospective.md`](retrospective.md) — Sprint 3 retrospective (Part 10)
+- [`llm-report.md`](llm-report.md) — LLM usage report (Part 14)
 
 ---
 

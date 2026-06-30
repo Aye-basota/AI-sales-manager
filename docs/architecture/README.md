@@ -10,6 +10,39 @@ This document is the maintained architecture overview for **AI Sales Manager** �
 | Dynamic view | [`dynamic-view/`](dynamic-view/) | Runtime flows (sequence diagrams) for important workflows |
 | Deployment view | [`deployment-view/`](deployment-view/) | Runtime deployment, datastores, and customer access path |
 
+## Component Diagram (Static View)
+
+**Diagram source:** [`static-view/component-diagram.puml`](static-view/component-diagram.puml)  
+**Full explanation:** [`static-view/README.md`](static-view/README.md)
+
+The component diagram shows internal modules (Admin Bot, REST API, scheduler, inbound listener, LLM engine, guardrails, state machine, humanizer, services) and external systems (Telegram MTProto, LLM APIs, PostgreSQL, Redis). Outbound and inbound paths both pass through guardrails before Pyrogram dispatch.
+
+Coupling is lowest at the guardrails boundary; cohesion is highest within `app/llm/`, `app/core/`, and `app/bots/`. The monolithic container simplifies VPS deployment but couples scheduler restarts with inbound listeners.
+
+---
+
+## Sequence Diagram (Dynamic View)
+
+**Diagram source:** [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml)  
+**Full explanation:** [`dynamic-view/README.md`](dynamic-view/README.md)
+
+The sequence diagram documents the **inbound lead reply** flow — the primary MVP v2 conversational path supporting improved prompts, natural dialogue pacing, and structured lead nurturing. A lead message triggers intent classification, state machine transition, funnel stage update, LLM generation with guardrail retry, humanized send, and optional hot-lead notification.
+
+This scenario crosses [ADR-001](adr/ADR-001.md), [ADR-002](adr/ADR-002.md), and [ADR-004](adr/ADR-004.md) and illustrates [QR-01](../quality-requirements.md#qr-01)–[QR-04](../quality-requirements.md#qr-04) in a single user-visible workflow.
+
+---
+
+## Deployment Diagram (Deployment View)
+
+**Diagram source:** [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml)  
+**Full explanation:** [`deployment-view/README.md`](deployment-view/README.md)
+
+The deployment diagram shows the Docker Compose stack on a production VPS (or local host): `api`, `postgres`, and `redis` containers; external Telegram and LLM endpoints; and customer access via Admin Bot, MTProto sessions, and HTTP port 8000. Hosted MkDocs documentation deploys separately to GitHub Pages.
+
+Single-VPS Docker Compose supports MVP v2 **24/7 availability** without Kubernetes overhead. Operators must manage secrets via environment variables, run Alembic migrations, and back up PostgreSQL volumes.
+
+---
+
 ## Architecture Decision Records
 
 Important design choices are captured as ADRs in [`adr/`](adr/). Each ADR documents context, the adopted decision, consequences, and linked quality requirements.

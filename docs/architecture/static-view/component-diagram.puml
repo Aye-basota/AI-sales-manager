@@ -1,0 +1,87 @@
+@startuml Component Diagram
+!theme plain
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+title AI Sales Manager — Static View (Component Diagram)
+
+actor "Sales Director\n/ Operator" as Operator
+actor "Lead\n(Telegram user)" as Lead
+
+cloud "Telegram\n(MTProto network)" as Telegram {
+}
+
+cloud "LLM Providers\n(OpenRouter / DashScope)" as LLMCloud {
+}
+
+package "AI Sales Manager Application" {
+
+  component "Admin Bot\n(aiogram)" as AdminBot
+  component "REST API\n(FastAPI)" as API
+
+  together {
+    component "Campaign Scheduler\n(APScheduler)" as Scheduler
+    component "Inbound Listener" as Inbound
+    component "SellerClient\n(Pyrogram)" as Seller
+  }
+
+  component "LLM Engine" as LLMEngine
+  component "Guardrails\n(ADR-001, ADR-004)" as Guardrails
+  component "State Machine\n(ADR-002)" as StateMachine
+  component "Humanizer" as Humanizer
+  component "Intent Classifier" as Intent
+  component "Funnel Stage\nManager" as Funnel
+
+  component "Conversation\nService" as ConvSvc
+  component "Account Manager" as AccMgr
+  component "Notification\nService" as Notify
+}
+
+database "PostgreSQL\n(data + job store)" as PG
+database "Redis\n(cache)" as Redis
+
+' --- External interactions ---
+Operator --> AdminBot : manage campaigns,\nscripts, accounts
+Operator --> API : REST operations\n(future web UI)
+Lead <--> Telegram : send / receive\nmessages
+Seller <--> Telegram : MTProto sessions\n(outbound + inbound)
+
+' --- API layer ---
+AdminBot --> API : internal calls
+API --> ConvSvc
+API --> AccMgr
+API --> Scheduler : trigger immediate\nprocess_campaigns
+
+' --- Outbound path (ADR-003) ---
+Scheduler --> ConvSvc : load campaigns,\ncontacts, conversations
+Scheduler --> AccMgr : select / cooldown\naccounts
+Scheduler --> LLMEngine : generate message
+Scheduler --> Guardrails : validate output
+Scheduler --> Humanizer : typing delay
+Scheduler --> Seller : send message
+Scheduler --> StateMachine : update state
+
+' --- Inbound path ---
+Inbound --> Seller : receive message
+Inbound --> ConvSvc : persist messages,\nload context
+Inbound --> Intent : classify reply
+Inbound --> StateMachine : transition state
+Inbound --> Funnel : advance funnel stage
+Inbound --> LLMEngine : generate reply
+Inbound --> Guardrails : validate output
+Inbound --> Humanizer : read + typing delay
+Inbound --> Seller : send reply
+Inbound --> Notify : hot-lead alert
+
+' --- LLM ---
+LLMEngine --> LLMCloud : chat completion\n(cascade fallback)
+
+' --- Persistence ---
+ConvSvc --> PG
+AccMgr --> PG
+Scheduler --> PG : read/write state,\njob store
+API --> PG
+Inbound --> PG
+Scheduler --> Redis : optional cache
+
+@enduml
