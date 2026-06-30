@@ -3,6 +3,15 @@
 This document defines quality requirements using ISO/IEC 25010 quality sub-characteristics.
 Each requirement uses the measurable scenario format: stimulus → response → measurable outcome.
 
+Each relevant quality requirement links to the architecture decision(s) that address it (see [`docs/architecture/adr/`](architecture/adr/)) and to automated quality requirement tests in [`docs/quality-requirement-tests.md`](quality-requirement-tests.md).
+
+| ID | Sub-characteristic | Related ADR |
+|---|---|---|
+| [QR-01](#qr-01) | Confidentiality (Security) | [ADR-001](architecture/adr/ADR-001.md) |
+| [QR-02](#qr-02) | Fault Tolerance (Reliability) | [ADR-002](architecture/adr/ADR-002.md) |
+| [QR-03](#qr-03) | Time Behaviour (Performance Efficiency) | [ADR-003](architecture/adr/ADR-003.md) |
+| [QR-04](#qr-04) | User Error Protection (Usability) | [ADR-004](architecture/adr/ADR-004.md) |
+
 ---
 
 <a id="qr-01"></a>
