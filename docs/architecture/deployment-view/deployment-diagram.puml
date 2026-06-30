@@ -1,0 +1,73 @@
+@startuml Deployment Diagram
+!theme plain
+skinparam shadowing false
+skinparam nodeStyle rectangle
+
+title AI Sales Manager — Deployment View
+
+node "Customer / Operator Device" as client {
+  artifact "Telegram Client" as tgclient
+}
+
+node "Production VPS\n(or local Docker host)" as host {
+
+  node "Docker Compose Stack" as compose {
+
+    node "api container\n(ai-sales-api)" as apicontainer {
+      artifact "FastAPI (uvicorn)\n:8000" as uvicorn
+      artifact "Admin Bot\n(aiogram)" as adminbot
+      artifact "APScheduler\n+ Pyrogram clients" as sched
+      artifact "Static site\n(/site)" as site
+    }
+
+    node "postgres container\n(ai-sales-db)" as pgcontainer {
+      database "PostgreSQL 15\n:5432" as pg
+    }
+
+    node "redis container\n(ai-sales-redis)" as rediscontainer {
+      database "Redis 7\n:6379" as redis
+    }
+  }
+}
+
+cloud "Internet" as internet {
+
+  node "Telegram Servers\n(MTProto + Bot API)" as telegram {
+  }
+
+  node "LLM API Endpoints\n(OpenRouter / DashScope)" as llmapi {
+  }
+
+  node "GitHub Pages\n(hosted docs)" as ghdocs {
+    artifact "MkDocs site" as mkdocs
+  }
+}
+
+' Customer access paths
+tgclient --> telegram : Admin Bot commands,\nreceive lead alerts
+tgclient --> telegram : Leads receive\noutbound / inbound msgs
+
+' Application runtime
+apicontainer --> pg : async SQLAlchemy\n+ APScheduler job store\n(sync driver)
+apicontainer --> redis : cache / session helpers
+sched --> telegram : Pyrogram MTProto\n(user account sessions)
+apicontainer --> llmapi : HTTPS API calls\n(API keys from env)
+
+' Optional public HTTP access
+client --> apicontainer : HTTP :8000\n(health, REST API,\npromo landing page)
+
+note right of host
+  **Environment boundaries**
+  - Secrets via .env (never committed)
+  - TELEGRAM_API_ID/HASH, LLM keys,
+    ADMIN_BOT_TOKEN, SESSION_ENCRYPTION_KEY
+  - restart: unless-stopped on all services
+end note
+
+note bottom of ghdocs
+  Documentation deployed separately
+  via .github/workflows/docs.yml
+  (not part of runtime stack)
+end note
+
+@enduml
