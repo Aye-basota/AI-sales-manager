@@ -20,7 +20,7 @@ class ScriptBase(BaseModel):
 
     # Sales funnel configuration
     sales_funnel: Optional[List[Any]] = None
-    first_message_goal: str = "hook"
+    first_message_goal: str = "trust"
     call_to_action: str = "15-минутный созвон"
     language: str = "ru"
     emoji_policy: str = "forbidden"

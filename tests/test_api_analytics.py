@@ -1,6 +1,32 @@
 from tests.conftest import MockResult
 
 
+def test_get_automation_rate(client, mock_db):
+    mock_db.execute.side_effect = [
+        MockResult([], scalar_value=100),  # total conversations
+        MockResult([], scalar_value=12),  # escalated conversations
+    ]
+    response = client.get("/analytics/automation-rate")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 100
+    assert data["escalated"] == 12
+    assert data["ai_handled"] == 88
+    assert data["rate_pct"] == 88.0
+
+
+def test_get_automation_rate_zero_total(client, mock_db):
+    mock_db.execute.side_effect = [
+        MockResult([], scalar_value=0),
+        MockResult([], scalar_value=0),
+    ]
+    response = client.get("/analytics/automation-rate")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 0
+    assert data["rate_pct"] == 0.0
+
+
 def test_get_dashboard(client, mock_db, sample_campaign):
     mock_db.execute.side_effect = [
         MockResult([], scalar_value=42),  # total_contacts

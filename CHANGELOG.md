@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-30
+
+### Added
+- MVP v2 lead-nurturing funnel stages: trust → engagement → qualification → value → CTA.
+- External prompt configuration and versioning in `app/config/prompts/v1.json` (TECH-13).
+- Funnel upload/preview API with JSON and plain-text parsers: `POST /api/funnels/preview`, `POST /api/funnels/upload` (TECH-04, TECH-05).
+- `Funnel` model and Alembic migration `20260630_mvp_v2_funnel_and_automation.py`.
+- AI-automation rate tracking: `Conversation.was_escalated` flag and `GET /analytics/automation-rate` (TECH-06).
+- Production observability: structured logging via `LOG_LEVEL`, `/health` endpoint, and Docker Compose health checks/restart policies (TECH-12).
+- MkDocs Material documentation site under `docs/` and `.github/workflows/docs.yml`.
+- `pip-audit` dependency vulnerability scan in CI.
+- `lychee` link checker in CI.
+
+### Changed
+- Default funnel prompts now emphasize trust building, natural dialogue, and value-before-CTA (US-017, US-018).
+- Conversation stage progression uses legacy alias mapping (`hook` → `trust`) for backward compatibility.
+- `app/config.py` refactored into `app/config/` package to separate settings from prompt configs.
+- Dependency updates for security: FastAPI 0.138.2, Starlette 1.3.1, Pydantic 2.13.4, Pydantic-Settings 2.14.2.
+
+### Fixed
+- Funnel preview response now allows `created_at: null` for non-persisted previews.
+
 ## [0.2.0] - 2026-06-27
 
 ### Added

@@ -9,37 +9,49 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FUNNEL_STAGES: list[dict[str, Any]] = [
     {
-        "stage": "hook",
-        "goal": "Мягко зацепить внимание и сразу обозначить ценность.",
+        "stage": "trust",
+        "goal": "Мягко представиться и показать, что ты понимаешь контекст клиента.",
         "max_length": 200,
         "allow_call_to_action": False,
         "instructions": (
             "Напиши очень короткое первое сообщение (1-2 предложения). "
-            "Сразу скажи, чем помогаем (например, оптимизируем международные платежи или снижаем комиссии). "
+            "Сразу скажи, чем помогает компания, но не продавай. "
             "Не предлагай созвон, не задавай сложных вопросов. "
             "Избегай слов: анонимно, микшеры, P2P, незаметно, не светиться, обойти."
         ),
     },
     {
+        "stage": "engagement",
+        "goal": "Заинтересовать клиента одним открытым вопросом о его задаче.",
+        "max_length": 300,
+        "allow_call_to_action": False,
+        "instructions": (
+            "Задай РОВНО 1 короткий открытый вопрос о задаче клиента. "
+            "Не предлагай созвон и не рассказывай о продукте подробно. "
+            "Избегай подозрительной лексики: анонимно, микшеры, P2P, незаметно, не светиться, обойти."
+        ),
+    },
+    {
         "stage": "qualification",
-        "goal": "Задать не более 1 вопроса и предложить демо/ценность.",
+        "goal": "Уточнить деталь и мягко предложить короткую ценность.",
         "max_length": 350,
         "allow_call_to_action": False,
         "instructions": (
             "Задай РОВНО 1 короткий уточняющий вопрос о задаче клиента. "
-            "Сразу после вопроса предложи короткую демо или созвон, чтобы показать, как работает решение. "
+            "Сразу после вопроса предложи короткую демо-запись или полезный кейс, "
+            "чтобы показать, как работает решение. "
             "Не задавай второй вопрос. Не углубляйся в детали. "
             "Избегай подозрительной лексики: анонимно, микшеры, P2P, незаметно, не светиться, обойти."
         ),
     },
     {
         "stage": "value",
-        "goal": "Кратко показать ценность и предложить созвон.",
+        "goal": "Кратко показать ценность и подготовить к CTA.",
         "max_length": 400,
         "allow_call_to_action": False,
         "instructions": (
             "Коротко объясни, как продукт решает озвученную проблему (1-2 конкретных пункта). "
-            "Сразу предложи короткий созвон или демо, чтобы обсудить детали. "
+            "Не проси созвон прямо сейчас, но намекни, что на следующем шаге можно обсудить детали. "
             "Избегай подозрительной лексики: анонимно, микшеры, P2P, незаметно, не светиться, обойти."
         ),
     },
@@ -56,6 +68,12 @@ DEFAULT_FUNNEL_STAGES: list[dict[str, Any]] = [
     },
 ]
 
+# Backward-compatible alias mapping for legacy stage names stored in the database.
+_LEGACY_STAGE_ALIASES: dict[str, str] = {
+    "hook": "trust",
+    "warm": "engagement",
+}
+
 
 def get_funnel_stages(script: Any) -> list[dict[str, Any]]:
     """Return configured funnel stages or the default ones."""
@@ -65,8 +83,14 @@ def get_funnel_stages(script: Any) -> list[dict[str, Any]]:
     return list(DEFAULT_FUNNEL_STAGES)
 
 
+def _normalize_stage(stage: str) -> str:
+    """Map legacy stage names to the current lead-nurturing stages."""
+    return _LEGACY_STAGE_ALIASES.get(stage, stage)
+
+
 def get_stage_config(script: Any, stage: str) -> dict[str, Any]:
     """Return config for a specific funnel stage."""
+    stage = _normalize_stage(stage)
     for s in get_funnel_stages(script):
         if s.get("stage") == stage:
             return s
@@ -80,20 +104,21 @@ def get_stage_config(script: Any, stage: str) -> dict[str, Any]:
 def get_first_stage(script: Any) -> str:
     """Return the first stage to use for a new conversation."""
     configured = get_funnel_stages(script)
-    first = configured[0].get("stage", "hook")
+    first = configured[0].get("stage", "trust")
     first_message_goal = getattr(script, "first_message_goal", None)
-    if first_message_goal and any(
-        s.get("stage") == first_message_goal for s in configured
-    ):
-        return first_message_goal
+    if first_message_goal:
+        first_message_goal = _normalize_stage(first_message_goal)
+        if any(s.get("stage") == first_message_goal for s in configured):
+            return first_message_goal
     return first
 
 
 def next_stage(script: Any, current_stage: str, intent: str | None = None) -> str:
     """Determine the next funnel stage based on current stage and lead intent."""
+    current_stage = _normalize_stage(current_stage)
     stages = [s.get("stage") for s in get_funnel_stages(script)]
     if not stages:
-        stages = ["hook", "qualification", "value", "cta"]
+        stages = [s["stage"] for s in DEFAULT_FUNNEL_STAGES]
 
     if intent == "negative":
         return current_stage  # state_machine handles closure

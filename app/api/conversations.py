@@ -48,6 +48,9 @@ async def update_conversation_status(
     conversation.operator_status = payload.operator_status
     if payload.operator_notes is not None:
         conversation.operator_notes = payload.operator_notes
+    # Any operator-driven status change counts as human escalation for automation tracking.
+    if payload.operator_status:
+        conversation.was_escalated = True
     await db.commit()
     await db.refresh(conversation)
     return conversation

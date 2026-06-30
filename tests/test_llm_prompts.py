@@ -95,4 +95,5 @@ def test_system_prompt_no_bot_rule():
     script.tone = None
 
     prompt = build_system_prompt(script)
-    assert "Никогда не признавайся что ты бот или ИИ" in prompt
+    assert "Никогда не признавайся" in prompt
+    assert "что ты бот или ИИ" in prompt

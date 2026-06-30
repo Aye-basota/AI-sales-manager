@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.contact import Contact
 from app.models.campaign import Campaign
-from app.models.conversation import Message
+from app.models.conversation import Conversation, Message
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -73,4 +73,26 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         "inbound_messages": inbound_count,
         "guardrails_rejected": rejected_count,
         "avg_message_length": avg_message_length,
+    }
+
+
+@router.get("/automation-rate")
+async def get_automation_rate(db: AsyncSession = Depends(get_db)):
+    """Return the AI-automation rate across all dialog sessions."""
+    total_result = await db.execute(select(func.count()).select_from(Conversation))
+    total = total_result.scalar() or 0
+
+    escalated_result = await db.execute(
+        select(func.count()).select_from(Conversation).where(Conversation.was_escalated.is_(True))
+    )
+    escalated = escalated_result.scalar() or 0
+
+    ai_handled = total - escalated
+    rate_pct = round((ai_handled / total) * 100, 2) if total else 0.0
+
+    return {
+        "total": total,
+        "ai_handled": ai_handled,
+        "escalated": escalated,
+        "rate_pct": rate_pct,
     }

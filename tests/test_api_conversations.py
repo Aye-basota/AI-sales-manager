@@ -38,3 +38,14 @@ def test_update_conversation_status_not_found(client, mock_db):
         f"/conversations/{uuid4()}/status", json={"operator_status": "resolved"}
     )
     assert response.status_code == 404
+
+
+def test_update_conversation_status_marks_escalated(client, mock_db, sample_conversation):
+    sample_conversation.was_escalated = False
+    mock_db.execute.return_value = MockResult([sample_conversation])
+    response = client.put(
+        f"/conversations/{sample_conversation.id}/status",
+        json={"operator_status": "in_progress"},
+    )
+    assert response.status_code == 200
+    assert sample_conversation.was_escalated is True

@@ -28,7 +28,10 @@ DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mod
 OPENROUTER_BASE_URL = DEFAULT_OPENROUTER_BASE_URL
 DASHSCOPE_BASE_URL = DEFAULT_DASHSCOPE_BASE_URL
 
-FALLBACK_TEXT = "Здравствуйте! Увидел ваш профиль и подумал, что наше предложение может быть вам полезно. Есть 15 минут на короткий созвон?"
+FALLBACK_TEXT = (
+    "Здравствуйте! Увидел ваш профиль и подумал, что наше предложение может быть "
+    "вам полезно. Есть 15 минут на короткий созвон?"
+)
 
 _RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
 _MAX_RETRIES = 3

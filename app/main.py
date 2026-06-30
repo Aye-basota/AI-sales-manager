@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import signal
 import threading
 from contextlib import asynccontextmanager
@@ -16,11 +17,16 @@ from app.api import (
     analytics,
     health,
     telegram_accounts,
+    funnels,
 )
 from app.bots import start_bot, stop_bot
 from app.bots.inbound_listener import start_inbound_listeners, stop_inbound_listeners
 from app.db.redis import close_redis
 from app.core.scheduler import scheduler
+from app.logging_config import setup_logging
+
+_level = os.getenv("LOG_LEVEL")
+setup_logging(_level)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +96,7 @@ app.include_router(conversations.router)
 app.include_router(analytics.router)
 app.include_router(health.router)
 app.include_router(telegram_accounts.router)
+app.include_router(funnels.router)
 
 # Serve the customer-facing landing site at the root URL
 app.mount("/", StaticFiles(directory="site", html=True), name="site")

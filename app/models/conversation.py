@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -17,6 +17,7 @@ class Conversation(Base):
     facts_extracted = Column(JSON, default={})
     operator_status = Column(String(20))
     operator_notes = Column(Text)
+    was_escalated = Column(Boolean, default=False)
     last_message_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

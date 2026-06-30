@@ -9,9 +9,9 @@
 
 ## 2. Backlog and Sprint Planning
 
-- [Product Backlog board](https://github.com/Aye-basota/AI-sales-manager/projects) *(update link)*
-- [Sprint Backlog board](https://github.com/Aye-basota/AI-sales-manager/projects) *(update link)*
-- [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones) *(update link)*
+- [Product Backlog board](https://github.com/users/Aye-basota/projects/1/views/1)
+- [Sprint Backlog board](https://github.com/Aye-basota/AI-sales-manager/projects) *(filter by Sprint 3 milestone after creation)*
+- [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones) *(create Sprint 3 milestone if it does not exist)*
 
 ### Sprint Goal
 
@@ -19,27 +19,44 @@ Deliver the `MVP v2` increment for Assignment 5 by implementing the selected Spr
 
 ### Sprint dates
 
-2026-07-06 – 2026-07-12 *(update if different)*
+2026-06-30 – 2026-07-06
 
 ### Scope summary
 
-- Implement selected `MVP v2` product changes.
-- Address selected customer feedback from `MVP v1`.
-- Extend automated tests and QRTs for new product areas.
+Selected Sprint 3 PBIs from the GitHub backlog:
+
+| Issue | Type | Title |
+|---|---|---|
+| [#51](https://github.com/Aye-basota/AI-sales-manager/issues/51) | US | US-017 — Improve prompts for lead nurturing |
+| [#52](https://github.com/Aye-basota/AI-sales-manager/issues/52) | US | US-018 — Natural multi-stage conversation flow |
+| [#24](https://github.com/Aye-basota/AI-sales-manager/issues/24) | Tech | TECH-04 — Funnel upload API |
+| [#25](https://github.com/Aye-basota/AI-sales-manager/issues/25) | Tech | TECH-05 — Funnel preview API |
+| [#26](https://github.com/Aye-basota/AI-sales-manager/issues/26) | Tech | TECH-06 — AI-automation rate tracking |
+| [#55](https://github.com/Aye-basota/AI-sales-manager/issues/55) | Tech | TECH-13 — Prompt configuration and versioning |
+| [#54](https://github.com/Aye-basota/AI-sales-manager/issues/54) | Tech | TECH-12 — Production monitoring |
+
+Also included:
 - Update Definition of Done, testing, and quality documentation.
 - Deploy the current increment and create SemVer release `v0.3.0`.
 - Publish maintained documentation as a hosted site.
 
 ### Total Sprint size
 
-*(fill in Story Points)*
+*(to be filled by Product Owner in the Sprint Backlog board)*
 
 ---
 
 ## 3. Delivered Product Changes
 
-- *(to be filled after Sprint implementation)*
-- *(list user-visible features, bug fixes, architecture improvements)*
+- **TECH-13 — Prompt versioning:** prompts moved to `app/config/prompts/v1.json`; versioned config loader with safe template formatting.
+- **US-017 — Lead-nurturing prompts:** default funnel stages reworked to `trust → engagement → qualification → value → cta` with stage-specific goals, instructions, and length limits.
+- **US-018 — Natural multi-stage flow:** conversation progression uses the new nurturing stages; legacy stage aliases (`hook` → `trust`) keep old conversations compatible.
+- **TECH-04 / TECH-05 — Funnel upload/preview API:** `POST /api/funnels/preview` and `POST /api/funnels/upload` support JSON and plain-text funnel definitions, validation, duplicate-stage checks, and overwrite guard for running campaigns.
+- **TECH-06 — AI-automation rate:** `Conversation.was_escalated` flag set on operator status changes; new `GET /analytics/automation-rate` endpoint reports AI-handled vs escalated dialogs.
+- **TECH-12 — Production monitoring:** centralized logging (`app/logging_config.py`), `LOG_LEVEL` env variable, Docker Compose health check for the API container, and `restart: unless-stopped` for all services.
+- **Docs site:** MkDocs Material site under `docs/`, published via `.github/workflows/docs.yml` to GitHub Pages.
+- **QA pipeline extensions:** added `pip-audit` and `lychee` jobs; updated dependencies to resolve known vulnerabilities (FastAPI 0.138.2, Starlette 1.3.1, Pydantic 2.13.4).
+- **Tests:** 459 automated tests, `app/` coverage ≥ 80%; new tests for funnel API, automation rate, prompt config, and conversation escalation.
 
 ---
 
@@ -56,11 +73,16 @@ Deliver the `MVP v2` increment for Assignment 5 by implementing the selected Spr
 
 | Feedback point | Resulting PBI or issue | Status | Response |
 |---|---|---|---|
-| *(to be filled)* | *(issue link)* | *(Done / Deferred)* | *(response)* |
+| First messages felt too salesy / mass-mailing | US-017, US-018 | Done | Reworked default funnel to trust-building stages and external prompt config for easy tuning |
+| Need to upload funnel definitions from files/markdown | TECH-04, TECH-05 | Done | Added `POST /api/funnels/preview` and `POST /api/funnels/upload` with JSON/text parsers |
+| Want visibility into how many dialogs are fully automated | TECH-06 | Done | Added `was_escalated` flag and `GET /analytics/automation-rate` |
+| Hard to tell if production service is healthy after deploy | TECH-12 | Done | Added structured logging, `/health`, Docker health checks, and restart policies |
 
 ### Feedback not addressed
 
-*(explain any feedback points intentionally deferred)*
+Deferred to future sprints:
+- Manual operator takeover of a live conversation (`is_paused_by_operator`).
+- Calendar integration when meeting intent is detected.
 
 ---
 
@@ -93,9 +115,14 @@ See [`docs/quality-requirements.md`](../../docs/quality-requirements.md) for det
 
 ## 8. Testing Status
 
-- **Total tests:** *(update after Sprint)*
-- **Coverage:** see latest CI artifact.
+- **Total tests:** 459
+- **Coverage:** `app/` ≥ 80% (latest local run)
 - **Critical module coverage:** all critical modules meet or exceed 30%.
+- **New tests added this Sprint:**
+  - `tests/test_api_funnels.py` — funnel preview/upload API (TECH-04/05)
+  - `tests/test_api_analytics.py` — automation-rate endpoint (TECH-06)
+  - `tests/test_api_conversations.py` — escalation flag update (TECH-06)
+  - Updated `tests/test_core_funnel.py` and `tests/test_llm_funnel_prompts.py` for lead-nurturing stages
 
 ### Links
 
@@ -150,13 +177,21 @@ Place screenshots in `reports/week5/images/`:
 
 ## 13. Architecture Summary
 
-*(Short summary of the current architecture and how it supports MVP v2. Link to component, sequence, and deployment diagrams.)*
+MVP v2 keeps the existing async FastAPI + PostgreSQL + Redis architecture and adds three new bounded capabilities:
+
+1. **Prompt configuration layer** (`app/config/prompts/`) isolates LLM prompts from business logic, enabling versioned prompt updates without redeploying code.
+2. **Funnel management layer** (`app/services/funnel_parser.py`, `app/api/funnels.py`, `app/models/funnel.py`) lets operators upload and preview sales funnels in JSON or plain text, validated before persistence.
+3. **Observability layer** (`app/logging_config.py`, `/health`, Docker health checks) exposes structured logs and a lightweight health endpoint for production monitoring.
+
+The lead-nurturing funnel is implemented in `app/core/funnel.py` and consumed by `app/llm/prompts.py`, so stage-specific instructions flow naturally into LLM prompts while preserving backward compatibility for legacy stage names.
+
+Automation-rate tracking uses the existing `conversations` table plus a `was_escalated` boolean; any operator-driven status change marks the dialog as escalated, and `GET /analytics/automation-rate` returns the AI-handled ratio.
 
 - Static view: [`docs/architecture/static-view/`](../../docs/architecture/static-view/)
 - Dynamic view: [`docs/architecture/dynamic-view/`](../../docs/architecture/dynamic-view/)
 - Deployment view: [`docs/architecture/deployment-view/`](../../docs/architecture/deployment-view/)
 
-*(Explain how quality requirements are linked to architecture decisions.)*
+Quality requirements are traced to tests in [`docs/quality-requirement-tests.md`](../../docs/quality-requirement-tests.md).
 
 ---
 
@@ -174,9 +209,13 @@ Place screenshots in `reports/week5/images/`:
 
 **Next steps:**
 
+- Merge the feature branch into `main` and push.
+- Create GitHub release `v0.3.0` from the merged `main`.
+- Enable GitHub Pages source `gh-pages` after the docs workflow runs once.
+- Deploy to the target VPS (`docker-compose up -d --build`, `alembic upgrade head`).
 - Conduct Sprint Review and UAT with the customer.
-- Record public sanitized demo video.
-- Fill remaining placeholders in this report.
+- Record public sanitized demo video and update section 11.
+- Fill remaining placeholders (Sprint size, screenshots, UAT results, team reflection).
 - Prepare Assignment 5 Moodle PDF submission.
 
 ---
