@@ -1,0 +1,53 @@
+name: Link Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore lychee cache
+        uses: actions/cache@v4
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: >
+            --cache --max-cache-age 1d
+            --timeout 30
+            --retry-wait-time 5
+            --max-retries 3
+            --exclude-mail
+            --exclude-path site/
+            --exclude-path site_docs/
+            --exclude-path htmlcov/
+            --exclude-path reports/week3/
+            --exclude "https://fonts.gstatic.com/"
+            --exclude "https://dashscope-intl.aliyuncs.com/*"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/projects"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/releases/tag/*"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/milestone/*"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/reports/week5/README.md"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/.github/workflows/links.yml"
+            --exclude "https://aye-basota.github.io/AI-sales-manager/*"
+            .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create issue from report
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Link checker report"
+          content-filepath: ./lychee/out.md
+          labels: "documentation, bug"

@@ -5,6 +5,7 @@ Each requirement uses the measurable scenario format: stimulus → response → 
 
 ---
 
+<a id="qr-01"></a>
 ## QR-01: LLM Response Safety (Security — Confidentiality)
 
 **ID:** QR-01
@@ -20,9 +21,11 @@ Each requirement uses the measurable scenario format: stimulus → response → 
 | **Measurable outcome** | 100% of guardrail-violating messages are blocked in automated tests; no forbidden content reaches `SellerClient.send_message()` |
 
 **Linked tests:** `tests/test_llm_guardrails.py`
+**Related ADR:** [ADR-001 — LLM Output Guardrails](architecture/adr/ADR-001.md)
 
 ---
 
+<a id="qr-02"></a>
 ## QR-02: Conversation State Correctness (Reliability — Fault Tolerance)
 
 **ID:** QR-02
@@ -38,9 +41,11 @@ Each requirement uses the measurable scenario format: stimulus → response → 
 | **Measurable outcome** | 100% branch coverage on `app/core/state_machine.py`; all 22 test cases in `test_core_state_machine.py` pass |
 
 **Linked tests:** `tests/test_core_state_machine.py`
+**Related ADR:** [ADR-002 — Deterministic Conversation State Machine](architecture/adr/ADR-002.md)
 
 ---
 
+<a id="qr-03"></a>
 ## QR-03: Outbound Message Delivery Performance (Performance Efficiency — Time Behaviour)
 
 **ID:** QR-03
@@ -56,9 +61,11 @@ Each requirement uses the measurable scenario format: stimulus → response → 
 | **Measurable outcome** | Scheduler unit tests mock LLM and Pyrogram and assert all contacts are processed without timeout; account selection logic completes in < 1 ms per contact in unit tests |
 
 **Linked tests:** `tests/test_core_scheduler.py`
+**Related ADR:** [ADR-003 — Scheduler-Driven Outbound Processing](architecture/adr/ADR-003.md)
 
 ---
 
+<a id="qr-04"></a>
 ## QR-04: Anti-Repetition in Generated Messages (Usability — User Error Protection)
 
 **ID:** QR-04
@@ -74,3 +81,4 @@ Each requirement uses the measurable scenario format: stimulus → response → 
 | **Measurable outcome** | Automated test confirms repetition check blocks similar messages and passes distinct messages; threshold 0.8 is tested with boundary values |
 
 **Linked tests:** `tests/test_llm_guardrails.py` (`test_check_anti_repetition_*`)
+**Related ADR:** [ADR-004 — Anti-Repetition Check for Generated Messages](architecture/adr/ADR-004.md)

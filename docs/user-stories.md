@@ -21,7 +21,7 @@ No stories have been removed at this time.
 
 ## Historical Context
 
-- Historical Assignment 2 artifact: [`reports/week2/user-stories.md`](../reports/week2/user-stories.md)
+- Historical Assignment 2 artifact: [`reports/week2/user-stories.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/reports/week2/user-stories.md)
 
 ## Traceability Notes
 

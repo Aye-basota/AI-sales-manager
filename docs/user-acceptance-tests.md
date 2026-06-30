@@ -61,3 +61,37 @@ Campaign launches successfully and appears as "running" in the dashboard.
 
 **Expected Result:**
 Lead discovery returns relevant Telegram users matching the search keyword.
+
+---
+
+## MVP v2 UAT Scenarios
+
+Add at least two new scenarios here for functionality delivered in `MVP v2`.
+
+## UAT-004: *(fill in for MVP v2 feature)*
+
+**Status:** Active
+**Priority:** *(fill in)*
+**Last Executed:** —
+**Last Result:** —
+
+**Scenario:**
+1. *(fill in)*
+
+**Expected Result:**
+*(fill in)*
+
+---
+
+## UAT-005: *(fill in for MVP v2 feature)*
+
+**Status:** Active
+**Priority:** *(fill in)*
+**Last Executed:** —
+**Last Result:** —
+
+**Scenario:**
+1. *(fill in)*
+
+**Expected Result:**
+*(fill in)*

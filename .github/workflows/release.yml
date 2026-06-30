@@ -25,12 +25,14 @@ jobs:
           cat > /tmp/release_body.md <<EOF
           ## AI Sales Manager v${VERSION}
 
-          This release maps to the **Assignment 4 Sprint increment**.
+          This release maps to **MVP v2** and the **Assignment 5 Sprint 3 increment**.
 
           ### Links
-          - Sprint milestone: https://github.com/${{ github.repository }}/milestones
+          - Sprint 3 milestone: https://github.com/${{ github.repository }}/milestones
+          - Week 5 public report: https://github.com/${{ github.repository }}/blob/main/reports/week5/README.md
+          - Hosted documentation: https://aye-basota.github.io/AI-sales-manager/
           - Deployment / run instructions: https://github.com/${{ github.repository }}/blob/main/LAUNCH_GUIDE.md
-          - Public sanitized demo video: (add link)
+          - Public sanitized demo video: (add link after recording)
           - Full changelog: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
 
           ### Changes
@@ -40,6 +42,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Assignment 4 Sprint Release v${{ steps.version.outputs.VERSION }}
+          name: MVP v2 Release v${{ steps.version.outputs.VERSION }}
           body_path: /tmp/release_body.md
           generate_release_notes: false

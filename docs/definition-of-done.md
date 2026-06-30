@@ -19,7 +19,9 @@ This Definition of Done applies to all Sprint work from Assignment 4 onward.
 ### 3. Passing CI Checks
 - [ ] The `test` CI job passes — all pytest tests green with no regressions
 - [ ] The `security` CI job passes — Bandit reports no new medium or high severity issues (`bandit -r app/ -ll`)
+- [ ] The `pip-audit` CI job passes — no known vulnerabilities in dependencies
 - [ ] The `lint` CI job passes — flake8 reports no errors (`flake8 app/ --max-line-length=120`)
+- [ ] The `link-check` CI job passes — no broken links in Markdown files (`lychee`)
 - [ ] CI runs on the protected default branch (`main`) and shows a green status before merge
 
 ### 4. Relevant Automated Tests
@@ -33,6 +35,7 @@ This Definition of Done applies to all Sprint work from Assignment 4 onward.
 - [ ] If the change affects `app/llm/guardrails.py` → `tests/test_llm_guardrails.py` still passes (QRT-01, QRT-04)
 - [ ] If the change affects `app/core/scheduler.py` → `tests/test_core_scheduler.py` still passes (QRT-03)
 - [ ] If the change introduces a new quality requirement → a linked QRT is defined in `docs/quality-requirement-tests.md`
+- [ ] If the change introduces or affects an architecture decision → the related ADR in `docs/architecture/adr/` is updated or created
 
 ### 6. Coverage Expectations for Critical Modules
 - [ ] Each critical module maintains at least **30% line coverage** after the change:
@@ -59,6 +62,16 @@ This Definition of Done applies to all Sprint work from Assignment 4 onward.
 - [ ] If the change is user-visible (new feature, bug fix, behavior change), an entry is added to `CHANGELOG.md` under `[Unreleased]`
 - [ ] Format follows Keep a Changelog: `### Added`, `### Fixed`, `### Changed`, `### Removed`
 - [ ] Internal refactors, test additions, and documentation-only changes do not require a changelog entry
+
+### 9. Release and Deployment Evidence (for `MVP v2` increments)
+- [ ] The change is merged into the protected default branch (`main`) through an issue-linked PR/MR
+- [ ] A SemVer release (`v0.3.0`) is created for the `MVP v2` increment and links to:
+  - Sprint 3 milestone
+  - Deployment or run instructions
+  - Public sanitized demo video
+  - Week 5 public report (`reports/week5/README.md`)
+- [ ] The current product increment remains deployed and accessible to the customer and TA until grading is complete
+- [ ] The Week 5 public report is updated with relevant links, screenshots, and status
 
 ---
 
