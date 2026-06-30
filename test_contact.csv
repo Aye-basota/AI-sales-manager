@@ -1,2 +1,4 @@
 telegram_username,telegram_user_id,first_name,last_name,company_name,position,city,industry,phone
-johndoe,123456789,John,Doe,Acme Inc,CEO,New York,Technology,+1234567890
+demo_user1,111222333,Ivan,Petrov,TechCorp LLC,CEO,Moscow,IT,+79991234567
+demo_user2,444555666,Anna,Sokolova,Digital Agency,Marketing Director,Saint Petersburg,Marketing,+79997654321
+demo_user3,777888999,Dmitry,Volkov,StartupHub,Founder,Kazan,SaaS,+79995557788

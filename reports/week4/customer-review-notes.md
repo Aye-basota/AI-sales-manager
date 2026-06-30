@@ -2,18 +2,14 @@
 
 **Project:** AI Sales Manager  
 **Sprint:** Sprint 4 (Week 4)  
-**Date:** *(to be filled by the team)*  
+**Date:** *28.06.2026*  
 
 ## Participants
 
-- *(Team member)*
-- *(Customer)*
+- *Daniil Tochilin*
+- *Mark Petrov*
 
 ## Recording & Sharing Consent
 
-- Recording permission: *(granted / refused)*
-- Private instructor sharing permitted: *(yes / no)*
-
-## Notes
-
-*(To be filled if recording or private sharing was refused.)*
+- Recording permission: *granted*
+- Private instructor sharing permitted: *yes*
