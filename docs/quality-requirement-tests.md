@@ -54,11 +54,59 @@ An automated QRT is a test that runs in CI, produces deterministic pass/fail out
 
 ---
 
+## QRT-05: Prompt Configuration Maintainability
+
+* **Linked quality requirement:** [QR-05](quality-requirements.md#qr-05)
+* **Related ADR:** [ADR-005 — External Prompt Configuration and Versioning](architecture/adr/ADR-005.md)
+* **Verification method:** Unit tests for `app.config.prompts.load_prompt_config()` and prompt builders.
+* **Test data, setup, or environment:** Standard pytest environment with the default `app/config/prompts/v1.json`.
+* **Automated command or CI check:** `pytest tests/test_llm_prompts.py tests/test_llm_funnel_prompts.py -v`
+* **Expected measurable result:** Prompt config loads without errors; system/reply/follow-up prompts render expected stage-specific content.
+* **Evidence location:** Latest protected-default-branch CI run.
+
+---
+
+## QRT-06: Funnel Definition Validity
+
+* **Linked quality requirement:** [QR-06](quality-requirements.md#qr-06)
+* **Related ADR:** [ADR-006 — Funnel Upload and Preview API](architecture/adr/ADR-006.md)
+* **Verification method:** Integration tests for `POST /api/funnels/preview` and `POST /api/funnels/upload`.
+* **Test data, setup, or environment:** Standard pytest environment with valid/invalid JSON and plain-text funnel payloads.
+* **Automated command or CI check:** `pytest tests/test_api_funnels.py -v`
+* **Expected measurable result:** Invalid funnels return HTTP 422; valid funnels are accepted with normalized stages.
+* **Evidence location:** Latest protected-default-branch CI run.
+
+---
+
+## QRT-07: Production Health Observability
+
+* **Linked quality requirement:** [QR-07](quality-requirements.md#qr-07)
+* **Related ADR:** [ADR-007 — Production Monitoring and Logging](architecture/adr/ADR-007.md)
+* **Verification method:** Integration test for `GET /health`.
+* **Test data, setup, or environment:** Standard pytest environment with mocked database and scheduler.
+* **Automated command or CI check:** `pytest tests/test_api_health.py -v`
+* **Expected measurable result:** Endpoint returns `status`, `db`, and `scheduler` fields within 500 ms; degraded state reported when DB or scheduler is down.
+* **Evidence location:** Latest protected-default-branch CI run.
+
+---
+
+## QRT-08: AI Automation Rate Accuracy
+
+* **Linked quality requirement:** [QR-08](quality-requirements.md#qr-08)
+* **Related ADR:** [ADR-008 — AI-Automation Rate Tracking](architecture/adr/ADR-008.md)
+* **Verification method:** Integration tests for `GET /analytics/automation-rate` and conversation status updates.
+* **Test data, setup, or environment:** Standard pytest environment with mocked `Conversation` counts and status-change scenarios.
+* **Automated command or CI check:** `pytest tests/test_api_analytics.py tests/test_api_conversations.py -v`
+* **Expected measurable result:** Rate endpoint returns correct `ai_handled`, `escalated`, and `rate_pct`; status updates mark conversations as escalated.
+* **Evidence location:** Latest protected-default-branch CI run.
+
+---
+
 ## Running the QRTs
 
 ```bash
 # QRTs only (run through their respective test modules)
-pytest tests/test_llm_guardrails.py tests/test_core_state_machine.py tests/test_core_scheduler.py -v
+pytest tests/test_llm_guardrails.py tests/test_core_state_machine.py tests/test_core_scheduler.py tests/test_llm_prompts.py tests/test_api_funnels.py tests/test_api_health.py tests/test_api_analytics.py tests/test_api_conversations.py -v
 
 # Full test suite including QRTs
 pytest tests/ -v --cov=app --cov-report=term-missing

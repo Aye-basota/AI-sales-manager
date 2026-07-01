@@ -17,17 +17,22 @@ from app.core.funnel import (
 class TestFunnelDefaults:
     def test_default_stages_have_expected_order(self):
         stages = [s["stage"] for s in DEFAULT_FUNNEL_STAGES]
-        assert stages == ["hook", "qualification", "value", "cta"]
+        assert stages == ["trust", "engagement", "qualification", "value", "cta"]
 
-    def test_hook_does_not_allow_cta(self):
-        assert is_call_to_action_allowed(MagicMock(), "hook") is False
+    def test_trust_does_not_allow_cta(self):
+        assert is_call_to_action_allowed(MagicMock(), "trust") is False
 
     def test_cta_allows_cta(self):
         assert is_call_to_action_allowed(MagicMock(), "cta") is True
 
-    def test_default_hook_max_length(self):
+    def test_default_trust_max_length(self):
+        script = MagicMock(max_first_message_length=200)
+        assert get_max_length_for_stage(script, "trust") == 200
+
+    def test_legacy_hook_alias_maps_to_trust(self):
         script = MagicMock(max_first_message_length=200)
         assert get_max_length_for_stage(script, "hook") == 200
+        assert is_call_to_action_allowed(script, "hook") is False
 
     def test_default_value_max_length(self):
         script = MagicMock(max_first_message_length=200)
@@ -49,7 +54,7 @@ class TestCustomFunnel:
         script = MagicMock(
             first_message_goal="value",
             sales_funnel=[
-                {"stage": "hook"},
+                {"stage": "trust"},
                 {"stage": "value"},
             ],
         )
@@ -57,11 +62,15 @@ class TestCustomFunnel:
 
     def test_next_stage_advances_on_positive(self):
         script = MagicMock(sales_funnel=None)
-        assert next_stage(script, "hook", "positive") == "qualification"
+        assert next_stage(script, "trust", "positive") == "engagement"
+
+    def test_next_stage_advances_legacy_hook_alias(self):
+        script = MagicMock(sales_funnel=None)
+        assert next_stage(script, "hook", "positive") == "engagement"
 
     def test_next_stage_jumps_to_cta_on_meeting_intent(self):
         script = MagicMock(sales_funnel=None)
-        assert next_stage(script, "hook", "meeting_intent") == "cta"
+        assert next_stage(script, "trust", "meeting_intent") == "cta"
 
     def test_next_stage_stays_on_objection(self):
         script = MagicMock(sales_funnel=None)
@@ -72,4 +81,4 @@ class TestStageConfig:
     def test_get_stage_config_returns_default_for_unknown(self):
         script = MagicMock(sales_funnel=None)
         cfg = get_stage_config(script, "unknown")
-        assert cfg["stage"] == "hook"
+        assert cfg["stage"] == "trust"

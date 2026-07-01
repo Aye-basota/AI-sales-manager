@@ -11,7 +11,7 @@ from app.llm.prompts import (
 
 
 class TestBuildSystemPrompt:
-    def test_hook_stage_has_no_cta(self):
+    def test_trust_stage_has_no_cta(self):
         script = MagicMock(
             role_prompt="Sales",
             target_audience="Startups",
@@ -23,8 +23,8 @@ class TestBuildSystemPrompt:
             call_to_action="15-минутный созвон",
             sales_funnel=None,
         )
-        prompt = build_system_prompt(script, conversation_stage="hook")
-        assert "ТЕКУЩИЙ ЭТАП ВОРОНКИ: hook" in prompt
+        prompt = build_system_prompt(script, conversation_stage="trust")
+        assert "ТЕКУЩИЙ ЭТАП ДИАЛОГА: trust" in prompt
         assert "Запрещено предлагать созвон" in prompt
 
     def test_cta_stage_allows_cta(self):
@@ -44,7 +44,7 @@ class TestBuildSystemPrompt:
 
 
 class TestBuildInitialUserPrompt:
-    def test_first_message_is_hook(self):
+    def test_first_message_is_trust_stage(self):
         script = MagicMock(
             sales_funnel=None,
             max_first_message_length=150,
@@ -57,7 +57,7 @@ class TestBuildInitialUserPrompt:
             city=None,
             industry=None,
         )
-        prompt = build_initial_user_prompt(script, contact, "hook")
+        prompt = build_initial_user_prompt(script, contact, "trust")
         assert "ПЕРВОЕ сообщение" in prompt
         assert "Alice" in prompt
         assert "Acme" in prompt
@@ -79,5 +79,5 @@ class TestBuildReplyUserPrompt:
             lead_message="Расскажите",
             conversation_stage="qualification",
         )
-        assert "Текущий этап воронки: qualification" in prompt
+        assert "Текущий этап диалога: qualification" in prompt
         assert "НЕЛЬЗЯ предлагать созвон" in prompt

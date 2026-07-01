@@ -1219,7 +1219,8 @@ async def process_upload_file(message: types.Message, state: FSMContext):
     for idx, r in enumerate(preview, 1):
         preview_lines.append(
             f"{idx}. {r.get('first_name') or ''} {r.get('last_name') or ''} — "
-            f"{r.get('company_name') or ''}, {r.get('position') or ''} (@{r.get('telegram_username') or '-'}, {r.get('phone') or '-'})"
+            f"{r.get('company_name') or ''}, {r.get('position') or ''} "
+            f"(@{r.get('telegram_username') or '-'}, {r.get('phone') or '-'})"
         )
     preview_text = "\n".join(preview_lines) if preview_lines else "(пустой файл)"
 

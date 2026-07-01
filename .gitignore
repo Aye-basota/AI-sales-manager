@@ -58,6 +58,12 @@ htmlcov/
 # Documentation build output
 site_docs/
 
+# Link checker cache
+.lycheecache
+
 # Assignment files (kept locally, not committed)
 Assignment_04.md
+Assignment_05.md
+Artifact_Requirements.md
+*.docx
 

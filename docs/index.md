@@ -29,4 +29,4 @@ The system automates B2B outbound sales over Telegram using live MTProto account
 ## Status
 
 - `MVP v1` delivered and approved.
-- `MVP v2` is the Assignment 5 Sprint increment.
+- `MVP v2` delivered as SemVer release `v0.3.0` (Assignment 5 Sprint increment).
