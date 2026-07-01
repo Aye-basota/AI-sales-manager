@@ -82,3 +82,83 @@ Each requirement uses the measurable scenario format: stimulus → response → 
 
 **Linked tests:** `tests/test_llm_guardrails.py` (`test_check_anti_repetition_*`)
 **Related ADR:** [ADR-004 — Anti-Repetition Check for Generated Messages](architecture/adr/ADR-004.md)
+
+---
+
+<a id="qr-05"></a>
+## QR-05: Prompt Configuration Maintainability (Maintainability — Modifiability)
+
+**ID:** QR-05
+**ISO/IEC 25010 sub-characteristic:** Modifiability (Maintainability)
+**Rationale:** LLM prompts need frequent tuning based on customer feedback and A/B tests. Embedding prompts in Python code forces a full redeploy for every wording change and mixes prompt content with business logic, making reviews and rollbacks harder.
+
+### Scenario
+
+| Field | Value |
+|---|---|
+| **Stimulus** | Product owner wants to change the system prompt tone, nurturing rules, or intent-classification examples |
+| **Response** | The change is made in `app/config/prompts/v1.json`; prompt builders load the external config at startup |
+| **Measurable outcome** | No application code is modified; existing automated tests for prompt rendering still pass; the config version is visible in logs |
+
+**Linked tests:** `tests/test_llm_prompts.py`, `tests/test_llm_funnel_prompts.py`, `tests/test_core_funnel.py`
+**Related ADR:** [ADR-005 — External Prompt Configuration and Versioning](architecture/adr/ADR-005.md)
+
+---
+
+<a id="qr-06"></a>
+## QR-06: Funnel Definition Validity (Functional Suitability — Functional Correctness)
+
+**ID:** QR-06
+**ISO/IEC 25010 sub-characteristic:** Functional Correctness (Functional Suitability)
+**Rationale:** Operators can upload custom sales funnels via API. An invalid funnel (missing stage names, duplicate stages, unsupported format) could break prompt generation or stage progression, leading to incorrect outbound messages.
+
+### Scenario
+
+| Field | Value |
+|---|---|
+| **Stimulus** | Operator uploads a funnel definition in JSON or plain text |
+| **Response** | `parse_funnel()` validates the structure, rejects duplicates, ensures every stage has a name, and returns a normalized stage list |
+| **Measurable outcome** | 100% of invalid inputs return HTTP 422 with a clear error; valid funnels are accepted and persisted; automated parser tests cover JSON, text, duplicate, and missing-name cases |
+
+**Linked tests:** `tests/test_api_funnels.py`
+**Related ADR:** [ADR-006 — Funnel Upload and Preview API](architecture/adr/ADR-006.md)
+
+---
+
+<a id="qr-07"></a>
+## QR-07: Production Health Observability (Reliability — Availability / Maintainability)
+
+**ID:** QR-07
+**ISO/IEC 25010 sub-characteristic:** Availability (Reliability) / Maintainability
+**Rationale:** In production, the team and customer need to know whether the API, scheduler, database, and Redis are healthy. Without a lightweight health endpoint and structured logs, failures are discovered only when messages stop sending.
+
+### Scenario
+
+| Field | Value |
+|---|---|
+| **Stimulus** | Uptime monitor or operator polls service health every 30 seconds |
+| **Response** | `GET /health` checks PostgreSQL and scheduler status and returns `ok` or `degraded`; containers restart automatically on failure |
+| **Measurable outcome** | Health endpoint responds in < 500 ms; automated health test passes; Docker Compose health check and `restart: unless-stopped` are configured for all services |
+
+**Linked tests:** `tests/test_api_health.py`
+**Related ADR:** [ADR-007 — Production Monitoring and Logging](architecture/adr/ADR-007.md)
+
+---
+
+<a id="qr-08"></a>
+## QR-08: AI Automation Rate Accuracy (Functional Suitability — Accuracy)
+
+**ID:** QR-08
+**ISO/IEC 25010 sub-characteristic:** Accuracy (Functional Suitability)
+**Rationale:** The team and customer need an objective metric of how many dialogs are handled end-to-end by the AI versus escalated to a human operator. An inaccurate metric would mislead prioritization of automation improvements.
+
+### Scenario
+
+| Field | Value |
+|---|---|
+| **Stimulus** | Operator calls `GET /analytics/automation-rate` |
+| **Response** | The endpoint counts total conversations and those with `was_escalated = true`, then returns `ai_handled`, `escalated`, and `rate_pct` |
+| **Measurable outcome** | Computed values match direct DB counts; tests verify zero-total handling and normal-case arithmetic; any operator-driven status change sets `was_escalated = true` |
+
+**Linked tests:** `tests/test_api_analytics.py`, `tests/test_api_conversations.py`
+**Related ADR:** [ADR-008 — AI-Automation Rate Tracking](architecture/adr/ADR-008.md)

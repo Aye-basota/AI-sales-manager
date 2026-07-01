@@ -1,0 +1,98 @@
+@startuml AI_Sales_Manager_Component_Diagram
+!theme plain
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment left
+
+title AI Sales Manager — UML Component Diagram (Static Architecture)
+
+' ========== External Systems ==========
+node "Telegram Bot API" as TelegramBotAPI #LightBlue
+node "Telegram MTProto API" as TelegramMTProtoAPI #LightBlue
+node "OpenRouter API" as OpenRouterAPI #LightYellow
+node "DashScope API" as DashScopeAPI #LightYellow
+
+database "PostgreSQL" as PostgreSQL #LightGreen
+database "Redis" as Redis #LightGreen
+
+' ========== Main application container ==========
+package "AI Sales Manager Application" #WhiteSmoke {
+    [Configuration] as Config <<app.config>>
+
+    [Presentation Layer] as Presentation <<app.api + app.main + site>> #LightBlue
+    note right of Presentation
+      API Routers: scripts, campaigns, contacts,
+      conversations, analytics, telegram_accounts, health
+      Entry point: FastAPI app (app.main)
+      Static site: site/ (landing page)
+    end note
+
+    [Bot Layer] as Bots <<app.bots>> #LightCoral
+    note right of Bots
+      Admin Bot: aiogram bot for managers
+      Seller Client: Pyrogram MTProto client
+      Inbound Listener: incoming message handler
+    end note
+
+    [Service Layer] as Services <<app.services>> #LightPink
+    note right of Services
+      Conversation Service, Contact Import,
+      Lead Discovery, Lead Validation,
+      Notification Service
+    end note
+
+    [Core Business Logic] as Core <<app.core>> #LightGoldenRodYellow
+    note right of Core
+      Account Manager, Sales Funnel,
+      Scheduler, Humanizer, State Machine
+    end note
+
+    [LLM Layer] as LLM <<app.llm>> #LightYellow
+    note right of LLM
+      LLM Engine, Guardrails,
+      Intent Classifier, Prompts
+    end note
+
+    [Data Layer] as Data <<app.db + app.models + alembic>> #LightGreen
+    note right of Data
+      SQLAlchemy Models, Async DB Session,
+      Redis Client, Alembic Migrations
+    end note
+
+    [Schemas (DTOs)] as Schemas <<app.schemas>> #LightGray
+}
+
+' ========== Inter-layer dependencies ==========
+Presentation --> Services : uses
+Presentation --> Schemas : validates / serializes
+Presentation --> Data : persistence
+
+Bots --> TelegramBotAPI
+Bots --> TelegramMTProtoAPI
+Bots --> Services
+Bots --> Core
+Bots --> LLM
+Bots --> Data
+
+Services --> Data
+Services --> Core
+Services --> LLM
+Services --> Schemas
+
+Core --> Data
+Core --> Config
+
+LLM --> OpenRouterAPI
+LLM --> DashScopeAPI
+LLM --> Data
+
+Data --> PostgreSQL
+Data --> Redis
+
+Config ..> Presentation : settings
+Config ..> Data : DB / Redis URLs
+Config ..> LLM : API keys
+Config ..> Bots : tokens
+
+@enduml

@@ -43,67 +43,72 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 
 ---
 
-## Current Sprint
+。## Current Sprint
 
-### Sprint 3 — Operator Control and Campaign Launch
+### Sprint 3 — MVP v2 (Lead Nurturing, Configurability, and Production Readiness)
 
-**Goal:** Complete the campaign-launch workflow for MVP validation and give operators more control over live conversations.
+**Goal:** Deliver the `MVP v2` increment by making the dialogue more nurturing and configurable, adding funnel management APIs, and improving production observability and security.
 
-**Dates:** 2026-06-28 – 2026-07-12 (planned)
+**Dates:** 2026-06-30 – 2026-07-06
 
 **Selected PBIs (from Product Backlog):**
 
 | ID | Title | Priority |
 |---|---|---|
-| US-011 | Import Contact Base from CSV | Must Have (mvp-v1) |
-| US-012 | Launch Outreach Campaign to Contact Base | Must Have (mvp-v1) |
-| US-016 | Campaign Launch Readiness Check | Should Have |
-| TECH-07 | CSV contact import — parsing, validation, and preview | Technical |
-| TECH-08 | CSV contact import — persistence and duplicate handling | Technical |
-| TECH-09 | Campaign scheduler with working-hours and anti-spam controls | Technical |
-| TECH-10 | Campaign launch endpoint and contact-base assignment | Technical |
-| US-09 | Manual Dialog Takeover | Could Have |
-| US-013 | Monitor Active Dialogs in Real Time | Could Have |
+| US-017 | Improve prompts for lead nurturing | Must Have |
+| US-018 | Natural multi-stage conversation flow | Must Have |
+| TECH-04 | Funnel upload API | Must Have |
+| TECH-05 | Funnel preview API | Must Have |
+| TECH-06 | AI-automation rate tracking | Should Have |
+| TECH-13 | Prompt configuration and versioning | Should Have |
+| TECH-12 | Production monitoring | Should Have |
 
 **Sprint focus:**
 
-- Finish CSV import and campaign launch so a sales director can run an end-to-end outreach campaign.
-- Improve operator visibility (dialog monitoring, optional manual takeover).
-- Provision a persistent staging deployment for customer demos and UAT.
+- Rework default funnel to trust-building stages and externalize prompt templates.
+- Allow operators to preview and upload funnel definitions via API.
+- Track AI-automation rate and expose it through analytics.
+- Add health checks, structured logging, and container restart policies for production.
+- Resolve known dependency vulnerabilities and extend CI with `pip-audit` and `lychee`.
+- SemVer release **v0.3.0** mapped to [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones).
 
 ---
 
 ## Next Sprint
 
-### Sprint 4 — Analytics and Management Tooling
+### Sprint 4 — Operator Control and Campaign Launch Hardening
 
-**Goal:** Increase visibility into campaign performance and streamline day-to-day management through the Admin Bot.
+**Goal:** Complete the campaign-launch workflow for MVP validation and give operators more control over live conversations.
 
 **Planned PBIs:**
 
-- US-015: Campaign Analytics and Conversion Dashboard
-- US-010: Telegram Admin Bot for Management (complete remaining UX)
-- US-014: Lead Qualification Status Management
+- US-011: Import Contact Base from CSV
+- US-012: Launch Outreach Campaign to Contact Base
+- US-016: Campaign Launch Readiness Check
+- TECH-07–TECH-10: CSV import and campaign launch internals
+- US-09: Manual Dialog Takeover
+- US-013: Monitor Active Dialogs in Real Time
 
 **Planned outcomes:**
 
-- Conversion metrics visible per campaign and funnel stage.
-- Improved Admin Bot menus, command hints, and entity navigation.
-- Clear lead qualification states for operator handover.
+- Sales directors can import contacts and launch end-to-end outreach campaigns.
+- Operators can monitor and optionally take over active dialogs.
+- Persistent staging deployment for customer demos and UAT.
 
 ---
 
-## Ongoing Quality and Automation (maintained from Assignment 4)
+## Ongoing Quality and Automation (maintained from Assignment 4 and extended in Assignment 5)
 
 These gates apply to **all future sprints** unless explicitly superseded:
 
 | Asset | Location | Expectation |
 |---|---|---|
-| Quality requirements | `docs/quality-requirements.md` | New features must not regress QR-001–QR-003 scenarios |
-| Automated QRTs | `tests/quality_requirement_tests/` | Run on every CI build |
-| Definition of Done | `docs/definition-of-done.md` | PBIs marked Done only when CI, tests, review, and changelog criteria are met |
+| Quality requirements | `docs/quality-requirements.md` | New features must not regress QR-001–QR-008 scenarios |
+| Automated QRTs | `tests/quality_requirement_tests/` + `tests/test_api_*.py` | Run on every CI build |
+| Definition of Done | `docs/definition-of-done.md` | PBIs marked Done only when CI, tests, review, changelog, and release criteria are met |
 | Testing strategy | `docs/testing.md` | Critical modules maintain ≥ 30% line coverage |
-| CI pipeline | `.github/workflows/ci.yml` | Lint, tests, coverage, bandit must pass on `main` |
+| CI pipeline | `.github/workflows/ci.yml` | Tests, coverage, bandit, pip-audit, flake8 must pass on `main` |
+| Link checker | `.github/workflows/links.yml` | No broken links in documentation |
 | UAT scenarios | `docs/user-acceptance-tests.md` | Re-executed after major increments |
 
 ---

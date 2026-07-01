@@ -42,7 +42,7 @@ Also included:
 
 ### Total Sprint size
 
-*(to be filled by Product Owner in the Sprint Backlog board)*
+*(team-only: copy the total Story Points from the Sprint Backlog board once the Sprint is closed)*
 
 ---
 
@@ -56,7 +56,8 @@ Also included:
 - **TECH-12 — Production monitoring:** centralized logging (`app/logging_config.py`), `LOG_LEVEL` env variable, Docker Compose health check for the API container, and `restart: unless-stopped` for all services.
 - **Docs site:** MkDocs Material site under `docs/`, published via `.github/workflows/docs.yml` to GitHub Pages.
 - **QA pipeline extensions:** added `pip-audit` and `lychee` jobs; updated dependencies to resolve known vulnerabilities (FastAPI 0.138.2, Starlette 1.3.1, Pydantic 2.13.4).
-- **Tests:** 459 automated tests, `app/` coverage ≥ 80%; new tests for funnel API, automation rate, prompt config, and conversation escalation.
+- **Tests:** 459 automated tests, `app/` coverage ~81%; new tests for funnel API, automation rate, prompt config, and conversation escalation.
+  - Local verification: `pytest tests/` — 459 passed; `bandit -r app/ -ll` — no issues; `pip-audit` — no known vulnerabilities; `flake8` — no issues.
 
 ---
 
@@ -64,8 +65,8 @@ Also included:
 
 - **Local:** `docker-compose up -d --build` then `docker-compose exec api alembic upgrade head`.
 - **Public access via localtunnel:** see [`LAUNCH_GUIDE.md`](../../LAUNCH_GUIDE.md).
-- **Deployed product URL:** *(add URL when running)*
-- **Access instructions / test credentials:** *(add if needed)*
+- **Deployed product URL:** *(team-only: insert public URL after deploy, e.g. `https://...` or localtunnel link)*
+- **Access instructions / test credentials:** *(team-only: insert if the TA/customer needs limited-permission credentials)*
 
 ---
 
@@ -95,8 +96,13 @@ Deferred to future sprints:
 - [`docs/quality-requirement-tests.md`](../../docs/quality-requirement-tests.md)
 - [`docs/user-acceptance-tests.md`](../../docs/user-acceptance-tests.md)
 - [`docs/development-process.md`](../../docs/development-process.md)
+- [`docs/interface.md`](../../docs/interface.md)
 - [`docs/architecture/README.md`](../../docs/architecture/README.md)
+- Static view: [`docs/architecture/static-view/component-diagram.png`](../../docs/architecture/static-view/component-diagram.png) ([source](../../docs/architecture/static-view/component-diagram.puml))
+- Dynamic view: [`docs/architecture/dynamic-view/inbound-sequence-diagram.png`](../../docs/architecture/dynamic-view/inbound-sequence-diagram.png) ([source](../../docs/architecture/dynamic-view/inbound-sequence-diagram.puml))
+- Deployment view: [`docs/architecture/deployment-view/README.md`](../../docs/architecture/deployment-view/README.md)
 - ADR directory: [`docs/architecture/adr/`](../../docs/architecture/adr/)
+- Hosted documentation site: [`https://aye-basota.github.io/AI-sales-manager/`](https://aye-basota.github.io/AI-sales-manager/)
 
 ---
 
@@ -116,8 +122,22 @@ See [`docs/quality-requirements.md`](../../docs/quality-requirements.md) for det
 ## 8. Testing Status
 
 - **Total tests:** 459
-- **Coverage:** `app/` ≥ 80% (latest local run)
+- **Coverage:** `app/` ~81% (latest local run)
 - **Critical module coverage:** all critical modules meet or exceed 30%.
+  | Module | Coverage |
+  |---|---|
+  | `app/core/state_machine.py` | 100% |
+  | `app/api/analytics.py` | 100% |
+  | `app/api/conversations.py` | 100% |
+  | `app/api/health.py` | 100% |
+  | `app/llm/engine.py` | 94% |
+  | `app/llm/guardrails.py` | 90% |
+  | `app/services/notification_service.py` | 94% |
+  | `app/core/scheduler.py` | 80% |
+  | `app/bots/inbound_listener.py` | 79% |
+  | `app/services/conversation_service.py` | 86% |
+  | `app/core/humanizer.py` | 92% |
+  | `app/core/funnel.py` | 88% |
 - **New tests added this Sprint:**
   - `tests/test_api_funnels.py` — funnel preview/upload API (TECH-04/05)
   - `tests/test_api_analytics.py` — automation-rate endpoint (TECH-06)
@@ -155,20 +175,20 @@ Place screenshots in `reports/week5/images/`:
 
 ## 10. Release
 
-- [SemVer release v0.3.0](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.3.0) *(create after push)*
+- [SemVer release v0.3.0](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.3.0) *(team-only: create from the `main` commit after merge)*
 - [`CHANGELOG.md`](../../CHANGELOG.md)
 
 ---
 
 ## 11. Demo Video
 
-- [Public sanitized demo video](https://example.com/demo-video) *(team should upload and update)*
+- [Public sanitized demo video](https://example.com/demo-video) *(team-only: upload a <2 min video and replace this link)*
 
 ---
 
 ## 12. UAT and Customer Review
 
-- **UAT results summary:** *(team should update after customer UAT)*
+- **UAT results summary:** *(team-only: fill after customer UAT — list passed/failed scenarios and follow-up PBIs)*
 - [`reports/week5/sprint-review-summary.md`](sprint-review-summary.md)
 - [`reports/week5/sprint-review-transcript.md`](sprint-review-transcript.md) *(only if publication permitted)*
 - [`reports/week5/sprint-review-notes.md`](sprint-review-notes.md) *(if recording refused)*
@@ -205,18 +225,18 @@ Quality requirements are traced to tests in [`docs/quality-requirement-tests.md`
 
 ## 15. Current Product Status and Next Steps
 
-**Current status:** `MVP v2` delivered for Assignment 5.
+**Current status:** `MVP v2` code, tests, QA gates, documentation, and changelog are complete. The branch is ready to merge into `main`.
 
-**Next steps:**
+**Next steps (team-only):**
 
-- Merge the feature branch into `main` and push.
-- Create GitHub release `v0.3.0` from the merged `main`.
-- Enable GitHub Pages source `gh-pages` after the docs workflow runs once.
-- Deploy to the target VPS (`docker-compose up -d --build`, `alembic upgrade head`).
-- Conduct Sprint Review and UAT with the customer.
-- Record public sanitized demo video and update section 11.
-- Fill remaining placeholders (Sprint size, screenshots, UAT results, team reflection).
-- Prepare Assignment 5 Moodle PDF submission.
+1. Merge `assignment5-parts-6-7-11-prep` into `main` (via PR + review, or direct push if branch protection allows).
+2. Create GitHub release `v0.3.0` from the merged `main` commit.
+3. Deploy the current increment and fill the public URL in section 4.
+4. Conduct Sprint Review and UAT with the customer; fill `sprint-review-summary.md` and choose transcript vs. notes.
+5. Record the public sanitized demo video (<2 min) and update section 11.
+6. Fill Sprint size (section 2), contribution traceability (section 16), and add screenshots to `reports/week5/images/`.
+7. Update reflection/retrospective/llm-report in `reports/week5/` with team-specific content.
+8. Prepare the Assignment 5 Moodle PDF submission.
 
 ---
 
@@ -224,8 +244,8 @@ Quality requirements are traced to tests in [`docs/quality-requirement-tests.md`
 
 | Team member | Issues | PRs/MRs | Reviews | Testing | QA / Automation | Documentation |
 |---|---|---|---|---|---|---|
-| *(fill in)* | | | | | | |
+| *(team-only: one row per member with links to issues/PRs)* | | | | | | |
 
 ---
 
-*This report is a living document. Sections marked with placeholders must be completed by the team before final submission.*
+*This report is a living document. Sections marked as **team-only** must be completed by the team before final submission.*

@@ -66,32 +66,61 @@ Lead discovery returns relevant Telegram users matching the search keyword.
 
 ## MVP v2 UAT Scenarios
 
-Add at least two new scenarios here for functionality delivered in `MVP v2`.
-
-## UAT-004: *(fill in for MVP v2 feature)*
+## UAT-004: Upload and Preview Sales Funnel via API
 
 **Status:** Active
-**Priority:** *(fill in)*
+**Priority:** High
 **Last Executed:** —
 **Last Result:** —
+**Linked PBI:** [TECH-04](https://github.com/Aye-basota/AI-sales-manager/issues/24), [TECH-05](https://github.com/Aye-basota/AI-sales-manager/issues/25)
 
 **Scenario:**
-1. *(fill in)*
+1. Operator opens the API docs at `/docs`.
+2. Calls `POST /api/funnels/preview` with a valid JSON funnel definition containing stages `trust`, `engagement`, `qualification`, `value`, `cta`.
+3. Verifies the response lists the stages with correct goals, instructions, and `allow_call_to_action` flags.
+4. Calls `POST /api/funnels/upload` with the same funnel and an existing `campaign_id`.
+5. Verifies the funnel is persisted and returned with HTTP 201.
+6. Attempts to upload a funnel with a duplicate stage name and verifies HTTP 422.
 
 **Expected Result:**
-*(fill in)*
+Funnel preview works without persistence; valid uploads are saved; invalid funnels are rejected with a clear error.
 
 ---
 
-## UAT-005: *(fill in for MVP v2 feature)*
+## UAT-005: View AI-Automation Rate and Escalation Status
 
 **Status:** Active
-**Priority:** *(fill in)*
+**Priority:** Medium
 **Last Executed:** —
 **Last Result:** —
+**Linked PBI:** [TECH-06](https://github.com/Aye-basota/AI-sales-manager/issues/26)
 
 **Scenario:**
-1. *(fill in)*
+1. Operator runs a campaign and several dialogs complete without operator intervention.
+2. Operator opens a conversation that required human intervention and updates its status via `PUT /conversations/{id}/status`.
+3. Operator calls `GET /analytics/automation-rate`.
+4. Verifies the response shows `total`, `ai_handled`, `escalated`, and `rate_pct`.
+5. Confirms `escalated` equals the number of conversations with operator status changes and `rate_pct` reflects the AI-handled ratio.
 
 **Expected Result:**
-*(fill in)*
+The automation-rate metric accurately distinguishes AI-handled dialogs from escalated dialogs.
+
+---
+
+## UAT-006: Verify Production Health Endpoint and Logs
+
+**Status:** Active
+**Priority:** Medium
+**Last Executed:** —
+**Last Result:** —
+**Linked PBI:** [TECH-12](https://github.com/Aye-basota/AI-sales-manager/issues/54)
+
+**Scenario:**
+1. Operator deploys the product with `docker-compose up -d`.
+2. Calls `GET /health` and verifies `status` is `ok`, `db` is `true`, and `scheduler` is `true`.
+3. Checks container logs with `docker-compose logs api` and confirms structured log lines with timestamp, level, logger name, and message.
+4. Stops PostgreSQL container and calls `GET /health` again.
+5. Verifies the endpoint returns `status: degraded` and `db: false`.
+
+**Expected Result:**
+The health endpoint reports real system state, and logs are available in a consistent format for monitoring.

@@ -47,6 +47,10 @@ nav:
           - ADR-002: architecture/adr/ADR-002.md
           - ADR-003: architecture/adr/ADR-003.md
           - ADR-004: architecture/adr/ADR-004.md
+          - ADR-005: architecture/adr/ADR-005.md
+          - ADR-006: architecture/adr/ADR-006.md
+          - ADR-007: architecture/adr/ADR-007.md
+          - ADR-008: architecture/adr/ADR-008.md
   - Quality:
       - Quality Requirements: quality-requirements.md
       - Quality Requirement Tests: quality-requirement-tests.md

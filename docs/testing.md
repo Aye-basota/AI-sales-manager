@@ -3,7 +3,7 @@
 ## Overview
 
 The project uses **pytest** for all automated testing. Tests are organized by module in `tests/`.
-The test suite contains **408 tests** with approximately **77% line coverage** across the application.
+The test suite contains **459 tests** with approximately **81% line coverage** across the application.
 
 Run the full suite:
 ```bash
@@ -26,6 +26,8 @@ Unit tests cover isolated business logic with mocked dependencies.
 | [`tests/test_llm_engine.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_engine.py) | `app/llm/engine.py` | LLM cascade fallback, retry logic, hardcoded fallback |
 | [`tests/test_llm_intent_classifier.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_intent_classifier.py) | `app/llm/intent_classifier.py` | Intent classification outputs |
 | [`tests/test_llm_prompts.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_prompts.py) | `app/llm/prompts.py` | Prompt template rendering |
+| [`tests/test_llm_funnel_prompts.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_llm_funnel_prompts.py) | `app/llm/prompts.py` + `app/core/funnel.py` | Stage-aware prompt generation |
+| [`tests/test_core_funnel.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_funnel.py) | `app/core/funnel.py` | Stage progression, aliases, CTA rules |
 | [`tests/test_core_account_manager.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_account_manager.py) | `app/core/account_manager.py` | Account selection, cooldown logic, daily limit enforcement |
 | [`tests/test_db_redis.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_db_redis.py) | `app/db/redis.py` | Redis cache read/write/invalidation |
 
@@ -43,6 +45,8 @@ Integration tests verify interactions between components using `AsyncMock` for e
 | [`tests/test_humanizer_integration.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_humanizer_integration.py) | Humanizer ↔ SellerClient (typing simulation) |
 | [`tests/test_api_campaigns.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_campaigns.py) | FastAPI campaign endpoints ↔ DB |
 | [`tests/test_api_conversations.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_conversations.py) | FastAPI conversation endpoints ↔ DB |
+| [`tests/test_api_funnels.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_funnels.py) | FastAPI funnel preview/upload endpoints ↔ parser ↔ DB |
+| [`tests/test_api_analytics.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_analytics.py) | FastAPI analytics endpoints (automation-rate) ↔ DB |
 
 ### End-to-End Tests
 
@@ -70,14 +74,20 @@ Integration tests verify interactions between components using `AsyncMock` for e
 | Module | Coverage | Threshold | Status |
 |---|---|---|---|
 | `app/core/state_machine.py` | ~100% | ≥ 30% | ✅ |
-| `app/llm/engine.py` | ~99% | ≥ 30% | ✅ |
-| `app/llm/guardrails.py` | ~98% | ≥ 30% | ✅ |
-| `app/services/notification_service.py` | ~96% | ≥ 30% | ✅ |
+| `app/api/analytics.py` | ~100% | ≥ 30% | ✅ |
+| `app/api/conversations.py` | ~100% | ≥ 30% | ✅ |
+| `app/api/health.py` | ~100% | ≥ 30% | ✅ |
+| `app/llm/engine.py` | ~94% | ≥ 30% | ✅ |
+| `app/llm/guardrails.py` | ~90% | ≥ 30% | ✅ |
+| `app/services/notification_service.py` | ~94% | ≥ 30% | ✅ |
 | `app/core/scheduler.py` | ~80% | ≥ 30% | ✅ |
-| `app/bots/inbound_listener.py` | ~75% | ≥ 30% | ✅ |
-| `app/services/conversation_service.py` | ~70% | ≥ 30% | ✅ |
-| `app/core/humanizer.py` | ~68% | ≥ 30% | ✅ |
-| **Global** | **~77%** | — | ✅ |
+| `app/bots/inbound_listener.py` | ~79% | ≥ 30% | ✅ |
+| `app/services/conversation_service.py` | ~86% | ≥ 30% | ✅ |
+| `app/core/humanizer.py` | ~92% | ≥ 30% | ✅ |
+| `app/core/funnel.py` | ~88% | ≥ 30% | ✅ |
+| `app/services/funnel_parser.py` | ~88% | ≥ 30% | ✅ |
+| `app/logging_config.py` | ~100% | ≥ 30% | ✅ |
+| **Global** | **~81%** | — | ✅ |
 
 All critical modules exceed the 30% minimum line coverage threshold.
 
