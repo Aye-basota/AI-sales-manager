@@ -1,6 +1,6 @@
 """Add funnels table and automation tracking fields for MVP v2
 
-Revision ID: 20260630_mvp_v2_funnel_and_automation
+Revision ID: 20260630_mvp_v2
 Revises: 20260615_funnel_fields
 Create Date: 2026-06-30 20:00:00
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '20260630_mvp_v2_funnel_and_automation'
+revision: str = '20260630_mvp_v2'
 down_revision: Union[str, None] = '20260615_funnel_fields'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
