@@ -66,7 +66,7 @@ Also included:
 
 - **Local:** `docker-compose up -d --build` then `docker-compose exec api alembic upgrade head`.
 - **Public access via localtunnel:** see [`LAUNCH_GUIDE.md`](../../LAUNCH_GUIDE.md).
-- **Deployed product URL:** https://shaggy-baboons-tickle.loca.lt (localtunnel; active while the host machine and tunnel are running)
+- **Deployed product URL:** https://witty-cases-trade.loca.lt (localtunnel; active while the host machine and tunnel are running)
 - **Access instructions / test credentials:** No special credentials required. Health check: `GET /health`. API docs: `/docs`.
 
 ---
