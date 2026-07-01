@@ -38,8 +38,6 @@ Admin Bot and REST API are **sibling entry points** — both call shared service
 - New funnel stages require explicit state-machine transitions and tests — predictable but not configurable at runtime.
 - LLM provider changes stay isolated in `app/llm/engine.py`.
 - Scheduler logic ([ADR-003](adr/ADR-003.md)) centralises anti-spam and working-hours rules.
-- External prompt configuration ([ADR-005](adr/ADR-005.md)) reduces churn in business logic.
-- Funnel upload/preview API ([ADR-006](adr/ADR-006.md)) isolates custom funnel parsing.
 - **Trade-off:** monolithic `api` container simplifies VPS deployment but couples scheduler restarts with inbound listeners.
 
 ### Quality requirements supported or constrained
@@ -50,10 +48,6 @@ Admin Bot and REST API are **sibling entry points** — both call shared service
 | [QR-02](../quality-requirements.md#qr-02) | Isolated state machine; terminal states enforced centrally |
 | [QR-03](../quality-requirements.md#qr-03) | Scheduler owns bounded cycle; LLM latency affects whole pipeline |
 | [QR-04](../quality-requirements.md#qr-04) | Anti-repetition inside guardrails on both inbound and outbound paths |
-| [QR-05](../quality-requirements.md#qr-05) | Prompt configuration isolated from code |
-| [QR-06](../quality-requirements.md#qr-06) | Funnel parsing isolated in `app/services` |
-| [QR-07](../quality-requirements.md#qr-07) | Health checks and structured logging in production deployment |
-| [QR-08](../quality-requirements.md#qr-08) | Automation-rate tracking close to conversation model |
 
 ---
 
@@ -74,7 +68,7 @@ This is the core **MVP v2 conversational path** (improved prompts, natural pacin
 | Step | ADR / QR |
 |---|---|
 | Intent → state transition | [ADR-002](adr/ADR-002.md), [QR-02](../quality-requirements.md#qr-02) |
-| Funnel stage advancement | [ADR-006](adr/ADR-006.md), [QR-06](../quality-requirements.md#qr-06) |
+| Funnel stage advancement | Multi-stage nurturing (hook → qualification → value → CTA) |
 | LLM cascade fallback | Latency and resilience ([QR-03](../quality-requirements.md#qr-03)) |
 | `apply_guardrails()` with retry | [ADR-001](adr/ADR-001.md), [QR-01](../quality-requirements.md#qr-01) |
 | Anti-repetition (last 5 messages) | [ADR-004](adr/ADR-004.md), [QR-04](../quality-requirements.md#qr-04) |
@@ -134,14 +128,10 @@ Important design choices are captured as ADRs in [`adr/`](adr/). Each ADR docume
 | [ADR-002](adr/ADR-002.md) | Deterministic Conversation State Machine | Accepted | [QR-02](../quality-requirements.md#qr-02) |
 | [ADR-003](adr/ADR-003.md) | Scheduler-Driven Outbound Processing | Accepted | [QR-03](../quality-requirements.md#qr-03) |
 | [ADR-004](adr/ADR-004.md) | Anti-Repetition Check for Generated Messages | Accepted | [QR-04](../quality-requirements.md#qr-04) |
-| [ADR-005](adr/ADR-005.md) | External Prompt Configuration and Versioning | Accepted | [QR-05](../quality-requirements.md#qr-05) |
-| [ADR-006](adr/ADR-006.md) | Funnel Upload and Preview API | Accepted | [QR-06](../quality-requirements.md#qr-06) |
-| [ADR-007](adr/ADR-007.md) | Production Monitoring and Logging | Accepted | [QR-07](../quality-requirements.md#qr-07) |
-| [ADR-008](adr/ADR-008.md) | AI-Automation Rate Tracking | Accepted | [QR-08](../quality-requirements.md#qr-08) |
 
 ## How the Architecture and Decisions Fit Together
 
-AI Sales Manager follows a **layered, in-process architecture** deployed as Docker containers (FastAPI app, Admin Bot, PostgreSQL, Redis). The three views and eight ADRs describe the same system from different angles:
+AI Sales Manager follows a **layered, in-process architecture** deployed as Docker containers (FastAPI app, Admin Bot, PostgreSQL, Redis). The three views and four ADRs describe the same system from different angles:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -160,7 +150,7 @@ AI Sales Manager follows a **layered, in-process architecture** deployed as Dock
 │  └───────────────────────────────┘  └───────────┬────────────┘  │
 │                                                 │               │
 │                          ┌──────────────────────▼────────────┐  │
-│                          │ Guardrails (ADR-001, ADR-004)     │  │
+│                          │ Guardrails (ADR-001, ADR-004)       │  │
 │                          └──────────────────────┬────────────┘  │
 │                                                 │               │
 │                          ┌──────────────────────▼────────────┐  │
@@ -175,11 +165,11 @@ AI Sales Manager follows a **layered, in-process architecture** deployed as Dock
 
 ### Static view → structure
 
-The static view shows **what the system is made of**: internal modules (`scheduler`, `state_machine`, `guardrails`, `llm/engine`, `SellerClient`) and externals (Telegram, OpenRouter/DashScope, PostgreSQL, Redis). Low coupling between guardrails, state machine, and scheduler keeps each concern testable in isolation — which directly supports the Testability and Modifiability goals behind [QR-01](../quality-requirements.md#qr-01)–[QR-08](../quality-requirements.md#qr-08).
+The static view shows **what the system is made of**: internal modules (`scheduler`, `state_machine`, `guardrails`, `llm/engine`, `SellerClient`) and externals (Telegram, OpenRouter/DashScope, PostgreSQL, Redis). Low coupling between guardrails, state machine, and scheduler keeps each concern testable in isolation — which directly supports the Testability and Modifiability goals behind [QR-01](../quality-requirements.md#qr-01)–[QR-04](../quality-requirements.md#qr-04).
 
 ### Dynamic view → behaviour
 
-The dynamic view traces **how a request flows** — typically the outbound path: scheduler tick → load campaign contacts → select account → LLM generate → guardrails → Pyrogram send → update state. This flow crosses the boundaries defined in ADR-001 (pre-send safety), ADR-003 (when and how sends happen), ADR-002 (state updates after replies), ADR-004 (repetition rejection inside guardrails), ADR-005 (prompt configuration), and ADR-006 (funnel definitions).
+The dynamic view traces **how a request flows** — typically the outbound path: scheduler tick → load campaign contacts → select account → LLM generate → guardrails → Pyrogram send → update state. This flow crosses the boundaries defined in ADR-001 (pre-send safety), ADR-003 (when and how sends happen), ADR-002 (state updates after replies), and ADR-004 (repetition rejection inside guardrails).
 
 ### Deployment view → operations
 
@@ -192,10 +182,6 @@ Each ADR explains **why** a specific pattern was chosen and which measurable qua
 - **ADR-001 + ADR-004** form the **pre-dispatch safety gate** for all LLM output — confidentiality and user-error protection before any Telegram send.
 - **ADR-002** ensures **funnel integrity** — terminal states stop further messaging and keep analytics trustworthy.
 - **ADR-003** provides **timed, recoverable outbound processing** — the 5-minute cycle, persistent job store, and account rotation enforce performance and availability constraints.
-- **ADR-005** isolates prompt content from code so wording changes do not require redeploy.
-- **ADR-006** lets operators upload and preview funnel definitions safely.
-- **ADR-007** exposes structured logs and a health endpoint for production monitoring.
-- **ADR-008** tracks automation rate directly on the conversation model.
 
 Bidirectional traceability is maintained:
 

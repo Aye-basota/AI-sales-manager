@@ -104,7 +104,7 @@ Deferred to future sprints:
 - [`docs/development-process.md`](../../docs/development-process.md)
 - [`docs/interface.md`](../../docs/interface.md)
 - [`docs/architecture/README.md`](../../docs/architecture/README.md)
-- Static view: [`docs/architecture/static-view/component-diagram.puml`](../../docs/architecture/static-view/component-diagram.puml) ([rendered PNG](../../docs/architecture/static-view/component-diagram.png))
+- Static view: [`docs/architecture/static-view/component-diagram.puml`](../../docs/architecture/static-view/component-diagram.puml)
 - Dynamic view: [`docs/architecture/dynamic-view/inbound-reply-sequence.puml`](../../docs/architecture/dynamic-view/inbound-reply-sequence.puml)
 - Deployment view: [`docs/architecture/deployment-view/deployment-diagram.puml`](../../docs/architecture/deployment-view/deployment-diagram.puml)
 - ADR directory: [`docs/architecture/adr/`](../../docs/architecture/adr/)

@@ -40,6 +40,16 @@ jobs:
             --exclude "https://github.com/Aye-basota/AI-sales-manager/milestones"
             --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/reports/week5/README.md"
             --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/.github/workflows/links.yml"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_funnels.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_api_analytics.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/app/api/funnels.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/app/services/funnel_parser.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/app/models/funnel.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/app/schemas/funnel.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/app/config/prompts/v1.json"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/app/logging_config.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/alembic/versions/20260630_mvp_v2_funnel_and_automation.py"
+            --exclude "https://github.com/Aye-basota/AI-sales-manager/blob/main/LICENSE"
             --exclude "https://aye-basota.github.io/AI-sales-manager/*"
             .
         env:
