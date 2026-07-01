@@ -6,7 +6,7 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 
 ---
 
-## Completed Sprints
+## Previous Sprint
 
 ### Sprint 1 — MVP v1
 
@@ -14,102 +14,96 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 
 **Dates:** 2026-06-09 – 2026-06-20
 
-**Key deliverables:**
+**Key Deliverables:**
 
-- Configurable 4-stage sales funnel (hook → qualification → value → CTA).
-- Funnel-aware LLM prompt generation and stage tracking in `Conversation`.
-- Admin bot script creation with `first_message_goal` selection.
-- Analytics dashboard for replies, qualified leads, and meetings booked.
-- Multi-provider LLM support (OpenRouter + DashScope).
-- SemVer release **v0.1.0**.
-
-### Sprint 2 — Assignment 4 (Quality & Reliability)
-
-**Goal:** Deliver a reliable Sprint increment by fixing known analytics and account bugs, automating quality requirement tests, and gating quality through CI — while improving demo readiness for customer review.
-
-**Dates:** 2026-06-25 – 2026-06-28 (increment released as **v0.2.0**)
-
-**Key deliverables:**
-
-- Bug fixes: analytics for running campaigns only, unique `processed_contacts` count, assigned-account eligibility with fallback.
-- Health endpoint reports `degraded` when the scheduler is not running; invalid JSON returns HTTP 400.
-- Three quality requirements (QR-001–QR-003) with automated QRTs in CI.
-- CI pipeline: lint (ruff), tests with coverage artifacts, bandit security scan.
-- Demo seed script (`scripts/seed_demo_data.py`) and localtunnel deployment path.
-- Updated Definition of Done, testing strategy, and Week 4 report structure.
-- SemVer release **v0.2.0** mapped to [Sprint 2 milestone](https://github.com/Aye-basota/AI-sales-manager/milestone/2).
-
-**Deferred to later sprints:** full campaign-launch workflow (US-011, US-012, TECH-07–TECH-10) — selected in Sprint 2 planning but not completed; quality and reliability work took priority for Assignment 4.
+- Configurable 4-stage sales funnel (hook → qualification → value → CTA)
+- Funnel-aware LLM prompt generation
+- Funnel stage tracking in `Conversation`
+- Admin bot script creation with `first_message_goal` selection
+- Analytics dashboard for replies, qualified leads, and meetings booked
+- Multi-provider LLM support (OpenRouter + DashScope)
 
 ---
 
-。## Current Sprint
+### Sprint 2 — Campaign Launch and Operational Readiness
 
-### Sprint 3 — MVP v2 (Lead Nurturing, Configurability, and Production Readiness)
+**Goal:** Deliver a usable campaign-launch workflow for AI-powered outreach while improving product reliability and reducing implementation risks through validation, testing, and documentation improvements.
 
-**Goal:** Deliver the `MVP v2` increment by making the dialogue more nurturing and configurable, adding funnel management APIs, and improving production observability and security.
+**Dates:** 2026-06-25 – 2026-07-09
 
-**Dates:** 2026-06-30 – 2026-07-06
+**Sprint Focus:**
 
-**Selected PBIs (from Product Backlog):**
+- Complete campaign-launch functionality
+- Improve data import and campaign execution reliability
+- Reduce operational risks
+- Improve workflow readiness and documentation
+- Maintain Sprint traceability and planning structure
 
-| ID | Title | Priority |
-|---|---|---|
-| US-017 | Improve prompts for lead nurturing | Must Have |
-| US-018 | Natural multi-stage conversation flow | Must Have |
-| TECH-04 | Funnel upload API | Must Have |
-| TECH-05 | Funnel preview API | Must Have |
-| TECH-06 | AI-automation rate tracking | Should Have |
-| TECH-13 | Prompt configuration and versioning | Should Have |
-| TECH-12 | Production monitoring | Should Have |
+---
 
-**Sprint focus:**
+## Current Sprint
 
-- Rework default funnel to trust-building stages and externalize prompt templates.
-- Allow operators to preview and upload funnel definitions via API.
-- Track AI-automation rate and expose it through analytics.
-- Add health checks, structured logging, and container restart policies for production.
-- Resolve known dependency vulnerabilities and extend CI with `pip-audit` and `lychee`.
-- SemVer release **v0.3.0** mapped to [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones).
+### Sprint 3 — MVP v2: Production Deployment and AI Conversation Upgrade
+
+**Goal:** Deliver MVP v2 by deploying the application to a production VPS for reliable 24/7 availability and enhancing the AI assistant with improved prompts, a more natural conversational flow, and a structured lead nurturing process that builds trust before guiding users through the sales funnel.
+
+**Dates:** 2026-06-29 – 2026-07-04
+
+**Sprint Focus:**
+
+- Deploy application to production VPS for 24/7 availability
+- Improve AI prompt quality for lead nurturing
+- Implement natural multi-stage conversation flow
+- Optimize sales funnel progression and user engagement
+- Configure production infrastructure and monitoring
+- Introduce prompt versioning and maintainability improvements
+
+**Selected Sprint PBIs:**
+
+- US-06: Increase lead turnover
+- US-07: 24/7 availability
+- US-017: Improve AI Prompt Quality for Lead Nurturing
+- US-018: Implement Natural Multi-Stage Conversation Flow
+- TECH-04: Implement sales script and funnel file upload API
+- TECH-05: Build funnel preview endpoint and stage validation
+- TECH-06: Track AI-automation rate per dialog session
+- TECH-11: Deploy Application to Production VPS
+- TECH-12: Configure Production Infrastructure and Monitoring
+- TECH-13: Prompt Configuration and Versioning
+
+**Sprint Scope Rationale:**
+
+This Sprint focuses on delivering MVP v2 by deploying the application to a production VPS for reliable 24/7 availability and improving the AI assistant's conversational quality through enhanced prompts, a more natural dialogue flow, and an optimized lead-nurturing process.
+
+The selected scope also includes production infrastructure improvements to increase system reliability, maintainability, and operational readiness while creating a more engaging user experience that supports higher-quality customer interactions and more effective sales conversion.
+
+**Story Point Summary:**
+
+- User stories: 23 SP
+- Technical tasks: 12 SP
+- **Sprint 3 total: 35 SP**
 
 ---
 
 ## Next Sprint
 
-### Sprint 4 — Operator Control and Campaign Launch Hardening
+### Sprint 4 — Campaign Execution and Intelligence Layer
 
-**Goal:** Complete the campaign-launch workflow for MVP validation and give operators more control over live conversations.
+**Goal:** Enhance campaign execution capabilities and introduce deeper intelligence into lead management and analytics.
 
 **Planned PBIs:**
 
-- US-011: Import Contact Base from CSV
-- US-012: Launch Outreach Campaign to Contact Base
-- US-016: Campaign Launch Readiness Check
-- TECH-07–TECH-10: CSV import and campaign launch internals
 - US-09: Manual Dialog Takeover
+- US-010: Telegram Admin Bot for Management
 - US-013: Monitor Active Dialogs in Real Time
+- US-015: Campaign Analytics and Conversion Dashboard
 
-**Planned outcomes:**
+**Planned Outcomes:**
 
-- Sales directors can import contacts and launch end-to-end outreach campaigns.
-- Operators can monitor and optionally take over active dialogs.
-- Persistent staging deployment for customer demos and UAT.
-
----
-
-## Ongoing Quality and Automation (maintained from Assignment 4 and extended in Assignment 5)
-
-These gates apply to **all future sprints** unless explicitly superseded:
-
-| Asset | Location | Expectation |
-|---|---|---|
-| Quality requirements | `docs/quality-requirements.md` | New features must not regress QR-001–QR-008 scenarios |
-| Automated QRTs | `tests/quality_requirement_tests/` + `tests/test_api_*.py` | Run on every CI build |
-| Definition of Done | `docs/definition-of-done.md` | PBIs marked Done only when CI, tests, review, changelog, and release criteria are met |
-| Testing strategy | `docs/testing.md` | Critical modules maintain ≥ 30% line coverage |
-| CI pipeline | `.github/workflows/ci.yml` | Tests, coverage, bandit, pip-audit, flake8 must pass on `main` |
-| Link checker | `.github/workflows/links.yml` | No broken links in documentation |
-| UAT scenarios | `docs/user-acceptance-tests.md` | Re-executed after major increments |
+- Better operator control over conversations
+- Improved real-time monitoring of campaigns
+- Stronger analytics and conversion tracking
+- Enhanced operational visibility
 
 ---
 
@@ -119,6 +113,7 @@ These gates apply to **all future sprints** unless explicitly superseded:
 - Image and media processing
 - CRM integrations (HubSpot, Pipedrive)
 - Calendar integrations (Google Calendar, Calendly)
-- Advanced campaign analytics and real-time dashboards
+- Advanced campaign analytics
+- Real-time dashboards
 - A/B testing for outreach campaigns
-- Human-like message pacing improvements (typing indicators, chunk splitting)
+- Infrastructure scaling and performance optimization

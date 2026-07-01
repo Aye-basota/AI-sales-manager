@@ -1,14 +1,10 @@
-# User Acceptance Tests (UAT)
-
-Project: AI Sales Manager
-
----
+# User Acceptance Tests — AI Sales Manager
 
 ## UAT-001: Create Sales Script via Admin Bot
 
-**Status:** Active
-**Priority:** Critical
-**Last Executed:** Week 4
+**Status:** Active  
+**Priority:** Critical  
+**Last Executed:** Week 4  
 **Last Result:** Passed
 
 **Scenario:**
@@ -26,9 +22,9 @@ Script is created successfully and visible in the scripts list.
 
 ## UAT-002: Launch Campaign
 
-**Status:** Active
-**Priority:** Critical
-**Last Executed:** Week 4
+**Status:** Active  
+**Priority:** Critical  
+**Last Executed:** Week 4  
 **Last Result:** Passed
 
 **Scenario:**
@@ -47,9 +43,9 @@ Campaign launches successfully and appears as "running" in the dashboard.
 
 ## UAT-003: Discover Leads via Telegram Search
 
-**Status:** Active
-**Priority:** High
-**Last Executed:** Week 4
+**Status:** Active  
+**Priority:** High  
+**Last Executed:** Week 4  
 **Last Result:** Passed
 
 **Scenario:**
@@ -68,10 +64,10 @@ Lead discovery returns relevant Telegram users matching the search keyword.
 
 ## UAT-004: Upload and Preview Sales Funnel via API
 
-**Status:** Active
-**Priority:** High
-**Last Executed:** —
-**Last Result:** —
+**Status:** Active  
+**Priority:** High  
+**Last Executed:** —  
+**Last Result:** —  
 **Linked PBI:** [TECH-04](https://github.com/Aye-basota/AI-sales-manager/issues/24), [TECH-05](https://github.com/Aye-basota/AI-sales-manager/issues/25)
 
 **Scenario:**
@@ -89,10 +85,10 @@ Funnel preview works without persistence; valid uploads are saved; invalid funne
 
 ## UAT-005: View AI-Automation Rate and Escalation Status
 
-**Status:** Active
-**Priority:** Medium
-**Last Executed:** —
-**Last Result:** —
+**Status:** Active  
+**Priority:** Medium  
+**Last Executed:** —  
+**Last Result:** —  
 **Linked PBI:** [TECH-06](https://github.com/Aye-basota/AI-sales-manager/issues/26)
 
 **Scenario:**
@@ -109,10 +105,10 @@ The automation-rate metric accurately distinguishes AI-handled dialogs from esca
 
 ## UAT-006: Verify Production Health Endpoint and Logs
 
-**Status:** Active
-**Priority:** Medium
-**Last Executed:** —
-**Last Result:** —
+**Status:** Active  
+**Priority:** Medium  
+**Last Executed:** —  
+**Last Result:** —  
 **Linked PBI:** [TECH-12](https://github.com/Aye-basota/AI-sales-manager/issues/54)
 
 **Scenario:**
@@ -124,3 +120,41 @@ The automation-rate metric accurately distinguishes AI-handled dialogs from esca
 
 **Expected Result:**
 The health endpoint reports real system state, and logs are available in a consistent format for monitoring.
+
+---
+
+## UAT-007: Verify 24/7 Production Availability via VPS Deployment
+
+**Status:** Active  
+**Priority:** High  
+**Last Executed:** —  
+**Last Result:** —  
+**Linked PBI:** TECH-11
+
+**Scenario:**
+1. Deploy the MVP v2 application to the production VPS.
+2. Outside of standard business hours (e.g., at 3:00 AM), a user sends a message to the assistant via Telegram.
+3. The system receives and processes the request.
+
+**Expected Result:**
+- The AI assistant replies with a relevant response within the defined latency threshold (< 3 seconds).
+- No server timeouts, 502 Bad Gateway, or "application sleeping" errors occur.
+
+---
+
+## UAT-008: Verify Natural Conversational Flow and Structured Lead Nurturing
+
+**Status:** Active  
+**Priority:** High  
+**Last Executed:** —  
+**Last Result:** —  
+**Linked PBI:** [US-017](https://github.com/Aye-basota/AI-sales-manager/issues/51), [US-018](https://github.com/Aye-basota/AI-sales-manager/issues/52)
+
+**Scenario:**
+1. A new, unrecognized user initiates a chat with the AI assistant.
+2. The user asks top-of-funnel questions (e.g., asking for general information or expressing a common pain point).
+3. The AI assistant responds using a natural, empathetic tone that directly addresses the user's specific question.
+
+**Expected Result:**
+- The assistant does NOT output a direct purchase link or aggressive sales call-to-action in its initial replies.
+- Only after a predefined nurturing condition is met (e.g., 3 successful value-adding exchanges or the user explicitly asking for pricing/next steps) does the assistant smoothly transition the user into the structured sales funnel.

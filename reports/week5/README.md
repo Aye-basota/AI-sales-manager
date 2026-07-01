@@ -10,16 +10,16 @@
 ## 2. Backlog and Sprint Planning
 
 - [Product Backlog board](https://github.com/users/Aye-basota/projects/1/views/1)
-- [Sprint Backlog board](https://github.com/Aye-basota/AI-sales-manager/projects) *(filter by Sprint 3 milestone after creation)*
-- [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones) *(create Sprint 3 milestone if it does not exist)*
+- [Sprint Backlog board](https://github.com/Aye-basota/AI-sales-manager/projects) *(filter by Sprint 3 milestone)*
+- [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones)
 
 ### Sprint Goal
 
-Deliver the `MVP v2` increment for Assignment 5 by implementing the selected Sprint scope, responding to customer feedback, and extending testing, QA, and deployment evidence.
+Deliver MVP v2 by deploying the application to a production VPS for reliable 24/7 availability and enhancing the AI assistant with improved prompts, a more natural conversational flow, and a structured lead nurturing process that builds trust before guiding users through the sales funnel.
 
 ### Sprint dates
 
-2026-06-30 – 2026-07-06
+2026-06-29 – 2026-07-04
 
 ### Scope summary
 
@@ -34,6 +34,7 @@ Selected Sprint 3 PBIs from the GitHub backlog:
 | [#26](https://github.com/Aye-basota/AI-sales-manager/issues/26) | Tech | TECH-06 — AI-automation rate tracking |
 | [#55](https://github.com/Aye-basota/AI-sales-manager/issues/55) | Tech | TECH-13 — Prompt configuration and versioning |
 | [#54](https://github.com/Aye-basota/AI-sales-manager/issues/54) | Tech | TECH-12 — Production monitoring |
+| [#53](https://github.com/Aye-basota/AI-sales-manager/issues/53) | Tech | TECH-11 — Deploy Application to Production VPS |
 
 Also included:
 - Update Definition of Done, testing, and quality documentation.
@@ -42,7 +43,7 @@ Also included:
 
 ### Total Sprint size
 
-*(team-only: copy the total Story Points from the Sprint Backlog board once the Sprint is closed)*
+35 Story Points (23 SP user stories + 12 SP technical tasks).
 
 ---
 
@@ -74,10 +75,15 @@ Also included:
 
 | Feedback point | Resulting PBI or issue | Status | Response |
 |---|---|---|---|
-| First messages felt too salesy / mass-mailing | US-017, US-018 | Done | Reworked default funnel to trust-building stages and external prompt config for easy tuning |
-| Need to upload funnel definitions from files/markdown | TECH-04, TECH-05 | Done | Added `POST /api/funnels/preview` and `POST /api/funnels/upload` with JSON/text parsers |
-| Want visibility into how many dialogs are fully automated | TECH-06 | Done | Added `was_escalated` flag and `GET /analytics/automation-rate` |
-| Hard to tell if production service is healthy after deploy | TECH-12 | Done | Added structured logging, `/health`, Docker health checks, and restart policies |
+| AI responses felt too sales-oriented and unnatural | [#51 US-017](https://github.com/Aye-basota/AI-sales-manager/issues/51) | Done | Improved prompt structure and externalized prompt config for easy tuning |
+| Conversation does not gradually build trust before selling | [#52 US-018](https://github.com/Aye-basota/AI-sales-manager/issues/52) | Done | Introduced structured multi-stage dialogue (trust → engagement → qualification → value → CTA) |
+| No production deployment / system not always available | [#53 TECH-11](https://github.com/Aye-basota/AI-sales-manager/issues/53) | Done | VPS deployment via Docker Compose with restart policies |
+| No system monitoring or reliability guarantees | [#54 TECH-12](https://github.com/Aye-basota/AI-sales-manager/issues/54) | Done | Added `/health`, structured logging, Docker health checks, and auto-restart |
+| Prompt quality is inconsistent across conversations | [#55 TECH-13](https://github.com/Aye-basota/AI-sales-manager/issues/55) | Done | Centralized prompt management and versioning in `app/config/prompts/v1.json` |
+| Need to upload funnel definitions from files/markdown | [#24 TECH-04](https://github.com/Aye-basota/AI-sales-manager/issues/24) / [#25 TECH-05](https://github.com/Aye-basota/AI-sales-manager/issues/25) | Done | Added `POST /api/funnels/preview` and `POST /api/funnels/upload` with JSON/text parsers |
+| Want visibility into how many dialogs are fully automated | [#26 TECH-06](https://github.com/Aye-basota/AI-sales-manager/issues/26) | Done | Added `was_escalated` flag and `GET /analytics/automation-rate` |
+| Advanced analytics dashboard not available | — | Deferred | Deferred due to MVP v2 focus on production stability and AI conversation quality |
+| CRM integrations not implemented | — | Deferred | Out of scope for MVP v2; planned for future iterations |
 
 ### Feedback not addressed
 
@@ -98,9 +104,9 @@ Deferred to future sprints:
 - [`docs/development-process.md`](../../docs/development-process.md)
 - [`docs/interface.md`](../../docs/interface.md)
 - [`docs/architecture/README.md`](../../docs/architecture/README.md)
-- Static view: [`docs/architecture/static-view/component-diagram.png`](../../docs/architecture/static-view/component-diagram.png) ([source](../../docs/architecture/static-view/component-diagram.puml))
-- Dynamic view: [`docs/architecture/dynamic-view/inbound-sequence-diagram.png`](../../docs/architecture/dynamic-view/inbound-sequence-diagram.png) ([source](../../docs/architecture/dynamic-view/inbound-sequence-diagram.puml))
-- Deployment view: [`docs/architecture/deployment-view/README.md`](../../docs/architecture/deployment-view/README.md)
+- Static view: [`docs/architecture/static-view/component-diagram.puml`](../../docs/architecture/static-view/component-diagram.puml) ([rendered PNG](../../docs/architecture/static-view/component-diagram.png))
+- Dynamic view: [`docs/architecture/dynamic-view/inbound-reply-sequence.puml`](../../docs/architecture/dynamic-view/inbound-reply-sequence.puml)
+- Deployment view: [`docs/architecture/deployment-view/deployment-diagram.puml`](../../docs/architecture/deployment-view/deployment-diagram.puml)
 - ADR directory: [`docs/architecture/adr/`](../../docs/architecture/adr/)
 - Hosted documentation site: [`https://aye-basota.github.io/AI-sales-manager/`](https://aye-basota.github.io/AI-sales-manager/)
 
@@ -108,12 +114,16 @@ Deferred to future sprints:
 
 ## 7. Quality Model
 
-Quality requirements use ISO/IEC 25010 sub-characteristics:
+Quality requirements use ISO/IEC 25010 quality sub-characteristics:
 
-- **Time behaviour** ([QR-001](../../docs/quality-requirements.md#qr-001-health-endpoint-response-time))
-- **Availability** ([QR-002](../../docs/quality-requirements.md#qr-002-core-system-availability-proxy))
-- **Fault tolerance** ([QR-003](../../docs/quality-requirements.md#qr-003-api-fault-tolerance-on-invalid-input))
-- *(add new QR-00X for MVP v2 when defined)*
+- **Security — Confidentiality** ([QR-01](../../docs/quality-requirements.md#qr-01))
+- **Reliability — Fault Tolerance** ([QR-02](../../docs/quality-requirements.md#qr-02))
+- **Performance Efficiency — Time Behaviour** ([QR-03](../../docs/quality-requirements.md#qr-03))
+- **Usability — User Error Protection** ([QR-04](../../docs/quality-requirements.md#qr-04))
+- **Maintainability — Modifiability** ([QR-05](../../docs/quality-requirements.md#qr-05))
+- **Functional Suitability — Functional Correctness** ([QR-06](../../docs/quality-requirements.md#qr-06))
+- **Reliability — Availability / Maintainability** ([QR-07](../../docs/quality-requirements.md#qr-07))
+- **Functional Suitability — Accuracy** ([QR-08](../../docs/quality-requirements.md#qr-08))
 
 See [`docs/quality-requirements.md`](../../docs/quality-requirements.md) for details.
 
@@ -156,7 +166,7 @@ See [`docs/quality-requirements.md`](../../docs/quality-requirements.md) for det
 
 - [CI pipeline](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/ci.yml)
 - [Link checker](https://github.com/Aye-basota/AI-sales-manager/actions/workflows/links.yml)
-- [Latest protected-default-branch CI run](https://github.com/Aye-basota/AI-sales-manager/actions) *(select `main` branch)*
+- [Latest protected-default-branch CI run](https://github.com/Aye-basota/AI-sales-manager/actions?query=branch%3Amain)
 - Additional QA checks: **bandit** security static analysis, **pip-audit** dependency vulnerability scan.
 
 ### Screenshots
@@ -203,23 +213,23 @@ MVP v2 keeps the existing async FastAPI + PostgreSQL + Redis architecture and ad
 2. **Funnel management layer** (`app/services/funnel_parser.py`, `app/api/funnels.py`, `app/models/funnel.py`) lets operators upload and preview sales funnels in JSON or plain text, validated before persistence.
 3. **Observability layer** (`app/logging_config.py`, `/health`, Docker health checks) exposes structured logs and a lightweight health endpoint for production monitoring.
 
-The lead-nurturing funnel is implemented in `app/core/funnel.py` and consumed by `app/llm/prompts.py`, so stage-specific instructions flow naturally into LLM prompts while preserving backward compatibility for legacy stage names.
+MVP v2 runs as a Docker Compose stack (FastAPI + Admin Bot + APScheduler + Pyrogram) with PostgreSQL and Redis. Architecture is documented with diagrams-as-code and linked ADRs:
 
-Automation-rate tracking uses the existing `conversations` table plus a `was_escalated` boolean; any operator-driven status change marks the dialog as escalated, and `GET /analytics/automation-rate` returns the AI-handled ratio.
+- **Overview (static, dynamic, deployment views):** [`docs/architecture/README.md`](../../docs/architecture/README.md)
+- **Component diagram source:** [`docs/architecture/static-view/component-diagram.puml`](../../docs/architecture/static-view/component-diagram.puml)
+- **Sequence diagram source:** [`docs/architecture/dynamic-view/inbound-reply-sequence.puml`](../../docs/architecture/dynamic-view/inbound-reply-sequence.puml)
+- **Deployment diagram source:** [`docs/architecture/deployment-view/deployment-diagram.puml`](../../docs/architecture/deployment-view/deployment-diagram.puml)
+- **ADRs:** [`docs/architecture/adr/`](../../docs/architecture/adr/)
 
-- Static view: [`docs/architecture/static-view/`](../../docs/architecture/static-view/)
-- Dynamic view: [`docs/architecture/dynamic-view/`](../../docs/architecture/dynamic-view/)
-- Deployment view: [`docs/architecture/deployment-view/`](../../docs/architecture/deployment-view/)
-
-Quality requirements are traced to tests in [`docs/quality-requirement-tests.md`](../../docs/quality-requirement-tests.md).
+Quality requirements QR-01–QR-08 are traced to ADR-001–ADR-008 and verified by automated QRTs in CI. See [`docs/quality-requirements.md`](../../docs/quality-requirements.md) and [`docs/quality-requirement-tests.md`](../../docs/quality-requirement-tests.md).
 
 ---
 
 ## 14. Team Reflection
 
 - [`reflection.md`](reflection.md) *(team should update)*
-- [`retrospective.md`](retrospective.md) *(team should update)*
-- [`llm-report.md`](llm-report.md) *(team should update)*
+- [`retrospective.md`](retrospective.md) — Sprint 3 retrospective (Part 10)
+- [`llm-report.md`](llm-report.md) — LLM usage report (Part 14)
 
 ---
 
@@ -229,14 +239,12 @@ Quality requirements are traced to tests in [`docs/quality-requirement-tests.md`
 
 **Next steps (team-only):**
 
-1. Merge `assignment5-parts-6-7-11-prep` into `main` (via PR + review, or direct push if branch protection allows).
+1. Merge `assignment5-parts-6-7-11-prep` into `main` via PR + review.
 2. Create GitHub release `v0.3.0` from the merged `main` commit.
 3. Deploy the current increment and fill the public URL in section 4.
-4. Conduct Sprint Review and UAT with the customer; fill `sprint-review-summary.md` and choose transcript vs. notes.
-5. Record the public sanitized demo video (<2 min) and update section 11.
-6. Fill Sprint size (section 2), contribution traceability (section 16), and add screenshots to `reports/week5/images/`.
-7. Update reflection/retrospective/llm-report in `reports/week5/` with team-specific content.
-8. Prepare the Assignment 5 Moodle PDF submission.
+4. Record the public sanitized demo video (<2 min) and update section 11.
+5. Add screenshots to `reports/week5/images/`.
+6. Prepare the Assignment 5 Moodle PDF submission.
 
 ---
 

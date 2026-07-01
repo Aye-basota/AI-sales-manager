@@ -1,0 +1,84 @@
+@startuml Inbound Reply Sequence
+!theme plain
+skinparam shadowing false
+autonumber
+
+title Inbound Lead Reply — Dynamic View (Sequence Diagram)
+
+actor Lead as lead
+participant "Telegram\n(MTProto)" as tg
+participant "SellerClient\n(Pyrogram)" as seller
+participant "Inbound Listener" as inbound
+participant "Conversation\nService" as conv
+database "PostgreSQL" as db
+participant "Intent Classifier" as intent
+participant "State Machine\n(ADR-002)" as sm
+participant "Funnel Manager" as funnel
+participant "LLM Engine" as llm
+participant "Guardrails\n(ADR-001, ADR-004)" as guard
+participant "Humanizer" as human
+participant "Notification\nService" as notify
+actor "Operator" as op
+
+lead -> tg : sends text reply
+tg -> seller : delivers message event
+seller -> inbound : on_message callback
+
+inbound -> conv : find / create contact\nand conversation
+conv -> db : load campaign, script,\nmessage history
+db --> conv : context
+conv --> inbound : conversation + script
+
+inbound -> conv : persist inbound message
+conv -> db : INSERT message
+
+inbound -> intent : classify_intent(text)
+intent --> inbound : event (e.g. positive_reply,\nmeeting_intent, objection)
+
+inbound -> sm : transition(current_state, event)
+sm --> inbound : new_state
+inbound -> conv : update conversation state
+conv -> db : UPDATE conversation
+
+inbound -> funnel : next_stage(current_stage, event)
+funnel --> inbound : funnel_stage
+
+inbound -> conv : get_conversation_context()
+conv -> db : SELECT last 5 outbound msgs
+db --> conv : history
+conv --> inbound : context + last_messages
+
+inbound -> llm : generate reply\n(system + user prompts)
+llm -> llm : cascade fallback\n(Qwen → Gemini → DeepSeek)
+llm --> inbound : candidate text
+
+inbound -> guard : apply_guardrails(text, last_messages)
+alt guardrails pass
+  guard --> inbound : approved text
+else guardrails reject
+  guard --> inbound : None
+  inbound -> llm : retry with strict prompt
+  llm --> inbound : retry text
+  inbound -> guard : apply_guardrails(retry)
+  guard --> inbound : approved or fallback text
+end
+
+inbound -> human : calculate_thinking_delay()
+human --> inbound : delay
+inbound -> seller : read_history(user)
+inbound -> human : calculate_typing_delay(text)
+human --> inbound : typing delay
+inbound -> seller : send_message(chunks)
+
+seller -> tg : deliver reply
+tg -> lead : receives AI reply
+
+opt hot lead or meeting_intent
+  inbound -> notify : send alert
+  notify -> op : Telegram notification
+end
+
+inbound -> conv : persist outbound message
+conv -> db : INSERT message
+
+@enduml

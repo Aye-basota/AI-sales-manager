@@ -1,174 +1,217 @@
 # Architecture Documentation
 
-This document describes the architecture of AI Sales Manager as required for Assignment 5.
+This document is the maintained architecture overview for **AI Sales Manager** — an autonomous Telegram outbound sales system with LLM-generated dialogues, campaign scheduling, and lead funnel management.
 
-The architecture is documented through three architectural views:
+## Architectural Views
 
-- [Static View](#static-view) — what the system is made of.
-- [Dynamic View](#dynamic-view) — how components interact during a key flow.
-- [Deployment View](#deployment-view) — how the product runs in production.
+| View | Diagram source | Purpose |
+|---|---|---|
+| Static view | [`static-view/component-diagram.puml`](static-view/component-diagram.puml) | Components, external systems, and communication paths |
+| Dynamic view | [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml) | Runtime flows (sequence diagrams) for important workflows |
+| Deployment view | [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml) | Runtime deployment, datastores, and customer access path |
 
-Architecture decisions are recorded as [Architecture Decision Records (ADRs)](adr/).
+## Component Diagram (Static View)
 
----
-
-## Static View
-
-The static view is a UML component diagram showing the main internal components of the application and the external systems and databases they interact with.
-
-![Static view component diagram](static-view/component-diagram.png)
-
-[PlantUML source](static-view/component-diagram.puml)
+**Diagram source:** [`static-view/component-diagram.puml`](static-view/component-diagram.puml)
 
 ### What the diagram shows
 
-- **Presentation Layer** (`app.api`, `app.main`, `site/`) — FastAPI routers and the customer landing page.
-- **Bot Layer** (`app.bots`) — Admin Bot (aiogram), Seller Client and Inbound Listener (Pyrogram).
-- **Service Layer** (`app.services`) — conversation service, contact import, lead discovery/validation, notifications.
-- **Core Business Logic** (`app.core`) — account manager, sales funnel, scheduler, humanizer, state machine.
-- **LLM Layer** (`app.llm`) — engine, guardrails, intent classifier, prompt builders.
-- **Data Layer** (`app.db`, `app.models`, `alembic/`) — SQLAlchemy models, async sessions, Redis client, migrations.
-- **Configuration** (`app.config`) — settings and prompt configuration.
+The component diagram groups the product into four layers:
+
+1. **External actors and platforms** — Sales Director/Operator, Telegram leads, Telegram MTProto network, and LLM provider APIs (OpenRouter / DashScope).
+2. **Application components** — Admin Bot, REST API, scheduler, inbound listener, SellerClient (Pyrogram), LLM engine, guardrails, state machine, humanizer, intent classifier, funnel manager, and supporting services.
+3. **Data stores** — PostgreSQL (primary persistence and APScheduler job store) and Redis (conversation cache invalidation).
+4. **Communication paths** — outbound campaign processing (scheduler path), inbound reply handling (listener path), and operator management (Admin Bot and REST API both use shared services directly).
+
+Important protocols: **MTProto** (Pyrogram user sessions), **HTTPS** (LLM APIs), **async SQLAlchemy** (PostgreSQL), **in-process calls** between core modules.
 
 ### Coupling and cohesion
 
-The codebase is organized by technical layer. Each layer depends downward: presentation and bots depend on services and core, services depend on core and LLM, core depends on data and config. This keeps business rules in `app.core` and `app.services` cohesive, while presentation details (FastAPI, Telegram bots) are decoupled from the domain logic. The main coupling risk is that `app.bots` currently reaches directly into several layers; future work could introduce clearer ports/adapters boundaries.
+**Cohesion** is high within bounded packages: `app/llm/` (generation, guardrails, prompts), `app/core/` (scheduler, state machine, humanizer), `app/bots/` (Telegram integration), `app/services/` (persistence, notifications).
+
+**Coupling** is lowest at the **guardrails boundary** ([ADR-001](adr/ADR-001.md), [ADR-004](adr/ADR-004.md)): every outbound and inbound message passes through `apply_guardrails()` before Pyrogram dispatch. The **state machine** ([ADR-002](adr/ADR-002.md)) is a pure module with no I/O, consumed by scheduler and inbound handler alike.
+
+Admin Bot and REST API are **sibling entry points** — both call shared services and the scheduler directly; the bot does not route through the HTTP API.
 
 ### Maintainability implications
 
-- Adding a new channel (e.g., WhatsApp) would require a new bot adapter but can reuse services, core, and LLM layers.
-- Adding a new LLM provider requires changes only in `app/llm/engine.py` and configuration.
-- Moving prompt content to `app/config/prompts/` (ADR-005) reduces churn in business logic.
+- New funnel stages require explicit state-machine transitions and tests — predictable but not configurable at runtime.
+- LLM provider changes stay isolated in `app/llm/engine.py`.
+- Scheduler logic ([ADR-003](adr/ADR-003.md)) centralises anti-spam and working-hours rules.
+- External prompt configuration ([ADR-005](adr/ADR-005.md)) reduces churn in business logic.
+- Funnel upload/preview API ([ADR-006](adr/ADR-006.md)) isolates custom funnel parsing.
+- **Trade-off:** monolithic `api` container simplifies VPS deployment but couples scheduler restarts with inbound listeners.
 
-### Supported quality requirements
+### Quality requirements supported or constrained
 
-The layered structure particularly supports:
-
-- [QR-01](../quality-requirements.md#qr-01) — guardrails live in a dedicated LLM subcomponent.
-- [QR-02](../quality-requirements.md#qr-02) — state machine is isolated in `app.core`.
-- [QR-05](../quality-requirements.md#qr-05) — prompt config is isolated from code.
-- [QR-06](../quality-requirements.md#qr-06) — funnel parsing is isolated in `app.services`.
+| QR | Effect of current structure |
+|---|---|
+| [QR-01](../quality-requirements.md#qr-01) | Guardrails component is the single pre-send gate |
+| [QR-02](../quality-requirements.md#qr-02) | Isolated state machine; terminal states enforced centrally |
+| [QR-03](../quality-requirements.md#qr-03) | Scheduler owns bounded cycle; LLM latency affects whole pipeline |
+| [QR-04](../quality-requirements.md#qr-04) | Anti-repetition inside guardrails on both inbound and outbound paths |
+| [QR-05](../quality-requirements.md#qr-05) | Prompt configuration isolated from code |
+| [QR-06](../quality-requirements.md#qr-06) | Funnel parsing isolated in `app/services` |
+| [QR-07](../quality-requirements.md#qr-07) | Health checks and structured logging in production deployment |
+| [QR-08](../quality-requirements.md#qr-08) | Automation-rate tracking close to conversation model |
 
 ---
 
-## Dynamic View
+## Sequence Diagram (Dynamic View)
 
-The dynamic view shows the inbound Telegram message flow. This is the most complex routine path because it must persist the incoming message, classify intent, advance the funnel stage, generate a reply, enforce guardrails, and notify operators about hot leads.
-
-![Dynamic view sequence diagram](dynamic-view/inbound-sequence-diagram.png)
-
-[PlantUML source](dynamic-view/inbound-sequence-diagram.puml)
+**Diagram source:** [`dynamic-view/inbound-reply-sequence.puml`](dynamic-view/inbound-reply-sequence.puml)
 
 ### Scenario
 
-A lead replies to an outbound message. The system:
+A lead replies to an outbound campaign message in Telegram. The system receives the message via Pyrogram, matches the sender to a campaign conversation, classifies intent, updates state and funnel stage, generates an LLM reply with guardrails, applies human-like delays, and sends the response.
 
-1. Receives the message through the Pyrogram `SellerClient`.
-2. Finds or creates the `Contact` and `Conversation`.
-3. Saves the inbound message and updates `CampaignContact` status.
-4. Extracts facts from the message using the LLM.
-5. Classifies intent (meeting_intent, positive, negative, objection, informational).
-6. Advances the conversation stage through the sales funnel.
-7. Loads conversation context from Redis/PostgreSQL.
-8. Builds stage-specific system and user prompts.
-9. Generates a reply through the LLM engine and applies guardrails.
-10. Splits the reply, calculates delays, and sends it via Pyrogram.
-11. Updates conversation state and sends a hot-lead alert if needed.
+### Why this scenario is important
 
-### Why this scenario matters
+This is the core **MVP v2 conversational path** (improved prompts, natural pacing, structured lead nurturing). It crosses five integration boundaries — Telegram, PostgreSQL, LLM APIs, guardrails, notifications — and failures are immediately visible to leads and operators.
 
-Inbound handling is where user trust is won or lost. A slow or incorrect reply damages the customer’s brand and wastes the lead. The diagram shows the integration boundaries that must remain reliable: Telegram MTProto, LLM providers, PostgreSQL, Redis, and the admin notification bot.
+### Architecture decisions, boundaries, and quality requirements
 
-### Architecture decisions visible in the flow
-
-- **Caching** — conversation context is cached in Redis to reduce repeated DB loads.
-- **Guardrails** — LLM output is validated before any message is sent.
-- **Funnel-driven prompts** — `app.core.funnel` and `app.llm.prompts` cooperate so replies match the current stage.
-- **Notifications** — hot-lead alerts are sent asynchronously through the notification service.
-
-### Related ADRs
-
-- [ADR-001 — LLM Output Guardrails](adr/ADR-001.md)
-- [ADR-002 — Deterministic Conversation State Machine](adr/ADR-002.md)
-- [ADR-005 — External Prompt Configuration and Versioning](adr/ADR-005.md)
-- [ADR-006 — Funnel Upload and Preview API](adr/ADR-006.md)
-
----
-
-## Deployment View
-
-The product runs as a set of Docker containers orchestrated by Docker Compose.
-
-```mermaid
-graph LR
-    User[Customer / Lead] -->|HTTPS / Telegram| VPS[VPS / Cloud Host]
-    subgraph "Docker Compose"
-        NGINX[Reverse Proxy / TLS]
-        API[API Container<br/>FastAPI + Scheduler]
-        DB[(PostgreSQL)]
-        CACHE[(Redis)]
-    end
-    subgraph "External"
-        TG[Telegram MTProto / Bot API]
-        OR[OpenRouter API]
-        DS[DashScope API]
-    end
-    User --> NGINX
-    NGINX --> API
-    API --> DB
-    API --> CACHE
-    API --> TG
-    API --> OR
-    API --> DS
-```
+| Step | ADR / QR |
+|---|---|
+| Intent → state transition | [ADR-002](adr/ADR-002.md), [QR-02](../quality-requirements.md#qr-02) |
+| Funnel stage advancement | [ADR-006](adr/ADR-006.md), [QR-06](../quality-requirements.md#qr-06) |
+| LLM cascade fallback | Latency and resilience ([QR-03](../quality-requirements.md#qr-03)) |
+| `apply_guardrails()` with retry | [ADR-001](adr/ADR-001.md), [QR-01](../quality-requirements.md#qr-01) |
+| Anti-repetition (last 5 messages) | [ADR-004](adr/ADR-004.md), [QR-04](../quality-requirements.md#qr-04) |
+| Humanizer delays | Natural dialogue pacing (MVP v2 product goal) |
+| Hot-lead notification | Operator handover boundary |
 
 ### What the diagram shows
 
-- A single VPS/cloud host runs `docker-compose`.
-- `postgres` and `redis` are managed as Docker services with persistent volumes and health checks.
-- The `api` container runs FastAPI, APScheduler, and the inbound/outbound Telegram clients.
-- A reverse proxy (e.g., Nginx or Traefik) terminates TLS and forwards to the API container.
-- External dependencies are Telegram (MTProto and Bot API), OpenRouter, and DashScope.
+The sequence follows one inbound message from Telegram delivery through persistence, intent-driven state update, LLM generation with guardrail retry, humanized send, and optional operator notification — involving Inbound Listener, Conversation Service, State Machine, LLM Engine, Guardrails, Humanizer, SellerClient, and Notification Service.
 
-### Why this model was chosen
+---
 
-Docker Compose keeps operational complexity low while still providing clear service boundaries, persistent storage, restart policies, and health checks. It matches the team’s current scale and can be migrated to Kubernetes later without changing the application code.
+## Deployment Diagram (Deployment View)
 
-### Operational considerations
+**Diagram source:** [`deployment-view/deployment-diagram.puml`](deployment-view/deployment-diagram.puml)
 
-- All containers use `restart: unless-stopped`.
-- The `api` container has a Docker `healthcheck` on `GET /health`.
-- Logs are written to stderr and collected by the host or a log shipper.
-- Secrets (API keys, Telegram tokens, session encryption key) are injected through environment variables, never committed.
+### What the diagram shows
 
-### Related ADRs
+Docker Compose stack on a **production VPS** (Sprint 3 target) or local host:
 
-- [ADR-007 — Production Monitoring and Logging](adr/ADR-007.md)
+| Node | Role |
+|---|---|
+| `api` container | FastAPI :8000, Admin Bot, APScheduler, Pyrogram sessions, static promo site |
+| `postgres` container | PostgreSQL 15 — app data + APScheduler job store |
+| `redis` container | Redis 7 — cache |
+| External | Telegram (MTProto + Bot API), LLM APIs (HTTPS), GitHub Pages (docs only) |
+
+**Customer-facing access:** Telegram Admin Bot, MTProto lead sessions, HTTP :8000 (health/REST/landing page).
+
+### Why this deployment model was chosen
+
+**Single-VPS Docker Compose** matches MVP v2 goals (24/7 availability) without Kubernetes overhead. All runtime components share PostgreSQL state and start together ([ADR-003](adr/ADR-003.md)). The same `docker-compose.yml` used locally deploys to production with environment-specific secrets.
+
+### How deployment supports or constrains the product
+
+**Supports:** `restart: unless-stopped`, dependency health checks, env-based secrets, co-located scheduler job store.
+
+**Constrains:** single-process monolith — deploy restarts all subsystems; no horizontal scaling without shared session management; LLM/Telegram latency depends on external networks.
+
+### Operational considerations for the customer
+
+1. Provide secrets via `.env` (Telegram API, LLM keys, bot token, encryption key).
+2. Run `alembic upgrade head` on first deploy and after schema changes.
+3. Monitor `/health` (degraded when scheduler is down).
+4. Back up PostgreSQL volume (`postgres_data`).
+5. Hosted MkDocs docs deploy separately via CI — not part of the runtime VPS stack.
 
 ---
 
 ## Architecture Decision Records
 
-All ADRs are stored in [`docs/architecture/adr/`](adr/).
+Important design choices are captured as ADRs in [`adr/`](adr/). Each ADR documents context, the adopted decision, consequences, and linked quality requirements.
 
-| ADR | Title | Quality requirements addressed |
-|---|---|---|
-| [ADR-001](adr/ADR-001.md) | LLM Output Guardrails | [QR-01](../quality-requirements.md#qr-01) |
-| [ADR-002](adr/ADR-002.md) | Deterministic Conversation State Machine | [QR-02](../quality-requirements.md#qr-02) |
-| [ADR-003](adr/ADR-003.md) | Scheduler-Driven Outbound Processing | [QR-03](../quality-requirements.md#qr-03) |
-| [ADR-004](adr/ADR-004.md) | Anti-Repetition Check for Generated Messages | [QR-04](../quality-requirements.md#qr-04) |
-| [ADR-005](adr/ADR-005.md) | External Prompt Configuration and Versioning | [QR-05](../quality-requirements.md#qr-05) |
-| [ADR-006](adr/ADR-006.md) | Funnel Upload and Preview API | [QR-06](../quality-requirements.md#qr-06) |
-| [ADR-007](adr/ADR-007.md) | Production Monitoring and Logging | [QR-07](../quality-requirements.md#qr-07) |
-| [ADR-008](adr/ADR-008.md) | AI-Automation Rate Tracking | [QR-08](../quality-requirements.md#qr-08) |
+| ADR | Title | Status | Quality requirements |
+|---|---|---|---|
+| [ADR-001](adr/ADR-001.md) | LLM Output Guardrails | Accepted | [QR-01](../quality-requirements.md#qr-01) |
+| [ADR-002](adr/ADR-002.md) | Deterministic Conversation State Machine | Accepted | [QR-02](../quality-requirements.md#qr-02) |
+| [ADR-003](adr/ADR-003.md) | Scheduler-Driven Outbound Processing | Accepted | [QR-03](../quality-requirements.md#qr-03) |
+| [ADR-004](adr/ADR-004.md) | Anti-Repetition Check for Generated Messages | Accepted | [QR-04](../quality-requirements.md#qr-04) |
+| [ADR-005](adr/ADR-005.md) | External Prompt Configuration and Versioning | Accepted | [QR-05](../quality-requirements.md#qr-05) |
+| [ADR-006](adr/ADR-006.md) | Funnel Upload and Preview API | Accepted | [QR-06](../quality-requirements.md#qr-06) |
+| [ADR-007](adr/ADR-007.md) | Production Monitoring and Logging | Accepted | [QR-07](../quality-requirements.md#qr-07) |
+| [ADR-008](adr/ADR-008.md) | AI-Automation Rate Tracking | Accepted | [QR-08](../quality-requirements.md#qr-08) |
 
----
+## How the Architecture and Decisions Fit Together
+
+AI Sales Manager follows a **layered, in-process architecture** deployed as Docker containers (FastAPI app, Admin Bot, PostgreSQL, Redis). The three views and eight ADRs describe the same system from different angles:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Customer / Operator (Telegram, Admin Bot, future Web UI)       │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│  Application layer (FastAPI + aiogram Admin Bot)                │
+│  ┌──────────────┐  ┌─────────────┐  ┌────────────────────────┐  │
+│  │ Scheduler    │  │ Inbound     │  │ Campaign / Script API  │  │
+│  │ (ADR-003)    │  │ Handler     │  │                        │  │
+│  └──────┬───────┘  └──────┬──────┘  └────────────────────────┘  │
+│         │                 │                                     │
+│  ┌──────▼─────────────────▼──────┐  ┌────────────────────────┐  │
+│  │ State Machine (ADR-002)       │  │ LLM Engine             │  │
+│  └───────────────────────────────┘  └───────────┬────────────┘  │
+│                                                 │               │
+│                          ┌──────────────────────▼────────────┐  │
+│                          │ Guardrails (ADR-001, ADR-004)     │  │
+│                          └──────────────────────┬────────────┘  │
+│                                                 │               │
+│                          ┌──────────────────────▼────────────┐  │
+│                          │ SellerClient (Pyrogram MTProto)   │  │
+│                          └─────────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│  PostgreSQL (data + APScheduler job store)  │  Redis  │  LLM APIs │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Static view → structure
+
+The static view shows **what the system is made of**: internal modules (`scheduler`, `state_machine`, `guardrails`, `llm/engine`, `SellerClient`) and externals (Telegram, OpenRouter/DashScope, PostgreSQL, Redis). Low coupling between guardrails, state machine, and scheduler keeps each concern testable in isolation — which directly supports the Testability and Modifiability goals behind [QR-01](../quality-requirements.md#qr-01)–[QR-08](../quality-requirements.md#qr-08).
+
+### Dynamic view → behaviour
+
+The dynamic view traces **how a request flows** — typically the outbound path: scheduler tick → load campaign contacts → select account → LLM generate → guardrails → Pyrogram send → update state. This flow crosses the boundaries defined in ADR-001 (pre-send safety), ADR-003 (when and how sends happen), ADR-002 (state updates after replies), ADR-004 (repetition rejection inside guardrails), ADR-005 (prompt configuration), and ADR-006 (funnel definitions).
+
+### Deployment view → operations
+
+The deployment view shows **where code runs**: a single application container hosts FastAPI, APScheduler jobs, and Pyrogram sessions; PostgreSQL holds persistent state and scheduler jobs; Redis supports caching. Customer access is through the Telegram Admin Bot and deployed Docker stack. Operational constraints (timezone, cooldown recovery, daily counter reset) are implemented inside ADR-003's scheduler jobs.
+
+### ADRs → rationale and quality traceability
+
+Each ADR explains **why** a specific pattern was chosen and which measurable quality requirement it satisfies:
+
+- **ADR-001 + ADR-004** form the **pre-dispatch safety gate** for all LLM output — confidentiality and user-error protection before any Telegram send.
+- **ADR-002** ensures **funnel integrity** — terminal states stop further messaging and keep analytics trustworthy.
+- **ADR-003** provides **timed, recoverable outbound processing** — the 5-minute cycle, persistent job store, and account rotation enforce performance and availability constraints.
+- **ADR-005** isolates prompt content from code so wording changes do not require redeploy.
+- **ADR-006** lets operators upload and preview funnel definitions safely.
+- **ADR-007** exposes structured logs and a health endpoint for production monitoring.
+- **ADR-008** tracks automation rate directly on the conversation model.
+
+Bidirectional traceability is maintained:
+
+- Each ADR links to its quality requirement(s) in [`docs/quality-requirements.md`](../quality-requirements.md).
+- Each quality requirement links back to its ADR and automated test in [`docs/quality-requirement-tests.md`](../quality-requirement-tests.md).
+
+When product scope, deployment, or quality targets change, update the relevant view diagram **and** the affected ADR (or add a new ADR that supersedes the old one) rather than silently changing implementation.
 
 ## Quality Requirements and Architecture
 
-Quality requirements are defined in [`docs/quality-requirements.md`](../quality-requirements.md) and traced to automated tests in [`docs/quality-requirement-tests.md`](../quality-requirement-tests.md). The architecture supports these requirements by isolating concerns:
+Full quality requirement definitions: [`docs/quality-requirements.md`](../quality-requirements.md)
 
-- Safety and correctness are enforced in dedicated `app.llm` and `app.core` components.
-- Modifiability is supported by external configuration (`app.config.prompts/`) and a dedicated funnel parser.
-- Availability is supported by health checks, structured logging, and container restart policies.
-- Accuracy of business metrics is supported by keeping tracking fields close to the domain model (`Conversation.was_escalated`).
+Automated verification mapping: [`docs/quality-requirement-tests.md`](../quality-requirement-tests.md)
+
+## Related Documentation
+
+- Development process and git workflow: [`docs/development-process.md`](../development-process.md)
+- Testing strategy: [`docs/testing.md`](../testing.md)
+- Definition of Done: [`docs/definition-of-done.md`](../definition-of-done.md)
