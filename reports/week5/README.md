@@ -247,7 +247,7 @@ Quality requirements QR-01–QR-08 are traced to ADR-001–ADR-008 and verified 
 
 ## 14. Team Reflection
 
-- [`reflection.md`](reflection.md) *(team should update)*
+- [`reflection.md`](reflection.md) 
 - [`retrospective.md`](retrospective.md) — Sprint 3 retrospective (Part 10)
 - [`llm-report.md`](llm-report.md) — LLM usage report (Part 14)
 
