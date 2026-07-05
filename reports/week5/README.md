@@ -212,7 +212,7 @@ Most Important Feedback Points Received
 Overall satisfaction with the delivered increment: reliability (24/7 availability) and conversational quality (natural, consultative dialogue) were both explicitly confirmed as improvements over the previous version.
 Primary improvement request: a more intuitive, editable admin panel workflow — specifically the ability to go back and correct data after a step (such as campaign launch) has already been confirmed.
 Resulting PBIs / Issues
-New backlog item to be created: "Improve admin panel navigation — allow editing/back navigation after campaign launch step", targeted for Sprint 4, directly sourced from customer feedback in this session.
+- [US-019: Improve Admin Panel Navigation — Allow Editing After Campaign Launch Step](https://github.com/Aye-basota/AI-sales-manager/issues/68) (#68), targeted for Sprint 4.
 Related Artifacts
 Full UAT scenarios and acceptance criteria: `docs/user-acceptance-tests.md`
 Sprint Review summary: `reports/week5/sprint-review-summary.md`
