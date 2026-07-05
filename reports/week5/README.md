@@ -272,7 +272,13 @@ Quality requirements QR-01–QR-08 are traced to ADR-001–ADR-008 and verified 
 
 | Team member | Issues | PRs/MRs | Reviews | Testing | QA / Automation | Documentation |
 |---|---|---|---|---|---|---|
-| *(team-only: one row per member with links to issues/PRs)* | | | | | | |
+| [Aye-basota](https://github.com/Aye-basota) | [#51](https://github.com/Aye-basota/AI-sales-manager/issues/51), [#52](https://github.com/Aye-basota/AI-sales-manager/issues/52) | [#50](https://github.com/Aye-basota/AI-sales-manager/pull/50), [#67](https://github.com/Aye-basota/AI-sales-manager/pull/67) | — | Extended test suite (459 tests, ~81% coverage) via PR #67 | Added `pip-audit` + Lychee CI jobs (PR #50) | `docs/testing.md`, `docs/definition-of-done.md`, hosted docs site setup (PR #50, #67) |
+| [Volgadon636](https://github.com/Volgadon636) | [#58](https://github.com/Aye-basota/AI-sales-manager/issues/58), [#48](https://github.com/Aye-basota/AI-sales-manager/issues/48) | [#58](https://github.com/Aye-basota/AI-sales-manager/pull/58), [#48](https://github.com/Aye-basota/AI-sales-manager/pull/48), [#70](https://github.com/Aye-basota/AI-sales-manager/pull/70) | Approved [#50](https://github.com/Aye-basota/AI-sales-manager/pull/50), [#60](https://github.com/Aye-basota/AI-sales-manager/pull/60), [#67](https://github.com/Aye-basota/AI-sales-manager/pull/67) | Authored UAT scenarios | — | `docs/user-acceptance-tests.md`, US-019 user story |
+| [MuS0rKa](https://github.com/MuS0rKa) | — | [#66](https://github.com/Aye-basota/AI-sales-manager/pull/66), [#64](https://github.com/Aye-basota/AI-sales-manager/pull/64) | Merged [#56](https://github.com/Aye-basota/AI-sales-manager/pull/56), approved [#70](https://github.com/Aye-basota/AI-sales-manager/pull/70) | — | — | Customer feedback section (report §5), `docs/roadmap.md` |
+| [Markyl018](https://github.com/Markyl018) | [#59](https://github.com/Aye-basota/AI-sales-manager/issues/59), [#61](https://github.com/Aye-basota/AI-sales-manager/issues/61), [#62](https://github.com/Aye-basota/AI-sales-manager/issues/62), [#63](https://github.com/Aye-basota/AI-sales-manager/issues/63) | [#60](https://github.com/Aye-basota/AI-sales-manager/pull/60), [#65](https://github.com/Aye-basota/AI-sales-manager/pull/65) | — | — | — | ADR-001–ADR-004, architecture static/dynamic/deployment views, `reports/week5/retrospective.md`, `reports/week5/llm-report.md` |
+| [issammerdas05](https://github.com/issammerdas05) | — | [#56](https://github.com/Aye-basota/AI-sales-manager/pull/56) | — | — | — | `docs/development-process.md` (Part 3), `reports/week5/reflection.md` (Part 12) |
+
+*Table built from merged PRs and closed issues visible in the public GitHub history for Sprint 3 / Assignment 5 (2026-06-29 – 2026-07-04). Not every commit is individually attributed; see the repository commit history for full detail.*
 
 ---
 
