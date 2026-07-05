@@ -10,8 +10,8 @@
 ## 2. Backlog and Sprint Planning
 
 - [Product Backlog board](https://github.com/users/Aye-basota/projects/1/views/1)
-- [Sprint Backlog board](https://github.com/Aye-basota/AI-sales-manager/projects) *(filter by Sprint 3 milestone)*
-- [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestones)
+- [Sprint Backlog board](https://github.com/users/Aye-basota/projects/3/views/1?layout=board)
+- [Sprint 3 milestone](https://github.com/Aye-basota/AI-sales-manager/milestone/3)
 
 ### Sprint Goal
 
