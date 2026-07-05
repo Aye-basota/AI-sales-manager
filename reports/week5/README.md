@@ -185,7 +185,7 @@ Place screenshots in `reports/week5/images/`:
 
 ## 10. Release
 
-- [SemVer release v0.3.0](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.3.0) *(team-only: create from the `main` commit after merge)*
+- [SemVer release v0.3.0](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.3.0) 
 - [`CHANGELOG.md`](../../CHANGELOG.md)
 
 ---
