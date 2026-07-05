@@ -192,7 +192,7 @@ Place screenshots in `reports/week5/images/`:
 
 ## 11. Demo Video
 
-- [Public sanitized demo video](https://example.com/demo-video) *(team-only: upload a <2 min video and replace this link)*
+- [Public sanitized demo video](https://drive.google.com/file/d/1fwjMV_nN-RU7BLEL8t7nbmfAnLhxXLFK/view?usp=sharing) 
 
 ---
 
