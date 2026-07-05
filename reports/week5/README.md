@@ -196,13 +196,33 @@ Place screenshots in `reports/week5/images/`:
 
 ---
 
-## 12. UAT and Customer Review
-
-- **UAT results summary:** *(team-only: fill after customer UAT — list passed/failed scenarios and follow-up PBIs)*
-- [`reports/week5/sprint-review-summary.md`](sprint-review-summary.md)
-- [`reports/week5/sprint-review-transcript.md`](sprint-review-transcript.md) *(only if publication permitted)*
-- [`reports/week5/sprint-review-notes.md`](sprint-review-notes.md) *(if recording refused)*
-
+## 12. **UAT and Customer Review:**
+Sprint: 3 (MVP v2)
+Session date: 2026-07-05
+Executed with: Mark (customer)
+Scenarios Passed
+UAT 1 — 24/7 Production Availability via VPS Deployment: Confirmed working. The customer tested the bot with the local development environment (including Docker) fully shut down and received correct, timely responses.
+UAT 2 — Natural Conversational Flow and Structured Lead Nurturing: Confirmed working. The bot now asks clarifying questions and guides the conversation toward booking instead of returning a flat price/answer.
+Regression — Standard Q&A and Off-Topic Handling: Confirmed unaffected by the production migration.
+Scenarios Failed / Needing Changes
+None of the executed UAT scenarios failed.
+What Still Needs to Be Fixed in the Product
+The admin panel does not currently support returning to a previous step (e.g., after confirming a campaign launch) to edit or correct data such as uploaded contacts. This was raised as a usability gap by the customer.
+Most Important Feedback Points Received
+Overall satisfaction with the delivered increment: reliability (24/7 availability) and conversational quality (natural, consultative dialogue) were both explicitly confirmed as improvements over the previous version.
+Primary improvement request: a more intuitive, editable admin panel workflow — specifically the ability to go back and correct data after a step (such as campaign launch) has already been confirmed.
+Resulting PBIs / Issues
+- [US-019: Improve Admin Panel Navigation — Allow Editing After Campaign Launch Step](https://github.com/Aye-basota/AI-sales-manager/issues/68) (#68), targeted for Sprint 4.
+Related Artifacts
+Full UAT scenarios and acceptance criteria: `docs/user-acceptance-tests.md`
+Sprint Review summary: `reports/week5/sprint-review-summary.md`
+Sprint Review / UAT transcript: `reports/week5/sprint-review-transcript.md`
+> The private recording of this session is submitted separately via Moodle (accessible to instructors only), with Moodle-only timecodes indicating where the customer-executed UAT and Sprint Review discussion occur. It is not included in this public repository.
+Related Artifacts
+Full UAT scenarios and acceptance criteria: `docs/user-acceptance-tests.md`
+Sprint Review summary: `reports/week5/sprint-review-summary.md`
+Sprint Review / UAT transcript: `reports/week5/sprint-review-transcript.md`
+> The private recording of this session is submitted separately via Moodle (accessible to instructors only), with Moodle-only timecodes indicating where the customer-executed UAT and Sprint Review discussion occur. It is not included in this public repository.
 ---
 
 ## 13. Architecture Summary
