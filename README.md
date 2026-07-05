@@ -21,9 +21,19 @@
 
 Поддерживаемая техническая документация опубликована на GitHub Pages:
 
-- **[AI Sales Manager Docs](https://aye-basota.github.io/AI-sales-manager/)**
+- **[AI Sales Manager Docs](https://aye-basota.github.io/AI-sales-manager/)** — hosted documentation site
 
-Там находятся roadmap, архитектура, quality requirements, тестирование, UAT и Definition of Done.
+Ключевые файлы документации в репозитории:
+- [`docs/roadmap.md`](docs/roadmap.md) — Sprint-by-Sprint план поставки
+- [`docs/architecture/README.md`](docs/architecture/README.md) — архитектура системы (static / dynamic / deployment views)
+- [`docs/development-process.md`](docs/development-process.md) — процесс разработки, git workflow и управление конфигурацией
+- [`docs/definition-of-done.md`](docs/definition-of-done.md) — Definition of Done
+- [`docs/testing.md`](docs/testing.md) — стратегия тестирования
+- [`docs/quality-requirements.md`](docs/quality-requirements.md) — quality requirements (ISO/IEC 25010)
+- [`docs/quality-requirement-tests.md`](docs/quality-requirement-tests.md) — автоматизированные QRTs
+- [`docs/user-acceptance-tests.md`](docs/user-acceptance-tests.md) — UAT сценарии
+- [`docs/interface.md`](docs/interface.md) — интерфейсная спецификация
+- [`docs/user-stories.md`](docs/user-stories.md) — реестр user stories
 
 ---
 
