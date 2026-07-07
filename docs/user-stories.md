@@ -13,7 +13,7 @@ This file is the authoritative registry of stable user-story IDs and current mem
 | US-07 | 24/7 Availability | Should Have | [#9](https://github.com/Aye-basota/AI-sales-manager/issues/9) | Active | In Progress | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-08 | LLM Provider Selection | Should Have | [#10](https://github.com/Aye-basota/AI-sales-manager/issues/10) | Active | Done | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-09 | Manual Dialog Takeover | Could Have | [#11](https://github.com/Aye-basota/AI-sales-manager/issues/11) | Active | To Do | — |
-| US-010 | Telegram Admin Bot for Management | Could Have | [#12](https://github.com/Aye-basota/AI-sales-manager/issues/12) | Active | In Progress | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
+| US-010 | Telegram Admin Bot for Management | Could Have | [#12](https://github.com/Aye-basota/AI-sales-manager/issues/12) | Active | Done | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-019 | Improve Admin Panel Navigation — Allow Editing After Campaign Launch Step | Should Have | [#68](https://github.com/Aye-basota/AI-sales-manager/issues/68) | Active | To Do | [Sprint 4](https://github.com/Aye-basota/AI-sales-manager/milestone/3) |
 
 ## Removed User Stories
