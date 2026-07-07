@@ -27,6 +27,8 @@ This file is the authoritative registry of stable user-story IDs and current mem
 
 ## Removed User Stories
 
+| ID | Short title | MoSCoW priority | Issue | Requirement status | Work Status | Sprint |
+|---|---|---|---|---|---|---|
 | US-05 | Human Manager Escalation | Should Have | [#7](https://github.com/Aye-basota/AI-sales-manager/issues/7) | Removed | — | [Sprint 1](https://github.com/Aye-basota/AI-sales-manager/milestone/1) |
 | US-013 | Monitor Active Dialogs in Real Time | Should Have | [#18](https://github.com/Aye-basota/AI-sales-manager/issues/18) | Removed | — | — |
 | US-014 | Lead Qualification Status Management | Should Have | [#19](https://github.com/Aye-basota/AI-sales-manager/issues/19) | Removed | — | — |
