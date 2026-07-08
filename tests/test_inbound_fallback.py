@@ -59,6 +59,7 @@ async def test_guardrails_reject_fallback_sent():
         MockResult([campaign]),
         MockResult([cc]),
         MockResult([script]),
+        MockResult([account]),
     ]
 
     with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:

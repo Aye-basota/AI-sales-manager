@@ -338,7 +338,7 @@ class TestStartBot:
             mock_settings.admin_bot_token = ""
             with caplog.at_level("WARNING"):
                 await start_bot()
-            assert "ADMIN_BOT_TOKEN is not set" in caplog.text
+            assert "ADMIN_BOT_TOKEN is not configured" in caplog.text
 
     async def test_with_token_starts_polling(self):
         with patch("app.bots.admin_bot.settings") as mock_settings:
@@ -1031,7 +1031,7 @@ class TestCampActions:
         with (
             patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
             patch("app.bots.admin_bot._send_or_edit_campaigns", new=AsyncMock()),
-            patch("app.bots.admin_bot.asyncio.create_task"),
+            patch("app.bots.admin_bot._schedule_process_campaign"),
         ):
             mock_callback.data = f"camp_start:{campaign.id}"
             await handle_camp_start(mock_callback)

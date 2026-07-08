@@ -6,6 +6,7 @@ from app.llm.guardrails import (
     check_no_bot_words,
     check_no_forbidden_topics,
     check_no_markdown,
+    check_no_emoji,
     evaluate_guardrails,
 )
 
@@ -101,6 +102,14 @@ class TestCheckNoMarkdown:
 
     def test_backtick_fails(self):
         assert check_no_markdown("`код`") is False
+
+
+class TestCheckNoEmoji:
+    def test_plain_text_passes(self):
+        assert check_no_emoji("Просто текст без эмодзи.") is True
+
+    def test_common_emoji_fails(self):
+        assert check_no_emoji("Привет 🙂") is False
 
 
 class TestGuardrailsResult:

@@ -15,6 +15,7 @@ from sqlalchemy import select, func, delete
 from types import SimpleNamespace
 
 from app.config import get_settings
+from app.config.telegram import is_configured_bot_token
 from app.core.funnel import get_first_stage, get_max_length_for_stage
 from app.db.session import AsyncSessionLocal
 from app.llm.engine import FALLBACK_TEXT, LLMEngine
@@ -419,9 +420,7 @@ async def handle_camp_start(callback: types.CallbackQuery):
             await callback.answer("▶️ Запущено")
             from app.core.scheduler import process_campaigns
 
-            asyncio.create_task(
-                _process_campaign_safely(campaign.id, process_campaigns)
-            )
+            _schedule_process_campaign(campaign.id, process_campaigns)
         else:
             await callback.answer("❌ Кампания уже запущена или не найдена")
     await _send_or_edit_campaigns(callback.message)
@@ -1556,7 +1555,14 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
     # Process campaign in background so the bot UI stays responsive.
     from app.core.scheduler import process_campaigns
 
-    asyncio.create_task(_process_campaign_safely(campaign.id, process_campaigns))
+    _schedule_process_campaign(campaign.id, process_campaigns)
+
+
+def _schedule_process_campaign(campaign_id, process_campaigns_fn):
+    """Schedule campaign processing without blocking the bot response."""
+    return asyncio.create_task(
+        _process_campaign_safely(campaign_id, process_campaigns_fn)
+    )
 
 
 async def _process_campaign_safely(campaign_id, process_campaigns_fn):
@@ -1869,8 +1875,8 @@ dp.include_router(router)
 
 
 async def start_bot():
-    if not settings.admin_bot_token:
-        logger.warning("ADMIN_BOT_TOKEN is not set, bot will not start.")
+    if not is_configured_bot_token(settings.admin_bot_token):
+        logger.warning("ADMIN_BOT_TOKEN is not configured, bot will not start.")
         return
     bot = _get_bot()
     await dp.start_polling(bot)

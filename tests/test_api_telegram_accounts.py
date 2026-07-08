@@ -30,6 +30,7 @@ class TestListTelegramAccounts:
         data = response.json()
         assert len(data) == 1
         assert data[0]["phone"] == "+79991234567"
+        assert "session_string" not in data[0]
 
 
 class TestGetTelegramAccount:
@@ -58,6 +59,7 @@ class TestCreateTelegramAccount:
         data = response.json()
         assert data["phone"] == "+79991234567"
         assert data["status"] == "ready"
+        assert "session_string" not in data
         mock_db.commit.assert_awaited_once()
         mock_db.refresh.assert_awaited_once()
 
@@ -73,8 +75,7 @@ class TestCreateTelegramAccount:
         response = client.post("/telegram-accounts", json=payload)
         assert response.status_code == 201
         data = response.json()
-        # Without a valid key the session string is stored as-is.
-        assert data["session_string"] == "plain_session_string"
+        assert "session_string" not in data
 
 
 class TestUpdateTelegramAccount:

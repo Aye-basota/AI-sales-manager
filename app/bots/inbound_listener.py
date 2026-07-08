@@ -265,10 +265,15 @@ async def _handle_inbound_message(
                 logger.warning("No script for campaign %s", campaign.id)
                 return
 
-            # 7.5 Inbound daily limit guard
+            # 7.5 Inbound account limit guards
             settings = get_settings()
             daily_limit = getattr(settings, "daily_message_limit", None) or 50
-            current_daily = getattr(account, "daily_messages_sent", 0) or 0
+            account_result = await db.execute(
+                select(TelegramAccount).where(TelegramAccount.id == account.id)
+            )
+            db_account = account_result.scalar_one_or_none() or account
+
+            current_daily = getattr(db_account, "daily_messages_sent", 0) or 0
             if current_daily >= daily_limit:
                 logger.warning(
                     "Account %s reached daily limit (%s), skipping inbound reply",
@@ -276,6 +281,19 @@ async def _handle_inbound_message(
                     daily_limit,
                 )
                 return
+
+            last_message_at = getattr(db_account, "last_message_at", None)
+            if last_message_at is not None:
+                if last_message_at.tzinfo is None:
+                    last_message_at = last_message_at.replace(tzinfo=timezone.utc)
+                elapsed = (datetime.now(timezone.utc) - last_message_at).total_seconds()
+                if elapsed < 30:
+                    logger.info(
+                        "Account %s is rate limited for inbound reply (%.1fs since last message)",
+                        account.id,
+                        elapsed,
+                    )
+                    return
 
             # 8. Classify intent
             engine = LLMEngine()
@@ -374,6 +392,7 @@ async def _handle_inbound_message(
             # "typing" indicator is kept alive during the chunk delays.
             if thinking_delay > 0:
                 await asyncio.sleep(thinking_delay / 1000.0)
+            sent_chunks = 0
             for idx, chunk in enumerate(chunks):
                 if idx > 0:
                     await asyncio.sleep(chunk_pause_seconds())
@@ -382,6 +401,7 @@ async def _handle_inbound_message(
                     text=chunk,
                     typing_delay_ms=chunk_delays[idx],
                 )
+                sent_chunks += 1
 
             # 13. Save outbound message (whole text for conversation history)
             await add_message(
@@ -395,6 +415,10 @@ async def _handle_inbound_message(
                 typing_delay_ms=base_typing_delay + thinking_delay,
                 intent_classification=intent,
             )
+
+            if sent_chunks:
+                db_account.daily_messages_sent = current_daily + sent_chunks
+                db_account.last_message_at = datetime.now(timezone.utc)
 
             # 14. Update conversation state / facts / sentiment
             event_map = {

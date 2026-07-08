@@ -179,6 +179,17 @@ class TestSellerClientHelpers:
         mock_debug.assert_called()
 
     @pytest.mark.asyncio
+    async def test_set_typing_uses_chat_action(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        client._client = MagicMock()
+        client._client.send_chat_action = AsyncMock()
+
+        await client.set_typing(user_id=123)
+
+        client._client.send_chat_action.assert_awaited_once()
+        assert client._client.send_chat_action.call_args.kwargs["chat_id"] == 123
+
+    @pytest.mark.asyncio
     async def test_set_online_without_client_logs_debug(self):
         client = SellerClient(account_id="acc1", session_string="sess1")
         with patch("app.bots.seller_client.logger.debug") as mock_debug:
@@ -191,6 +202,16 @@ class TestSellerClientHelpers:
         with patch("app.bots.seller_client.logger.debug") as mock_debug:
             await client.read_history(user_id=123)
         mock_debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_read_history_uses_chat_id(self):
+        client = SellerClient(account_id="acc1", session_string="sess1")
+        client._client = MagicMock()
+        client._client.read_chat_history = AsyncMock()
+
+        await client.read_history(user_id=123)
+
+        client._client.read_chat_history.assert_awaited_once_with(chat_id=123)
 
     @pytest.mark.asyncio
     async def test_get_me_returns_none_when_no_client(self):

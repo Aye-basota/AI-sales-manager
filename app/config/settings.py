@@ -1,11 +1,13 @@
 from functools import lru_cache
 from typing import Any
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic import ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     database_url: str = "postgresql+asyncpg://sales:salespass@localhost:5432/ai_sales"
     redis_url: str = "redis://localhost:6379/0"
 
@@ -42,9 +44,14 @@ class Settings(BaseSettings):
             return True
         return value
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    @field_validator("telegram_api_id", "daily_message_limit", mode="before")
+    @classmethod
+    def parse_empty_int_defaults(cls, value: Any, info: ValidationInfo) -> Any:
+        if not (isinstance(value, str) and value.strip() == ""):
+            return value
+        if info.field_name == "daily_message_limit":
+            return 50
+        return 0
 
 
 @lru_cache()

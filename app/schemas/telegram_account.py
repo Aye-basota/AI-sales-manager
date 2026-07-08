@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TelegramAccountBase(BaseModel):
@@ -39,6 +39,7 @@ class TelegramAccountUpdate(BaseModel):
 
 
 class TelegramAccountResponse(TelegramAccountBase):
+    session_string: Optional[str] = Field(default=None, exclude=True)
     id: UUID
     created_at: datetime
 

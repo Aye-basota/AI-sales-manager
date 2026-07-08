@@ -1,6 +1,7 @@
 import difflib
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def check_no_markdown(text: str) -> bool:
 def check_no_emoji(text: str) -> bool:
     """Return True if *text* contains no emoji characters."""
     for ch in text:
-        cat = ch.category if hasattr(ch, "category") else None
+        cat = unicodedata.category(ch)
         if cat in ("So",):
             return False
         code = ord(ch)

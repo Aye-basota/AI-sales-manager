@@ -11,9 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated API metadata to identify the Week 6 trial release as version `0.4.0`.
+- Release automation now verifies that a SemVer tag points to a commit contained in `main` before publishing a GitHub Release.
+- Seller MTProto read/typing actions now use Pyrogram chat-level methods instead of raw peers with missing access hashes.
 
 ### Fixed
 - Prevented release/profile deployments from failing during startup when `DEBUG` is set to values such as `release`, `prod`, or `production`.
+- Prevented copied `.env.example` values such as an empty `TELEGRAM_API_ID` or placeholder `ADMIN_BOT_TOKEN` from breaking API startup.
+- Inbound Telegram auto-replies now respect seller-account daily and 30-second rate limits and update account counters after sending.
+- Guardrails now correctly detect emoji/symbol categories through Unicode metadata.
+
+### Security
+- Telegram account API responses no longer expose stored `session_string` values.
 
 ## [0.3.0] - 2026-06-30
 
