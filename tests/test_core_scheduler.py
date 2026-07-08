@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,6 +13,7 @@ from app.core.scheduler import (
     send_initial_message,
     send_follow_up_message,
     CampaignScheduler,
+    ContactPeerInvalidError,
 )
 
 
@@ -369,6 +370,42 @@ class TestProcessCampaigns:
             await process_campaigns(mock_db)
             mock_send.assert_not_awaited()
 
+    async def test_invalid_contact_peer_is_not_retried(
+        self, mock_db, sample_campaign, sample_script, sample_contact
+    ):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        sample_contact.telegram_user_id = 123456
+        sample_contact.status = "invalid_peer"
+        sample_contact.is_valid = "invalid"
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+        ]
+
+        with patch(
+            "app.core.scheduler.send_initial_message", new_callable=AsyncMock
+        ) as mock_send:
+            await process_campaigns(mock_db)
+            mock_send.assert_not_awaited()
+
+        assert cc.status == "invalid_peer"
+        mock_db.commit.assert_awaited_once()
+
     async def test_processed_contacts_counts_unique_contacts(
         self, mock_db, sample_campaign, sample_script, sample_contact
     ):
@@ -450,6 +487,196 @@ class TestProcessCampaigns:
         ) as mock_send:
             await process_campaigns(mock_db)
             mock_send.assert_awaited_once()
+
+    async def test_invalid_peer_marks_contact_and_continues(
+        self, mock_db, sample_script
+    ):
+        from app.models.campaign import Campaign, CampaignContact
+        from app.models.contact import Contact
+
+        campaign1 = Campaign(
+            id=uuid.uuid4(),
+            script_id=sample_script.id,
+            name="Broken peer campaign",
+            status="running",
+        )
+        campaign2 = Campaign(
+            id=uuid.uuid4(),
+            script_id=sample_script.id,
+            name="Next campaign",
+            status="running",
+        )
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        contact1 = Contact(
+            id=uuid.uuid4(),
+            telegram_user_id=111,
+            first_name="Bad",
+        )
+        contact2 = Contact(
+            id=uuid.uuid4(),
+            telegram_user_id=222,
+            first_name="Good",
+        )
+        cc1 = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=campaign1.id,
+            contact_id=contact1.id,
+            status="pending",
+            message_count=0,
+        )
+        cc2 = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=campaign2.id,
+            contact_id=contact2.id,
+            status="pending",
+            message_count=0,
+        )
+        account = MockTelegramAccount()
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([campaign1, campaign2]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc1]),
+            _SimpleMockResult([contact1]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc2]),
+            _SimpleMockResult([contact2]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+        ]
+
+        send_calls = []
+
+        async def fake_send_initial(**kwargs):
+            send_calls.append(kwargs["contact"].id)
+            if kwargs["contact"].id == contact1.id:
+                raise ContactPeerInvalidError(
+                    kwargs["account"].id,
+                    kwargs["contact"].id,
+                    kwargs["contact"].telegram_user_id,
+                )
+
+        with patch(
+            "app.core.scheduler.send_initial_message",
+            side_effect=fake_send_initial,
+        ):
+            await process_campaigns(mock_db)
+
+        assert send_calls == [contact1.id, contact2.id]
+        assert cc1.status == "invalid_peer"
+        assert contact1.status == "invalid_peer"
+        assert contact1.is_valid == "invalid"
+        assert cc2.status == "pending"
+        assert mock_db.commit.await_count >= 2
+
+    async def test_generic_send_error_rolls_back_and_continues_next_campaign(
+        self, sample_script
+    ):
+        from app.models.campaign import Campaign, CampaignContact
+        from app.models.contact import Contact
+
+        class RollbackAwareSession:
+            def __init__(self):
+                self.rolled_back = False
+                self.execute = AsyncMock()
+                self.commit = AsyncMock()
+                self.add = MagicMock()
+
+            async def rollback(self):
+                self.rolled_back = True
+
+        class RollbackAwareCampaign:
+            def __init__(self, campaign):
+                self._campaign = campaign
+
+            @property
+            def id(self):
+                return self._campaign.id
+
+            @property
+            def script_id(self):
+                if mock_db.rolled_back:
+                    raise AssertionError("expired campaign state was touched")
+                return self._campaign.script_id
+
+            @property
+            def processed_contacts(self):
+                return self._campaign.processed_contacts
+
+            @processed_contacts.setter
+            def processed_contacts(self, value):
+                self._campaign.processed_contacts = value
+
+        campaign1 = Campaign(
+            id=uuid.uuid4(),
+            script_id=sample_script.id,
+            name="Fails",
+            status="running",
+        )
+        campaign2 = Campaign(
+            id=uuid.uuid4(),
+            script_id=sample_script.id,
+            name="Still runs",
+            status="running",
+        )
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+
+        contact1 = Contact(id=uuid.uuid4(), telegram_user_id=111)
+        contact2 = Contact(id=uuid.uuid4(), telegram_user_id=222)
+        cc1 = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=campaign1.id,
+            contact_id=contact1.id,
+            status="pending",
+            message_count=0,
+        )
+        cc2 = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=campaign2.id,
+            contact_id=contact2.id,
+            status="pending",
+            message_count=0,
+        )
+        account = MockTelegramAccount()
+        mock_db = RollbackAwareSession()
+        wrapped_campaigns = [
+            RollbackAwareCampaign(campaign1),
+            RollbackAwareCampaign(campaign2),
+        ]
+        mock_db.execute.side_effect = [
+            _SimpleMockResult(wrapped_campaigns),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc1]),
+            _SimpleMockResult([contact1]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc2]),
+            _SimpleMockResult([contact2]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+        ]
+
+        send_calls = []
+
+        async def fake_send_initial(**kwargs):
+            send_calls.append(kwargs["contact"].telegram_user_id)
+            if kwargs["contact"].telegram_user_id == 111:
+                raise RuntimeError("temporary send failure")
+
+        with patch(
+            "app.core.scheduler.send_initial_message",
+            side_effect=fake_send_initial,
+        ):
+            await process_campaigns(mock_db)
+
+        assert mock_db.rolled_back is True
+        assert send_calls == [111, 222]
 
 
 @pytest.mark.asyncio
