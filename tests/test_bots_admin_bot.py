@@ -340,6 +340,16 @@ class TestStartBot:
                 await start_bot()
             assert "ADMIN_BOT_TOKEN is not configured" in caplog.text
 
+    async def test_placeholder_token_does_not_start_polling(self, caplog):
+        with patch("app.bots.admin_bot.settings") as mock_settings:
+            mock_settings.admin_bot_token = "your_telegram_bot_token"
+            mock_dp = AsyncMock()
+            with patch("app.bots.admin_bot.dp", mock_dp):
+                with caplog.at_level("WARNING"):
+                    await start_bot()
+            mock_dp.start_polling.assert_not_awaited()
+            assert "ADMIN_BOT_TOKEN is not configured" in caplog.text
+
     async def test_with_token_starts_polling(self):
         with patch("app.bots.admin_bot.settings") as mock_settings:
             mock_settings.admin_bot_token = "123456:ABC-DEF"
@@ -1038,6 +1048,42 @@ class TestCampActions:
 
         assert campaign.status == "running"
         mock_callback.answer.assert_awaited_with("▶️ Запущено")
+
+    @pytest.mark.asyncio
+    async def test_handle_camp_start_ignores_fast_second_click(self, mock_callback):
+        from unittest.mock import MagicMock
+
+        campaign = Campaign(id=uuid.uuid4(), name="Test", status="draft")
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = campaign
+        context = _make_mock_session(result_mock)
+        schedule = MagicMock()
+
+        with (
+            patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
+            patch("app.bots.admin_bot._send_or_edit_campaigns", new=AsyncMock()),
+            patch("app.bots.admin_bot._schedule_process_campaign", schedule),
+        ):
+            mock_callback.data = f"camp_start:{campaign.id}"
+            await handle_camp_start(mock_callback)
+            await handle_camp_start(mock_callback)
+
+        assert campaign.status == "running"
+        assert schedule.call_count == 1
+        mock_callback.answer.assert_any_await("▶️ Запущено")
+        mock_callback.answer.assert_any_await("❌ Кампания уже запущена или не найдена")
+
+    @pytest.mark.asyncio
+    async def test_handle_camp_start_rejects_malformed_callback_data(
+        self, mock_callback
+    ):
+        mock_callback.data = "camp_start:not-a-uuid"
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal") as mock_session:
+            await handle_camp_start(mock_callback)
+
+        mock_session.assert_not_called()
+        mock_callback.answer.assert_awaited_once_with("❌ Неверный ID")
 
     @pytest.mark.asyncio
     async def test_handle_camp_pause_only_from_running(self, mock_callback):

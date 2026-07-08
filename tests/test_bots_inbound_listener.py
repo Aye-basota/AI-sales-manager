@@ -389,6 +389,91 @@ async def test_handle_inbound_message_guardrails_block():
 
 
 @pytest.mark.asyncio
+async def test_handle_inbound_question_stays_warm_and_does_not_notify():
+    account = TelegramAccount(id=uuid.uuid4(), phone="+123", daily_messages_sent=0)
+    client = MagicMock()
+    client.set_online = AsyncMock()
+    client.send_message = AsyncMock(return_value={"message_id": 1})
+    client.read_history = AsyncMock()
+
+    message = MagicMock()
+    message.from_user = MagicMock(id=123456)
+    message.text = "Сколько это стоит?"
+
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        contact_id=contact.id,
+        campaign_id=uuid.uuid4(),
+        current_state="warm",
+    )
+    campaign = Campaign(
+        id=conversation.campaign_id, script_id=uuid.uuid4(), status="running"
+    )
+    script = Script(
+        id=campaign.script_id, name="Test", role_prompt="Sales", goal="Book"
+    )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
+
+    mock_db = build_mock_session()
+    mock_db.execute.side_effect = [
+        MockResult([contact]),
+        MockResult([conversation]),
+        MockResult([campaign]),
+        MockResult([cc]),
+        MockResult([script]),
+        MockResult([account]),
+    ]
+
+    with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
+        MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "app.bots.inbound_listener.classify_intent",
+            new_callable=AsyncMock,
+            return_value="question",
+        ):
+            with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
+                engine_inst = MockEngine.return_value
+                engine_inst.generate_response_with_guardrails = AsyncMock(
+                    return_value={
+                        "text": "Стоимость зависит от объема. Какой у вас поток лидов?",
+                        "model": "gpt-4",
+                        "tokens_used": 3,
+                    }
+                )
+
+                with patch(
+                    "app.bots.inbound_listener.extract_facts_from_message",
+                    new_callable=AsyncMock,
+                    return_value={},
+                ):
+                    with patch(
+                        "app.bots.inbound_listener.get_conversation_context",
+                        new_callable=AsyncMock,
+                        return_value={"messages": [], "facts": {}},
+                    ):
+                        with patch(
+                            "app.bots.inbound_listener.NotificationService.send_hot_lead_alert",
+                            new_callable=AsyncMock,
+                        ) as mock_notif:
+                            with patch(
+                                "app.bots.inbound_listener.add_message",
+                                new_callable=AsyncMock,
+                            ):
+                                await _handle_inbound_message(account, client, message)
+
+    assert conversation.current_state == "warm"
+    mock_notif.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_handle_inbound_message_skips_reply_when_daily_limit_reached():
     account = TelegramAccount(
         id=uuid.uuid4(), phone="+123", daily_messages_sent=50, last_message_at=None

@@ -58,6 +58,34 @@ _inbound_clients: dict[str, SellerClient] = {}
 FALLBACK_TEXT = "Извините, не совсем понял. Могу ли я уточнить — вас интересует {goal}?"
 
 
+def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
+    lower = lead_text.lower()
+
+    if any(word in lower for word in ("бот", "ии", "нейросеть", "автомат", "рассыл")):
+        return (
+            "Понимаю вопрос. Пишу из рабочего Telegram; если сообщение неактуально, "
+            "спокойно остановлюсь.\n\n"
+            "Могу коротко объяснить, почему обратился?"
+        )
+
+    if any(word in lower for word in ("спам", "заблок", "бан", "лимит")):
+        return (
+            "Понимаю риск блокировки — это правда важный момент.\n\n"
+            "Мы не предлагаем массово слать одинаковые сообщения: сначала проверяем базу, "
+            "лимиты, паузы и реакцию на малом объеме. Если актуально, могу коротко рассказать, "
+            "как обычно делают безопасный тест."
+        )
+
+    if lead_text.strip() and set(lead_text.strip()) <= {"?", "!", ".", " "}:
+        return (
+            "Понял, похоже написал не в самый удобный момент.\n\n"
+            "Скажите, актуально ли вам сейчас улучшать обработку лидов, или лучше не беспокоить?"
+        )
+
+    goal = script.goal or "наше предложение"
+    return FALLBACK_TEXT.format(goal=goal)
+
+
 async def start_inbound_listeners(db_session: AsyncSession | None = None) -> None:
     """Load ready/active accounts and start Pyrogram inbound listeners."""
     if not _PYROGRAM_AVAILABLE:
@@ -374,8 +402,7 @@ async def _handle_inbound_message(
 
             # If guardrails blocked even the retry, use fallback text
             if not response_text or response.get("model") == "fallback":
-                goal = script.goal or "наше предложение"
-                response_text = FALLBACK_TEXT.format(goal=goal)
+                response_text = _build_inbound_fallback_text(text, script)
 
             # 11. Humanizer delays and chunking
             chunks = split_message_into_chunks(response_text)
@@ -426,10 +453,12 @@ async def _handle_inbound_message(
                 "positive": "positive_reply",
                 "negative": "negative_reply",
                 "objection": "objection",
+                "question": "informational",
                 "informational": "informational",
             }
             event = event_map.get(intent, "positive_reply")
-            new_state = transition(conversation.current_state or "cold", event)
+            previous_state = conversation.current_state or "cold"
+            new_state = transition(previous_state, event)
             conversation.current_state = new_state
             conversation.sentiment = (
                 "positive"
@@ -444,7 +473,11 @@ async def _handle_inbound_message(
             await db.commit()
 
             # 15. Notify if hot lead
-            if intent == "meeting_intent" or new_state in ("hot", "meeting_booked"):
+            became_hot = new_state in ("hot", "meeting_booked") and previous_state not in (
+                "hot",
+                "meeting_booked",
+            )
+            if intent == "meeting_intent" or became_hot:
                 notif = NotificationService()
                 await notif.send_hot_lead_alert(
                     contact, conversation, last_message_text=text

@@ -61,9 +61,12 @@ site_docs/
 # Link checker cache
 .lycheecache
 
+# Local autonomous dialogue-lab reports
+.dialogue-lab/
+scripts/.dialogue-lab/
+
 # Assignment files (kept locally, not committed)
 Assignment_04.md
 Assignment_05.md
 Artifact_Requirements.md
 *.docx
-
