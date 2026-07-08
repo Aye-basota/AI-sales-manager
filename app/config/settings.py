@@ -1,5 +1,8 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Any
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -25,6 +28,19 @@ class Settings(BaseSettings):
     telegram_api_hash: str = ""
     daily_message_limit: int = 50
     debug: bool = True
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug_flag(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip().lower()
+        if normalized in {"release", "prod", "production", "off", "false", "0", "no"}:
+            return False
+        if normalized in {"debug", "dev", "development", "on", "true", "1", "yes"}:
+            return True
+        return value
 
     class Config:
         env_file = ".env"

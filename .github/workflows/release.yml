@@ -22,26 +22,49 @@ jobs:
         id: release_notes
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          cat > /tmp/release_body.md <<EOF
+          RELEASE_FILE="docs/releases/v${VERSION}.md"
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          if [ -f "$RELEASE_FILE" ]; then
+            cat "$RELEASE_FILE" > /tmp/release_body.md
+          elif [ "$VERSION" = "0.4.0" ]; then
+            cat > /tmp/release_body.md <<EOF
           ## AI Sales Manager v${VERSION}
 
-          This release maps to **MVP v2** and the **Assignment 5 Sprint 3 increment**.
+          This release is the **Week 6 trial / handover-candidate release for Assignment 6 Sprint 4**.
 
           ### Links
-          - Sprint 3 milestone: https://github.com/${{ github.repository }}/milestones
-          - Week 5 public report: https://github.com/${{ github.repository }}/blob/main/reports/week5/README.md
+          - Sprint 4 milestone: ${REPO_URL}/milestone/4
+          - Sprint backlog board: https://github.com/users/Aye-basota/projects/2
+          - Week 6 public report: ${REPO_URL}/blob/main/reports/week6/README.md
+          - Run and access instructions: ${REPO_URL}/blob/main/README.md
+          - Deployment launch guide: ${REPO_URL}/blob/main/LAUNCH_GUIDE.md
+          - Customer handover guide: ${REPO_URL}/blob/main/docs/customer-handover.md
           - Hosted documentation: https://aye-basota.github.io/AI-sales-manager/
-          - Deployment / run instructions: https://github.com/${{ github.repository }}/blob/main/LAUNCH_GUIDE.md
-          - Public sanitized demo video: (add link after recording)
-          - Full changelog: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
+          - Full changelog: ${REPO_URL}/blob/main/CHANGELOG.md
 
-          ### Changes
+          ### Release Notes
+          The Week 6 trial release keeps the Sprint 4 increment accessible for customer and TA review, with startup hardening for release-profile deployments and release metadata aligned with SemVer v${VERSION}.
+          EOF
+          else
+            cat > /tmp/release_body.md <<EOF
+          ## AI Sales Manager v${VERSION}
+
+          ### Links
+          - Full changelog: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
+          - Run instructions: https://github.com/${{ github.repository }}/blob/main/README.md
+          EOF
+          fi
+
+          cat >> /tmp/release_body.md <<EOF
+
+          ### Changelog
           $(sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$d')
           EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: MVP v2 Release v${{ steps.version.outputs.VERSION }}
+          name: AI Sales Manager v${{ steps.version.outputs.VERSION }}
           body_path: /tmp/release_body.md
           generate_release_notes: false
