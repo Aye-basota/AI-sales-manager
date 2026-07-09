@@ -9,12 +9,15 @@ fallbacks, stale buttons and broken menu routing.
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable
+from unittest.mock import patch
+from uuid import uuid4
 
 
 OUTPUT = Path(__file__).resolve().parent / ".admin-ux-lab" / "latest.md"
@@ -36,10 +39,16 @@ class FakeMessage:
     def __init__(self, text: str | None = None) -> None:
         self.text = text
         self.answers: list[tuple[str, dict[str, Any]]] = []
+        self.edits: list[tuple[str, dict[str, Any]]] = []
         self.from_user = SimpleNamespace(is_bot=False)
 
     async def answer(self, text: str, **kwargs: Any) -> SimpleNamespace:
         self.answers.append((text, kwargs))
+        return SimpleNamespace(text=text, kwargs=kwargs)
+
+    async def edit_text(self, text: str, **kwargs: Any) -> SimpleNamespace:
+        self.edits.append((text, kwargs))
+        self.text = text
         return SimpleNamespace(text=text, kwargs=kwargs)
 
 
@@ -54,12 +63,18 @@ class FakeCallback:
 
 
 class FakeState:
-    def __init__(self, current_state: str | None = None) -> None:
+    def __init__(
+        self, current_state: str | None = None, data: dict[str, Any] | None = None
+    ) -> None:
         self.current_state = current_state
+        self.data = data or {}
         self.cleared = False
 
     async def get_state(self) -> str | None:
         return self.current_state
+
+    async def get_data(self) -> dict[str, Any]:
+        return dict(self.data)
 
     async def clear(self) -> None:
         self.current_state = None
@@ -69,7 +84,7 @@ class FakeState:
         self.current_state = str(state)
 
     async def update_data(self, **kwargs: Any) -> None:
-        return None
+        self.data.update(kwargs)
 
 
 def _assert_contains(text: str, *needles: str) -> None:
@@ -100,9 +115,98 @@ async def _help_screen() -> str:
     message = FakeMessage("/help")
     await admin_bot.cmd_help(message)
     text, kwargs = message.answers[-1]
-    _assert_contains(text, "/cancel", "/conversations <contact_id>", "Горячие лиды")
+    _assert_contains(text, "/cancel", "/conversations [contact_id]", "Горячие лиды")
     if kwargs.get("reply_markup") is None:
         raise AssertionError("Help screen did not attach the main menu")
+    return text
+
+
+async def _help_has_unique_commands() -> str:
+    message = FakeMessage("/help")
+    await admin_bot.cmd_help(message)
+    text, _ = message.answers[-1]
+    commands = re.findall(r"^(/[a-z]+)", text, flags=re.MULTILINE)
+    duplicates = sorted({command for command in commands if commands.count(command) > 1})
+    if duplicates:
+        raise AssertionError(f"Duplicated command descriptions: {duplicates}")
+    return ", ".join(commands)
+
+
+async def _script_crud_buttons() -> str:
+    script = SimpleNamespace(
+        id=uuid4(),
+        name="Main outbound",
+        is_active=True,
+    )
+    keyboard = admin_bot._build_script_buttons([(script, 0)])
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    labels = [button.text for button in buttons]
+    callbacks = [button.callback_data for button in buttons]
+
+    _assert_contains("\n".join(labels), "Новый сценарий", "Выключить", "Main outbound")
+    if not any(callback == "script_new" for callback in callbacks):
+        raise AssertionError("Missing script creation callback")
+    if not any(callback.startswith("script_toggle:") for callback in callbacks):
+        raise AssertionError("Missing script toggle callback")
+    if not any(callback.startswith("script_delete:") for callback in callbacks):
+        raise AssertionError("Missing script delete callback")
+    return "\n".join(labels)
+
+
+class _FakeScalars:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    def all(self) -> list[Any]:
+        return self.items
+
+
+class _FakeResult:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    def scalars(self) -> _FakeScalars:
+        return _FakeScalars(self.items)
+
+
+class _FakeSessionContext:
+    def __init__(self, items: list[Any]) -> None:
+        self.items = items
+
+    async def __aenter__(self) -> "_FakeSessionContext":
+        return self
+
+    async def __aexit__(self, *_: Any) -> bool:
+        return False
+
+    async def execute(self, *_: Any, **__: Any) -> _FakeResult:
+        return _FakeResult(self.items)
+
+
+async def _preview_change_script_edits_message() -> str:
+    script = SimpleNamespace(id=uuid4(), name="Main outbound")
+    state = FakeState(
+        "CampaignCreateFSM:preview",
+        data={"records": [{"first_name": "Alice", "telegram_user_id": "123"}]},
+    )
+    message = FakeMessage("👁 Предпросмотр первого сообщения")
+    message.from_user.is_bot = True
+    callback = FakeCallback("preview:change_script", message)
+
+    with patch(
+        "app.bots.admin_bot.AsyncSessionLocal",
+        return_value=_FakeSessionContext([script]),
+    ):
+        await admin_bot.handle_preview_change_script(callback, state)
+
+    if not message.edits:
+        raise AssertionError("Preview change script did not edit the current message")
+    if message.answers:
+        raise AssertionError("Preview change script sent a new message")
+    text, kwargs = message.edits[-1]
+    _assert_contains(text, "Выберите скрипт")
+    if kwargs.get("reply_markup") is None:
+        raise AssertionError("Script picker did not include inline keyboard")
     return text
 
 
@@ -245,6 +349,8 @@ async def main() -> int:
     scenarios = [
         ("start screen explains product flow", _start_screen),
         ("help screen explains commands and exit", _help_screen),
+        ("help screen has no duplicated commands", _help_has_unique_commands),
+        ("scripts expose create toggle delete controls", _script_crud_buttons),
         ("unknown message gets helpful fallback", _unknown_message),
         ("unknown wizard text points to cancel", _unknown_inside_wizard),
         ("cancel exits active wizard", _cancel_active_wizard),
@@ -252,6 +358,7 @@ async def main() -> int:
         ("menu switches active wizard", _menu_switches_active_wizard),
         ("unknown command is not saved as answer", _unknown_command_inside_wizard),
         ("stale callback gets explicit fallback", _unknown_callback),
+        ("preview change script edits current message", _preview_change_script_edits_message),
         ("menu routing keeps compatibility", _menu_routing_compatibility),
     ]
     results = [await _run(name, scenario) for name, scenario in scenarios]

@@ -77,7 +77,167 @@ DEFAULT_SCENARIOS = [
         "lead": "???",
         "expected": {"informational", "question", "objection"},
     },
+    {
+        "name": "soft_not_now",
+        "lead": "Сейчас не до этого, напишите через пару месяцев.",
+        "expected": {"objection", "informational"},
+    },
+    {
+        "name": "unsubscribe_data",
+        "lead": "Удалите мои данные и больше не пишите.",
+        "expected": {"negative"},
+    },
+    {
+        "name": "wrong_person",
+        "lead": "Это вообще не ко мне, я не занимаюсь продажами.",
+        "expected": {"objection", "informational"},
+    },
+    {
+        "name": "not_decision_maker",
+        "lead": "Я не принимаю такие решения, этим руководитель отдела занимается.",
+        "expected": {"informational", "objection"},
+    },
+    {
+        "name": "send_materials",
+        "lead": "Пришлите коротко, что у вас есть, я посмотрю позже.",
+        "expected": {"positive", "question", "informational"},
+    },
+    {
+        "name": "already_have_tool",
+        "lead": "У нас уже есть CRM и менеджеры, зачем еще один инструмент?",
+        "expected": {"objection", "question"},
+    },
+    {
+        "name": "budget_objection",
+        "lead": "Если это дорого, нам точно не подойдет.",
+        "expected": {"objection"},
+    },
+    {
+        "name": "integration_question",
+        "lead": "А с amoCRM или Bitrix24 это можно связать?",
+        "expected": {"question"},
+    },
+    {
+        "name": "security_question",
+        "lead": "Что с безопасностью данных и доступами к Telegram аккаунту?",
+        "expected": {"question", "objection"},
+    },
+    {
+        "name": "case_study_question",
+        "lead": "Есть кейсы по B2B SaaS или это пока только теория?",
+        "expected": {"question"},
+    },
+    {
+        "name": "angry_refusal",
+        "lead": "Да отстаньте уже, не интересно.",
+        "expected": {"negative"},
+    },
+    {
+        "name": "short_positive",
+        "lead": "Ок, интересно",
+        "expected": {"positive", "informational"},
+    },
+    {
+        "name": "short_yes",
+        "lead": "Да",
+        "expected": {"positive", "informational"},
+    },
+    {
+        "name": "asks_who_are_you",
+        "lead": "А вы кто и откуда у вас мой контакт?",
+        "expected": {"question", "objection"},
+    },
+    {
+        "name": "competitor_compare",
+        "lead": "Чем вы отличаетесь от обычной рассылки через Telegram?",
+        "expected": {"question"},
+    },
+    {
+        "name": "exact_meeting_time",
+        "lead": "Можем завтра в 16:00, если это займет не больше 20 минут.",
+        "expected": {"meeting_intent"},
+    },
+    {
+        "name": "call_now",
+        "lead": "Можете сейчас набрать?",
+        "expected": {"meeting_intent", "question"},
+    },
+    {
+        "name": "one_word_no",
+        "lead": "Нет",
+        "expected": {"negative", "objection"},
+    },
+    {
+        "name": "too_many_questions_from_lead",
+        "lead": "Сколько стоит, как подключается, кто пишет тексты и какие лимиты в Telegram?",
+        "expected": {"question"},
+    },
+    {
+        "name": "asks_for_email",
+        "lead": "Напишите лучше на почту, тут неудобно.",
+        "expected": {"positive", "informational", "question"},
+    },
+    {
+        "name": "english_reply",
+        "lead": "Can you explain in English what this does?",
+        "expected": {"question", "informational"},
+    },
+    {
+        "name": "manual_process_details",
+        "lead": "У нас лиды из конференций, потом менеджер руками пишет в Telegram.",
+        "expected": {"informational", "positive"},
+    },
+    {
+        "name": "fear_spam_reports",
+        "lead": "Боюсь жалоб на спам, у нас уже был неприятный опыт.",
+        "expected": {"objection"},
+    },
+    {
+        "name": "asks_for_price_only",
+        "lead": "Цена?",
+        "expected": {"question"},
+    },
+    {
+        "name": "wants_human",
+        "lead": "Можно с живым человеком поговорить, а не вот это всё?",
+        "expected": {"meeting_intent", "objection", "question"},
+    },
+    {
+        "name": "confused_context",
+        "lead": "Не понял, о чем речь вообще.",
+        "expected": {"question", "informational", "objection"},
+    },
+    {
+        "name": "legal_compliance",
+        "lead": "Это вообще легально с точки зрения персональных данных?",
+        "expected": {"question", "objection"},
+    },
+    {
+        "name": "asks_to_pause",
+        "lead": "Давайте вернемся к этому в конце квартала.",
+        "expected": {"objection", "informational", "positive"},
+    },
 ]
+
+DEFAULT_LIMIT = 30
+
+HARD_STOP_SCENARIOS = {
+    "hard_refusal",
+    "unsubscribe_data",
+    "angry_refusal",
+    "one_word_no",
+}
+MEETING_SCENARIOS = {
+    "meeting_intent",
+    "exact_meeting_time",
+}
+RISK_SCENARIOS = {
+    "spam_objection",
+    "technical_risk",
+    "security_question",
+    "fear_spam_reports",
+    "legal_compliance",
+}
 
 
 @dataclass
@@ -218,6 +378,7 @@ async def _create_context(run_id: str, lead_id: int, scenario_name: str):
         username="dialogue_lab_seller",
         status="ready",
         daily_messages_sent=0,
+        last_message_at=datetime.now(timezone.utc),
         session_string="synthetic",
     )
 
@@ -233,6 +394,20 @@ async def _create_context(run_id: str, lead_id: int, scenario_name: str):
         conversation.contact_id = contact.id
         conversation.campaign_id = campaign.id
         session.add(conversation)
+        await session.flush()
+        session.add(
+            Message(
+                conversation_id=conversation.id,
+                direction="outbound",
+                content=(
+                    "Привет. Пишу коротко: помогаем командам аккуратно начинать "
+                    "диалоги с потенциальными клиентами без лишней ручной рутины."
+                ),
+                message_type="text",
+                llm_model="dialogue_lab_seed",
+                tokens_used=0,
+            )
+        )
         session.add(
             CampaignContact(
                 campaign_id=campaign.id,
@@ -299,6 +474,8 @@ def _analyze_result(
         issues.append(f"response too long: {len(response_text)} chars")
     if response_text.count("?") > 1:
         issues.append("too many questions in one response")
+    if response_text.count("\n\n") > 1:
+        issues.append("too many paragraph breaks")
     if len(chunks) > 3:
         issues.append(f"too many Telegram chunks: {len(chunks)}")
     if any(len(chunk.text) > 450 for chunk in chunks):
@@ -307,21 +484,35 @@ def _analyze_result(
         issues.append("missing typing delay for at least one chunk")
 
     lower = response_text.lower()
+    if lower.startswith(("понимаю, ", "спасибо за ответ")):
+        issues.append("robotic opening")
+    if scenario["name"] not in MEETING_SCENARIOS and state not in {
+        "meeting_booked",
+        "closed",
+    }:
+        if any(marker in lower for marker in ("15-минут", "созвон", "встречу")):
+            issues.append("premature meeting CTA")
     if scenario["name"] == "bot_check" and any(
         phrase in lower for phrase in ("я бот", "я ии", "искусственный интеллект")
     ):
         issues.append("bot_check response reveals automation")
-    if scenario["name"] == "spam_objection" and intent != "negative" and not any(
-        marker in lower for marker in ("заблок", "блокиров", "риск", "лимит")
+    if scenario["name"] in RISK_SCENARIOS and intent != "negative" and not any(
+        marker in lower
+        for marker in ("заблок", "блокиров", "риск", "лимит", "данн", "доступ")
     ):
-        issues.append("spam objection did not address block/risk concern")
-    if scenario["name"] == "meeting_intent" and state not in {"hot", "meeting_booked"}:
+        issues.append("risk concern was not addressed")
+    if scenario["name"] in MEETING_SCENARIOS and state not in {"hot", "meeting_booked"}:
         issues.append(f"meeting intent did not become hot/meeting_booked: {state}")
-    if scenario["name"] == "hard_refusal":
+    if state == "meeting_booked" and "?" in response_text:
+        issues.append("meeting response asked a follow-up question")
+    if scenario["name"] in HARD_STOP_SCENARIOS:
         if state != "closed":
             issues.append(f"hard refusal did not close conversation: {state}")
         if "?" in response_text:
             issues.append("hard refusal response asked a follow-up question")
+    if "price" in scenario["name"] or "pricing" in scenario["name"]:
+        if any(marker in response_text for marker in ("₽", "$", " руб", " долларов")):
+            issues.append("pricing response invented an exact price")
 
     return issues
 
@@ -452,7 +643,7 @@ def write_report(results: list[ScenarioResult], output: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run autonomous dialogue scenarios.")
     parser.add_argument("--lead-id", type=int, required=True)
-    parser.add_argument("--limit", type=int, default=len(DEFAULT_SCENARIOS))
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--keep-db", action="store_true")
     parser.add_argument(
         "--output",

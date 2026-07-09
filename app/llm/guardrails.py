@@ -68,7 +68,14 @@ def check_anti_repetition(
 
 def check_no_bot_words(text: str, forbidden: list[str] | None = None) -> bool:
     if forbidden is None:
-        forbidden = ["бот", "ассистент", "искусственный интеллект", "нейросеть", "я ии"]
+        forbidden = [
+            "бот",
+            "ассистент",
+            "искусственный интеллект",
+            "нейросеть",
+            "я ии",
+            "ai",
+        ]
     lower_text = text.lower()
     for word in forbidden:
         # Match whole words only to avoid false positives like "работаю" or "робот".
@@ -123,6 +130,29 @@ def check_no_banned_sales_phrases(text: str) -> bool:
     return not any(phrase in lower_text for phrase in banned)
 
 
+def check_no_unsupported_product_claims(text: str) -> bool:
+    """Block factual product claims that must not be invented by the model."""
+    lower_text = text.lower()
+    patterns = (
+        r"интеграц\w*\s+с\s+[^.?!]+(?:работа|поддерж|есть|можно)",
+        r"готов\w*\s+коннектор",
+        r"через\s+вебхук",
+        r"есть\s+реальн\w*\s+кейс",
+        r"сократил\w*[^.?!]*\d",
+        r"\+\d+\s*%",
+        r"в\s+\d+\s+раз",
+        r"зашифрован\w*\s+вид",
+        r"доступ\s+только\s+у\s+вас",
+        r"без\s+сохранения\s+сообщен",
+        r"официальн\w*\s+telegram\s+bot\s+api",
+        r"\blinkedin\b",
+        r"\bemail\b",
+        r"не\s+пропускает\s+ни\s+одного",
+        r"всегда\s+начинает",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
 def check_no_cjk_arabic(text: str) -> bool:
     """Return True if *text* contains no CJK or Arabic script characters."""
     for ch in text:
@@ -165,6 +195,8 @@ def evaluate_guardrails(text: str, last_messages: list[str]) -> GuardrailsResult
         violations.append("too_many_questions")
     if not check_no_banned_sales_phrases(text):
         violations.append("banned_sales_phrase")
+    if not check_no_unsupported_product_claims(text):
+        violations.append("unsupported_product_claim")
     if not check_no_cjk_arabic(text):
         violations.append("foreign_script")
 

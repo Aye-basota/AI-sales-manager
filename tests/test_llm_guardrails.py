@@ -9,6 +9,7 @@ from app.llm.guardrails import (
     check_no_forbidden_topics,
     check_no_markdown,
     check_no_emoji,
+    check_no_unsupported_product_claims,
     evaluate_guardrails,
 )
 
@@ -79,6 +80,40 @@ def test_check_no_banned_sales_phrases_blocks_templated_hooks():
     assert check_no_banned_sales_phrases("Как сейчас решаете эту задачу?") is False
 
 
+def test_check_no_unsupported_product_claims_blocks_hallucinated_integrations():
+    assert check_no_unsupported_product_claims("По интеграциям нужно проверить схему.") is True
+    assert (
+        check_no_unsupported_product_claims(
+            "Интеграция с amoCRM работает через вебхуки и готовые коннекторы."
+        )
+        is False
+    )
+
+
+def test_check_no_unsupported_product_claims_blocks_fake_case_metrics():
+    assert check_no_unsupported_product_claims("Могу прислать пример сценария.") is True
+    assert (
+        check_no_unsupported_product_claims(
+            "Есть реальные кейсы: клиент сократил время в 3 раза и получил +27%."
+        )
+        is False
+    )
+
+
+def test_check_no_unsupported_product_claims_blocks_unproven_channels():
+    assert check_no_unsupported_product_claims("Работаем аккуратно в Telegram.") is True
+    assert check_no_unsupported_product_claims("Работает через LinkedIn и email.") is False
+
+
+def test_check_no_unsupported_product_claims_blocks_guarantee_language():
+    assert (
+        check_no_unsupported_product_claims(
+            "Он не устает и не пропускает ни одного контакта."
+        )
+        is False
+    )
+
+
 class TestCheckNoBotWords:
     def test_clean_text(self):
         assert check_no_bot_words("Здравствуйте, хотел уточнить детали.") is True
@@ -97,6 +132,9 @@ class TestCheckNoBotWords:
 
     def test_detects_ya_ii(self):
         assert check_no_bot_words("я ИИ") is False
+
+    def test_detects_latin_ai(self):
+        assert check_no_bot_words("AI ведет первые сообщения") is False
 
 
 class TestCheckNoMarkdown:
@@ -171,6 +209,14 @@ class TestEvaluateGuardrails:
         result = evaluate_guardrails("Понимаю, а как сейчас решаете эту задачу?", [])
         assert result.approved is False
         assert "banned_sales_phrase" in result.violations
+
+    def test_rejected_unsupported_product_claim(self):
+        result = evaluate_guardrails(
+            "Интеграция с Bitrix24 работает через готовые коннекторы.",
+            [],
+        )
+        assert result.approved is False
+        assert "unsupported_product_claim" in result.violations
 
     def test_multiple_violations(self):
         bad_text = "# политика и я бот"

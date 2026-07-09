@@ -365,8 +365,7 @@ async def cmd_help(message: types.Message):
         "/discover — поиск лидов\n"
         "/analytics — аналитика\n"
         "/hotleads — горячие лиды\n"
-        "/conversations — последние диалоги\n"
-        "/conversations <contact_id> — история конкретного контакта"
+        "/conversations [contact_id] — последние диалоги или история контакта"
     )
     await message.answer(text, reply_markup=_main_menu_keyboard())
 
@@ -1508,6 +1507,45 @@ async def cancel_csv_import(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(lambda c: c.data == "csv:create_campaign")
 async def start_campaign_from_csv(callback: types.CallbackQuery, state: FSMContext):
+    await _show_campaign_script_picker(callback, state)
+
+
+def _is_message_not_modified(exc: TelegramBadRequest) -> bool:
+    return "message is not modified" in str(exc).lower()
+
+
+async def _send_or_edit_callback_message(
+    callback: types.CallbackQuery,
+    text: str,
+    reply_markup: types.InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = None,
+) -> str:
+    """Prefer editing the bot message that owns an inline keyboard."""
+    if callback.message is not None:
+        try:
+            await callback.message.edit_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+            return "edited"
+        except TelegramBadRequest as exc:
+            if _is_message_not_modified(exc):
+                return "unchanged"
+            logger.debug("Could not edit callback message, sending a new one: %s", exc)
+            await callback.message.answer(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+            return "sent"
+
+    return "missing_message"
+
+
+async def _show_campaign_script_picker(
+    callback: types.CallbackQuery, state: FSMContext
+) -> None:
     data = await state.get_data()
     records = data.get("records", [])
     if not records:
@@ -1526,10 +1564,12 @@ async def start_campaign_from_csv(callback: types.CallbackQuery, state: FSMConte
         scripts = result.scalars().all()
 
     if not scripts:
-        await callback.message.answer(
-            "❌ Нет активных скриптов. Сначала создайте скрипт через /newscript"
+        await _send_or_edit_callback_message(
+            callback,
+            "❌ Нет активных скриптов. Сначала создайте скрипт через /newscript",
         )
         await state.clear()
+        await callback.answer()
         return
 
     kb_rows = [
@@ -1540,8 +1580,20 @@ async def start_campaign_from_csv(callback: types.CallbackQuery, state: FSMConte
         ]
         for s in scripts
     ]
+    kb_rows.append(
+        [
+            types.InlineKeyboardButton(
+                text="❌ Отмена", callback_data="campaign_select:cancel"
+            )
+        ]
+    )
     kb = types.InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    await callback.message.answer("Выберите скрипт для кампании:", reply_markup=kb)
+    await _send_or_edit_callback_message(
+        callback,
+        "Выберите скрипт для кампании.\n\n"
+        "После выбора я пересоберу предпросмотр первого сообщения.",
+        reply_markup=kb,
+    )
     await callback.answer()
 
 
@@ -1568,10 +1620,6 @@ def _preview_keyboard() -> types.InlineKeyboardMarkup:
             ],
         ]
     )
-
-
-def _is_message_not_modified(exc: TelegramBadRequest) -> bool:
-    return "message is not modified" in str(exc).lower()
 
 
 async def _generate_preview_message(script: Script, record: dict) -> str:
@@ -1659,7 +1707,9 @@ async def process_campaign_script(callback: types.CallbackQuery, state: FSMConte
     await state.set_state(CampaignCreateFSM.preview)
 
     text = f"👁 Предпросмотр первого сообщения:\n\n{preview_text}"
-    await callback.message.answer(text, reply_markup=_preview_keyboard())
+    await _send_or_edit_callback_message(
+        callback, text, reply_markup=_preview_keyboard()
+    )
     await callback.answer()
 
 
@@ -1699,7 +1749,16 @@ async def handle_preview_regenerate(callback: types.CallbackQuery, state: FSMCon
 async def handle_preview_change_script(
     callback: types.CallbackQuery, state: FSMContext
 ):
-    await start_campaign_from_csv(callback, state)
+    await _show_campaign_script_picker(callback, state)
+
+
+@router.callback_query(lambda c: c.data == "campaign_select:cancel")
+async def cancel_campaign_script_selection(
+    callback: types.CallbackQuery, state: FSMContext
+):
+    await state.clear()
+    await callback.answer("❌ Отменено")
+    await _send_or_edit_callback_message(callback, "Создание кампании отменено.")
 
 
 @router.callback_query(lambda c: c.data == "preview:launch")
@@ -2247,6 +2306,7 @@ CALLBACK_STATE_REQUIREMENTS: list[tuple[Callable[[str], bool], str]] = [
     (lambda data: data.startswith("script:"), _state_name(ScriptCreateFSM.confirm)),
     (lambda data: data.startswith("csv:"), _state_name(CSVImportFSM.preview)),
     (lambda data: data.startswith("campaign_script:"), _state_name(CampaignCreateFSM.select_script)),
+    (lambda data: data.startswith("campaign_select:"), _state_name(CampaignCreateFSM.select_script)),
     (lambda data: data.startswith("preview:"), _state_name(CampaignCreateFSM.preview)),
     (lambda data: data.startswith("campaign:"), _state_name(CampaignCreateFSM.confirm)),
     (lambda data: data.startswith("discover:"), _state_name(DiscoverFSM.source)),

@@ -56,7 +56,10 @@ logger = logging.getLogger(__name__)
 
 _inbound_clients: dict[str, SellerClient] = {}
 
-FALLBACK_TEXT = "Извините, не совсем понял. Могу ли я уточнить — вас интересует {goal}?"
+FALLBACK_TEXT = (
+    "Извините, я не до конца понял контекст. Сформулирую проще: мы помогаем "
+    "аккуратнее начинать диалоги с потенциальными клиентами без лишней ручной рутины."
+)
 PUNCTUATION_ONLY_CHARS = {"?", "!", ".", " "}
 BOT_CHECK_PATTERNS = (
     r"(?<![0-9a-zа-яё])бот(?![0-9a-zа-яё])",
@@ -64,7 +67,6 @@ BOT_CHECK_PATTERNS = (
     r"(?<![0-9a-zа-яё])ai(?![0-9a-zа-яё])",
     r"нейросет",
     r"автомат",
-    r"рассыл",
 )
 DELIVERY_RISK_PATTERNS = (
     r"спам",
@@ -76,6 +78,63 @@ DELIVERY_RISK_PATTERNS = (
     r"руг.*telegram",
     r"telegram.*огранич",
     r"огранич.*telegram",
+)
+SECURITY_PATTERNS = (
+    r"безопасн",
+    r"доступ",
+    r"персональн.*данн",
+    r"данн",
+)
+WRONG_PERSON_PATTERNS = (
+    r"не\s+ко\s+мне",
+    r"не\s+занимаюсь",
+    r"не\s+принимаю\s+.*решени",
+)
+PAUSE_PATTERNS = (
+    r"не\s+до\s+этого",
+    r"напишите\s+через",
+    r"вернемся\s+к\s+этому",
+    r"верн[её]мся\s+позже",
+    r"давайте\s+(?:позже|потом)",
+    r"может\s+потом",
+    r"через\s+пару\s+месяц",
+)
+PRICING_PATTERNS = (
+    r"цена",
+    r"стоим",
+    r"стоит",
+    r"сколько.*стоит",
+    r"дорого",
+    r"бюджет",
+)
+INTEGRATION_PATTERNS = (
+    r"интеграц",
+    r"amocrm",
+    r"амоcrm",
+    r"bitrix",
+    r"битрикс",
+    r"\bcrm\b.*(?:связ|интеграц)",
+    r"(?:связ|интеграц).*\bcrm\b",
+)
+CASE_PATTERNS = (
+    r"кейс",
+    r"пример",
+    r"результат",
+)
+CONTACT_SOURCE_PATTERNS = (
+    r"откуда\s+.*контакт",
+    r"где\s+.*контакт",
+    r"кто\s+вы",
+    r"вы\s+кто",
+)
+COMPETITOR_PATTERNS = (
+    r"обычн.*рассыл",
+    r"чем\s+.*отлич",
+    r"массов.*отправ",
+)
+ENGLISH_REQUEST_PATTERNS = (
+    r"\benglish\b",
+    r"explain\s+in\s+english",
 )
 
 
@@ -133,6 +192,8 @@ def _polish_inbound_response(text: str) -> str:
     )
     cleaned = re.sub(r"(?i)\bв\s+вашем\s+стеке\b", "у вас", cleaned)
     cleaned = re.sub(r"(?i)\bAI\s+Sales\s+Manager\b", "наш инструмент", cleaned)
+    cleaned = re.sub(r"(?i)\bleads\b", "лидами", cleaned)
+    cleaned = re.sub(r"(?i)\blead\b", "лидом", cleaned)
 
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", cleaned) if p.strip()]
     if len(paragraphs) > 2:
@@ -173,14 +234,69 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
             "остановить и разобрать причину, а не продолжать давить."
         )
 
+    if _matches_any(SECURITY_PATTERNS, lower):
+        return (
+            "Про доступы и данные лучше говорить аккуратно: без вашей схемы не буду "
+            "обещать лишнего. Обычно сначала фиксируют, какие данные нужны, кто их видит "
+            "и как быстро можно отозвать доступ, а уже потом включают отправку."
+        )
+
+    if _matches_any(WRONG_PERSON_PATTERNS, lower):
+        return (
+            "Понял, извините, что написал не по адресу. Не буду отвлекать, "
+            "спасибо, что ответили."
+        )
+
+    if _matches_any(PAUSE_PATTERNS, lower):
+        return "Понял, не отвлекаю. Тогда вернусь позже, хорошего дня."
+
+    if _matches_any(PRICING_PATTERNS, lower):
+        return (
+            "По цене не буду называть цифру без вводных: она зависит от объема контактов "
+            "и того, насколько глубоко нужно встраиваться в процесс. Могу сначала коротко "
+            "описать, из чего обычно складывается оценка."
+        )
+
+    if _matches_any(INTEGRATION_PATTERNS, lower):
+        return (
+            "По интеграциям не буду обещать без проверки вашей схемы. Обычно сначала "
+            "смотрим, какие данные нужно передавать между CRM и диалогами, а потом уже "
+            "понятно, насколько просто это связать."
+        )
+
+    if _matches_any(CASE_PATTERNS, lower):
+        return (
+            "Кейсы лучше отправлять с контекстом, без выдуманных цифр. Могу коротко "
+            "показать пример сценария и какие метрики обычно смотрят: ответы, встречи "
+            "и ручное время команды."
+        )
+
+    if _matches_any(CONTACT_SOURCE_PATTERNS, lower):
+        return (
+            "Я из Neural Lead. Написал по рабочему контакту из открытого контекста; "
+            "если неактуально, спокойно остановлюсь."
+        )
+
+    if _matches_any(COMPETITOR_PATTERNS, lower):
+        return (
+            "Отличие не в массовой отправке, а в аккуратном выборе контактов, "
+            "персонализации и остановке, если человеку неактуально. Идея в том, "
+            "чтобы не давить объемом, а вести первый диалог бережно."
+        )
+
+    if _matches_any(ENGLISH_REQUEST_PATTERNS, lower):
+        return (
+            "In short: it helps teams start careful first conversations with potential "
+            "B2B clients in Telegram, without turning outreach into mass spam."
+        )
+
     if lead_text.strip() and set(lead_text.strip()) <= PUNCTUATION_ONLY_CHARS:
         return (
             "Понял, похоже написал не в самый удобный момент.\n\n"
             "Скажите, актуально ли вам сейчас улучшать обработку лидов, или лучше не беспокоить?"
         )
 
-    goal = script.goal or "наше предложение"
-    return FALLBACK_TEXT.format(goal=goal)
+    return FALLBACK_TEXT
 
 
 def _needs_deterministic_fallback(lead_text: str) -> bool:
@@ -188,7 +304,20 @@ def _needs_deterministic_fallback(lead_text: str) -> bool:
     lower = lead_text.lower()
     if lead_text.strip() and set(lead_text.strip()) <= PUNCTUATION_ONLY_CHARS:
         return True
-    return _matches_any(BOT_CHECK_PATTERNS + DELIVERY_RISK_PATTERNS, lower)
+    return _matches_any(
+        BOT_CHECK_PATTERNS
+        + DELIVERY_RISK_PATTERNS
+        + SECURITY_PATTERNS
+        + WRONG_PERSON_PATTERNS
+        + PAUSE_PATTERNS
+        + PRICING_PATTERNS
+        + INTEGRATION_PATTERNS
+        + CASE_PATTERNS
+        + CONTACT_SOURCE_PATTERNS
+        + COMPETITOR_PATTERNS
+        + ENGLISH_REQUEST_PATTERNS,
+        lower,
+    )
 
 
 async def start_inbound_listeners(db_session: AsyncSession | None = None) -> None:
@@ -487,20 +616,6 @@ async def _handle_inbound_message(
                     daily_limit,
                 )
                 return
-
-            last_message_at = getattr(db_account, "last_message_at", None)
-            if last_message_at is not None:
-                if last_message_at.tzinfo is None:
-                    last_message_at = last_message_at.replace(tzinfo=timezone.utc)
-                elapsed = (datetime.now(timezone.utc) - last_message_at).total_seconds()
-                if elapsed < 30:
-                    await db.commit()
-                    logger.info(
-                        "Account %s is rate limited for inbound reply (%.1fs since last message)",
-                        account.id,
-                        elapsed,
-                    )
-                    return
 
             # 9. Build context
             context = await get_conversation_context(db, conversation.id, limit=10)

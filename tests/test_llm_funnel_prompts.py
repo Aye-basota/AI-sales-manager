@@ -81,3 +81,22 @@ class TestBuildReplyUserPrompt:
         )
         assert "Текущий этап диалога: qualification" in prompt
         assert "НЕЛЬЗЯ предлагать созвон" in prompt
+
+    def test_reply_prompt_discourages_robotic_templates(self):
+        script = MagicMock(
+            sales_funnel=None,
+            call_to_action="созвон",
+        )
+
+        prompt = build_reply_user_prompt(
+            script,
+            conversation_history=[],
+            lead_facts={},
+            last_agent_message="Привет",
+            lead_message="А сколько стоит?",
+            conversation_stage="engagement",
+        )
+
+        assert "Не строй ответ по шаблону из трех блоков" in prompt
+        assert "Не начинай каждый ответ одинаково" in prompt
+        assert "Не придумывай цены" in prompt

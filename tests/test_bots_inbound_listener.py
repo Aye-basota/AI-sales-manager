@@ -398,7 +398,8 @@ async def test_handle_inbound_message_guardrails_block():
                                 # Fallback text should still be sent
                                 client.send_message.assert_awaited_once()
                                 args, kwargs = client.send_message.call_args
-                                assert "Извините, не совсем понял" in kwargs["text"]
+                                assert "Извините, я не до конца понял контекст" in kwargs["text"]
+                                assert "созвон" not in kwargs["text"].lower()
                                 mock_notif.assert_not_awaited()
 
 
@@ -681,7 +682,127 @@ def test_fallback_text_does_not_match_bot_inside_working_words():
     )
 
     assert "Пишу из рабочего Telegram" not in text
-    assert "обсудить обработку лидов" in text
+    assert "без лишней ручной рутины" in text
+    assert "созвон" not in text.lower()
+
+
+def test_fallback_for_wrong_person_does_not_push_meeting():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "Это не ко мне, я не занимаюсь продажами.",
+        script,
+    )
+
+    assert "не по адресу" in text
+    assert "созвон" not in text.lower()
+    assert "?" not in text
+    assert _needs_deterministic_fallback("Это не ко мне") is True
+
+
+def test_fallback_for_pause_does_not_continue_interrogation():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "Сейчас не до этого, напишите через пару месяцев.",
+        script,
+    )
+
+    assert "не отвлекаю" in text
+    assert "?" not in text
+
+
+def test_pricing_patterns_match_natural_price_question():
+    assert (
+        _needs_deterministic_fallback(
+            "Сколько это стоит? И чем вы лучше обычного менеджера?"
+        )
+        is True
+    )
+
+
+def test_pause_patterns_do_not_match_process_word_later():
+    assert (
+        _needs_deterministic_fallback(
+            "У нас лиды из конференций, потом менеджер руками пишет в Telegram."
+        )
+        is False
+    )
+
+
+def test_integration_patterns_do_not_match_existing_crm_objection():
+    assert (
+        _needs_deterministic_fallback(
+            "У нас уже есть CRM и менеджеры, зачем еще один инструмент?"
+        )
+        is False
+    )
+
+
+def test_fallback_for_integration_question_avoids_unsupported_claims():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "А с amoCRM или Bitrix24 это можно связать?",
+        script,
+    )
+
+    assert "не буду обещать" in text
+    assert "готовые коннекторы" not in text.lower()
+    assert "работает" not in text.lower()
+
+
+def test_polish_replaces_english_leads_word():
+    text = _polish_inbound_response(
+        "Расскажите, с какой задачей чаще всего тратите время на первые контакты с новыми leads?"
+    )
+
+    assert "leads" not in text.lower()
+    assert "лидами" in text
+
+
+def test_fallback_for_security_question_addresses_access_and_data():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "Что с безопасностью данных и доступами к Telegram аккаунту?",
+        script,
+    )
+
+    assert "доступ" in text.lower()
+    assert "данные" in text.lower()
+    assert "не буду" in text.lower()
+
+
+def test_fallback_for_case_question_avoids_fake_metrics():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "Есть кейсы по B2B SaaS или это пока только теория?",
+        script,
+    )
+
+    assert "без выдуманных цифр" in text
+    assert "+27%" not in text
+    assert "3 раза" not in text
+
+
+def test_fallback_for_competitor_compare_is_not_bot_check():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "Чем вы отличаетесь от обычной рассылки через Telegram?",
+        script,
+    )
+
+    assert "массовой отправке" in text
+    assert "Пишу из рабочего Telegram" not in text
+
+
+def test_fallback_for_english_request_is_short_and_safe():
+    script = Script(name="Test", goal="договориться о созвоне")
+    text = _build_inbound_fallback_text(
+        "Can you explain in English what this does?",
+        script,
+    )
+
+    assert "In short" in text
+    assert "LinkedIn" not in text
+    assert "email" not in text.lower()
 
 
 @pytest.mark.asyncio
@@ -752,7 +873,7 @@ async def test_handle_inbound_message_skips_reply_when_daily_limit_reached():
 
 
 @pytest.mark.asyncio
-async def test_handle_inbound_message_skips_reply_when_account_rate_limited():
+async def test_handle_inbound_message_replies_even_when_account_recently_sent():
     account = TelegramAccount(
         id=uuid.uuid4(),
         phone="+123",
@@ -760,7 +881,8 @@ async def test_handle_inbound_message_skips_reply_when_account_rate_limited():
         last_message_at=datetime.now(timezone.utc),
     )
     client = MagicMock()
-    client.send_message = AsyncMock()
+    client.set_online = AsyncMock()
+    client.send_message = AsyncMock(return_value={"message_id": 1})
     client.read_history = AsyncMock()
 
     message = MagicMock()
@@ -806,16 +928,32 @@ async def test_handle_inbound_message_skips_reply_when_account_rate_limited():
             new_callable=AsyncMock,
             return_value="positive",
         ):
-            with patch(
-                "app.bots.inbound_listener.extract_facts_from_message",
-                new_callable=AsyncMock,
-                return_value={},
-            ):
+            with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
+                engine_inst = MockEngine.return_value
+                engine_inst.generate_response_with_guardrails = AsyncMock(
+                    return_value={
+                        "text": "Да, отвечу коротко: можем показать, где теряются лиды.",
+                        "model": "gpt-4",
+                        "tokens_used": 7,
+                    }
+                )
                 with patch(
-                    "app.bots.inbound_listener.add_message",
+                    "app.bots.inbound_listener.extract_facts_from_message",
                     new_callable=AsyncMock,
+                    return_value={},
                 ):
-                    await _handle_inbound_message(account, client, message)
+                    with patch(
+                        "app.bots.inbound_listener.get_conversation_context",
+                        new_callable=AsyncMock,
+                        return_value={"messages": [], "facts": {}},
+                    ):
+                        with patch(
+                            "app.bots.inbound_listener.add_message",
+                            new_callable=AsyncMock,
+                        ):
+                            await _handle_inbound_message(account, client, message)
 
-    client.send_message.assert_not_awaited()
+    client.send_message.assert_awaited_once()
+    assert account.daily_messages_sent == 1
+    assert account.last_message_at is not None
     assert conversation.current_state == "hot"

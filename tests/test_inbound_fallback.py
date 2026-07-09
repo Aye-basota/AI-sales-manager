@@ -96,8 +96,8 @@ async def test_guardrails_reject_fallback_sent():
 
                             client.send_message.assert_awaited_once()
                             args, kwargs = client.send_message.call_args
-                            assert "Извините, не совсем понял" in kwargs["text"]
-                            assert "book a demo" in kwargs["text"]
+                            assert "Извините, я не до конца понял контекст" in kwargs["text"]
+                            assert "book a demo" not in kwargs["text"]
 
 
 @pytest.mark.asyncio

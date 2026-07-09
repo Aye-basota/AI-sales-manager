@@ -16,7 +16,48 @@ VALID_INTENTS = {
 }
 
 
+HARD_NEGATIVE_PATTERNS = (
+    r"\bне\s+пишите\b",
+    r"\bбольше\s+не\s+пишите\b",
+    r"\bне\s+надо\b",
+    r"\bне\s+нужно\b",
+    r"\bне\s+интересно\b",
+    r"\bне\s+актуально\b",
+    r"\bне\s+беспоко(?:й|и)те\b",
+    r"\bотстаньте\b",
+    r"\bудалите\s+(?:меня|мой\s+контакт|мои\s+данные)\b",
+    r"\bstop\b",
+    r"\bunsubscribe\b",
+)
+
+MEETING_PATTERNS = (
+    r"\bдава(?:й|йте)\s+созвон",
+    r"\bсозвон(?:им|иться|иться)?\b",
+    r"\bсозвонимся\b",
+    r"\bвстретимся\b",
+    r"\bвстреч[ауи]\b",
+    r"\bдемо\b",
+    r"\bзвонок\b",
+    r"\bколл\b",
+)
+
+
+def _classify_intent_rule_based(message: str) -> str | None:
+    lower = message.lower()
+    if lower.strip(" .,!?:;") in {"нет", "no", "stop"}:
+        return "negative"
+    if any(re.search(pattern, lower) for pattern in HARD_NEGATIVE_PATTERNS):
+        return "negative"
+    if any(re.search(pattern, lower) for pattern in MEETING_PATTERNS):
+        return "meeting_intent"
+    return None
+
+
 async def classify_intent(message: str, engine: LLMEngine) -> str:
+    rule_based = _classify_intent_rule_based(message)
+    if rule_based:
+        return rule_based
+
     prompt = build_intent_classification_prompt(message)
     messages = [
         {

@@ -46,6 +46,7 @@ def mock_callback():
     callback.answer = AsyncMock()
     callback.message = AsyncMock(spec=types.Message)
     callback.message.answer = AsyncMock()
+    callback.message.edit_text = AsyncMock()
     return callback
 
 
@@ -264,6 +265,7 @@ class TestUploadFSM:
             await start_campaign_from_csv(mock_callback, mock_state)
 
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.select_script)
-        mock_callback.message.answer.assert_called_once()
-        text = mock_callback.message.answer.call_args[0][0]
+        mock_callback.message.edit_text.assert_awaited_once()
+        mock_callback.message.answer.assert_not_awaited()
+        text = mock_callback.message.edit_text.call_args[0][0]
         assert "Выберите скрипт" in text

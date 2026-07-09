@@ -117,3 +117,18 @@ def test_system_prompt_no_bot_rule():
     prompt = build_system_prompt(script)
     assert "Никогда не признавайся" in prompt
     assert "что ты бот или ИИ" in prompt
+
+
+def test_system_prompt_includes_nurturing_rules():
+    script = MagicMock()
+    script.role_prompt = None
+    script.target_audience = None
+    script.goal = None
+    script.success_criteria = None
+    script.tone = None
+
+    prompt = build_system_prompt(script)
+
+    assert "ПРИНЦИПЫ LEAD NURTURING" in prompt
+    assert "{nurturing_rules}" not in prompt
+    assert "{ nurturing_rules }" not in prompt

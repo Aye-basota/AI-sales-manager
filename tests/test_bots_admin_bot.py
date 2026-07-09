@@ -1,4 +1,5 @@
 import uuid
+import re
 from datetime import datetime, time as dt_time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,7 @@ from app.bots.admin_bot import (
     _format_hotleads,
     _format_analytics,
     _build_campaign_buttons,
+    _build_script_buttons,
     _dispatch_navigation_override,
     _main_menu_keyboard,
     _notify_admin_error,
@@ -61,6 +63,7 @@ from app.bots.admin_bot import (
     handle_preview_regenerate,
     handle_preview_change_script,
     handle_preview_launch,
+    cancel_campaign_script_selection,
     handle_script_delete,
     handle_script_toggle,
     handle_menu_button,
@@ -100,6 +103,7 @@ def mock_callback():
     callback.answer = AsyncMock()
     callback.message = AsyncMock(spec=types.Message)
     callback.message.answer = AsyncMock()
+    callback.message.edit_text = AsyncMock()
     return callback
 
 
@@ -251,6 +255,8 @@ class TestCmdHelp:
         assert "/scripts" in text
         assert "/upload" in text
         assert "/cancel" in text
+        commands = re.findall(r"^(/[a-z]+)", text, flags=re.MULTILINE)
+        assert len(commands) == len(set(commands))
 
 
 class TestCmdCancel:
@@ -391,6 +397,24 @@ class TestAdminFallbacks:
 
 
 class TestCmdScripts:
+    def test_script_keyboard_exposes_create_toggle_delete(self):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Script A",
+            goal="Greet",
+            max_messages=1,
+            tone="casual",
+            is_active=True,
+        )
+
+        keyboard = _build_script_buttons([(script, 0)])
+        buttons = [button for row in keyboard.inline_keyboard for button in row]
+        callbacks = [button.callback_data for button in buttons]
+
+        assert "script_new" in callbacks
+        assert any(callback.startswith("script_toggle:") for callback in callbacks)
+        assert any(callback.startswith("script_delete:") for callback in callbacks)
+
     async def test_returns_formatted_scripts(self, mock_message):
         script = Script(
             id=uuid.uuid4(),
@@ -494,6 +518,31 @@ class TestCmdScripts:
 
         session.delete.assert_not_awaited()
         mock_callback.answer.assert_awaited_once_with("❌ Скрипт используется в кампаниях")
+
+    async def test_script_delete_removes_unused_script(self, mock_callback):
+        script = Script(id=uuid.uuid4(), name="Unused", goal="Greet", is_active=True)
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        script_result = MagicMock()
+        script_result.scalar_one_or_none.return_value = script
+        session = AsyncMock()
+        session.execute.side_effect = [count_result, script_result]
+        session.delete = AsyncMock()
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
+            patch("app.bots.admin_bot.cmd_scripts", new=AsyncMock()) as mock_scripts,
+        ):
+            mock_callback.data = f"script_delete:{script.id}:0"
+            await handle_script_delete(mock_callback)
+
+        session.delete.assert_awaited_once_with(script)
+        session.commit.assert_awaited_once()
+        mock_callback.answer.assert_awaited_once_with("🗑 Скрипт удалён")
+        mock_scripts.assert_awaited_once_with(mock_callback.message)
 
 
 class TestCmdCampaigns:
@@ -1166,14 +1215,15 @@ class TestCampaignCreateFSM:
 
         mock_state.update_data.assert_any_await(script_id=script_id)
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.preview)
-        text = mock_callback.message.answer.call_args[0][0]
+        text = mock_callback.message.edit_text.call_args[0][0]
         assert "Привет, Alice!" in text
         assert (
             "Запустить"
-            in mock_callback.message.answer.call_args[1]["reply_markup"]
+            in mock_callback.message.edit_text.call_args[1]["reply_markup"]
             .inline_keyboard[0][0]
             .text
         )
+        mock_callback.message.answer.assert_not_awaited()
 
     async def test_preview_regenerate(self, mock_callback, mock_state):
         script_id = uuid.uuid4()
@@ -1309,8 +1359,22 @@ class TestCampaignCreateFSM:
             await handle_preview_change_script(mock_callback, mock_state)
 
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.select_script)
-        mock_callback.message.answer.assert_called_once()
-        assert "Выберите скрипт" in mock_callback.message.answer.call_args[0][0]
+        mock_callback.message.edit_text.assert_awaited_once()
+        mock_callback.message.answer.assert_not_awaited()
+        assert "Выберите скрипт" in mock_callback.message.edit_text.call_args[0][0]
+
+    async def test_campaign_script_selection_cancel(self, mock_callback, mock_state):
+        mock_callback.data = "campaign_select:cancel"
+
+        await cancel_campaign_script_selection(mock_callback, mock_state)
+
+        mock_state.clear.assert_awaited_once()
+        mock_callback.answer.assert_awaited_once_with("❌ Отменено")
+        mock_callback.message.edit_text.assert_awaited_once_with(
+            "Создание кампании отменено.",
+            reply_markup=None,
+            parse_mode=None,
+        )
 
 
 class TestBuildCampaignButtons:
