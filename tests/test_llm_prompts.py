@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 
 from app.llm.prompts import (
+    build_initial_user_prompt,
     build_intent_classification_prompt,
     build_system_prompt,
     build_user_prompt,
@@ -58,6 +59,25 @@ def test_build_user_prompt():
     assert "Acme" in prompt
     assert "CEO" in prompt
     assert "Расскажите о вашем продукте" in prompt
+
+
+def test_initial_prompt_asks_for_human_like_opening():
+    script = MagicMock()
+    script.sales_funnel = None
+    script.max_first_message_length = 200
+    contact = MagicMock()
+    contact.first_name = "Максим"
+    contact.company_name = "Рога и копыта"
+    contact.position = "CTO"
+    contact.city = None
+    contact.industry = None
+
+    prompt = build_initial_user_prompt(script, contact)
+
+    assert "без рекламного слогана" in prompt
+    assert "как у вас в" in prompt
+    assert "в вашем стеке" in prompt
+    assert "Задай один простой вопрос" in prompt
 
 
 def test_build_intent_classification_prompt():

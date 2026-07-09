@@ -12,6 +12,7 @@ from app.bots.admin_bot import (
     _format_hotleads,
     _format_analytics,
     _build_campaign_buttons,
+    _main_menu_keyboard,
     _send_or_edit_campaigns,
     cmd_start,
     cmd_help,
@@ -52,6 +53,8 @@ from app.bots.admin_bot import (
     handle_preview_regenerate,
     handle_preview_change_script,
     handle_preview_launch,
+    handle_script_delete,
+    handle_script_toggle,
     ScriptCreateFSM,
     CSVImportFSM,
     CampaignStartFSM,
@@ -200,6 +203,18 @@ class TestCmdStart:
         assert "/startcampaign" in text
         assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
+    async def test_main_menu_exposes_core_actions(self):
+        keyboard = _main_menu_keyboard()
+        labels = {
+            button.text
+            for row in keyboard.keyboard
+            for button in row
+        }
+        assert "New Script" in labels
+        assert "Start Campaign" in labels
+        assert "Discover" in labels
+        assert "Conversations" in labels
+
 
 class TestCmdHelp:
     async def test_shows_schema_and_commands(self, mock_message):
@@ -243,7 +258,58 @@ class TestCmdScripts:
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
             await cmd_scripts(mock_message)
 
-        mock_message.answer.assert_called_once_with("No scripts found.")
+        mock_message.answer.assert_called_once()
+        assert mock_message.answer.call_args[0][0] == "No scripts found."
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+
+    async def test_script_toggle_flips_active_status(self, mock_callback):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Script A",
+            goal="Greet",
+            is_active=True,
+        )
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = script
+        context = _make_mock_session(result_mock)
+
+        with (
+            patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
+            patch("app.bots.admin_bot.cmd_scripts", new=AsyncMock()) as mock_scripts,
+        ):
+            mock_callback.data = f"script_toggle:{script.id}"
+            await handle_script_toggle(mock_callback)
+
+        assert script.is_active is False
+        mock_callback.answer.assert_awaited_once_with("✅ Обновлено")
+        mock_scripts.assert_awaited_once_with(mock_callback.message)
+
+    async def test_script_delete_rejects_malformed_id(self, mock_callback):
+        mock_callback.data = "script_delete:not-a-uuid:0"
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal") as mock_session:
+            await handle_script_delete(mock_callback)
+
+        mock_session.assert_not_called()
+        mock_callback.answer.assert_awaited_once_with("❌ Неверный ID")
+
+    async def test_script_delete_blocks_scripts_used_by_campaigns(self, mock_callback):
+        script_id = uuid.uuid4()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 2
+        session = AsyncMock()
+        session.execute.return_value = count_result
+        session.delete = AsyncMock()
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            mock_callback.data = f"script_delete:{script_id}:2"
+            await handle_script_delete(mock_callback)
+
+        session.delete.assert_not_awaited()
+        mock_callback.answer.assert_awaited_once_with("❌ Скрипт используется в кампаниях")
 
 
 class TestCmdCampaigns:

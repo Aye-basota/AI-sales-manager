@@ -4,7 +4,7 @@ from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
 
-from app.core.scheduler import is_within_working_hours
+from app.core.scheduler import is_within_working_hours, normalize_timezone
 
 
 def test_within_hours_moscow():
@@ -36,6 +36,17 @@ def test_invalid_timezone_defaults_to_utc():
     assert (
         is_within_working_hours("NotA/Timezone", time(9, 0), time(18, 0), now) is True
     )
+
+
+def test_moscow_alias_normalized_to_europe_moscow():
+    assert normalize_timezone("Moscow") == "Europe/Moscow"
+    assert normalize_timezone("msk") == "Europe/Moscow"
+    assert normalize_timezone("москва") == "Europe/Moscow"
+
+
+def test_moscow_alias_used_for_working_hours():
+    now = datetime(2024, 1, 15, 7, 0, tzinfo=ZoneInfo("UTC"))
+    assert is_within_working_hours("Moscow", time(9, 0), time(18, 0), now) is True
 
 
 def test_naive_datetime_localized():

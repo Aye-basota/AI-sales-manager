@@ -758,6 +758,87 @@ class TestSendInitialMessage:
                 client_inst.send_message.assert_awaited_once()
                 client_inst.stop.assert_awaited_once()
 
+    async def test_initial_message_retries_robotic_crypto_language(self, mock_db):
+        from app.models.campaign import CampaignContact
+        from app.models.contact import Contact
+        from app.models.conversation import Conversation
+        from app.models.script import Script
+        from app.models.telegram_account import TelegramAccount
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=uuid.uuid4(),
+            contact_id=uuid.uuid4(),
+            status="pending",
+            message_count=0,
+        )
+        contact = Contact(
+            id=cc.contact_id,
+            telegram_user_id=123456,
+            first_name="Максим",
+        )
+        conversation = Conversation(
+            id=uuid.uuid4(),
+            contact_id=contact.id,
+            campaign_id=cc.campaign_id,
+            current_state="cold",
+        )
+        script = Script(
+            id=uuid.uuid4(),
+            name="Test",
+            role_prompt="Sales",
+            goal="Book",
+            max_messages=3,
+            follow_up_delay_hours=24,
+            working_hours_start=time(9, 0),
+            working_hours_end=time(18, 0),
+            timezone="Europe/Moscow",
+        )
+        account = TelegramAccount(
+            id=uuid.uuid4(),
+            phone="+123",
+            status="ready",
+            daily_messages_sent=0,
+            session_string="sess",
+        )
+
+        with patch("app.llm.engine.LLMEngine") as MockEngine:
+            engine_inst = MockEngine.return_value
+            engine_inst.generate_response_with_guardrails = AsyncMock(
+                side_effect=[
+                    {
+                        "text": "Привет. Помогаем выводить криптовалюту в фиат.",
+                        "model": "gpt-4",
+                        "tokens_used": 10,
+                    },
+                    {
+                        "text": "Привет, Максим. Как сейчас обрабатываете новые заявки?",
+                        "model": "gpt-4",
+                        "tokens_used": 7,
+                    },
+                ]
+            )
+
+            with patch("app.bots.seller_client.SellerClient") as MockClient:
+                client_inst = MockClient.return_value
+                client_inst.start = AsyncMock()
+                client_inst.send_message = AsyncMock(return_value={"message_id": 1})
+                client_inst.stop = AsyncMock()
+
+                await send_initial_message(
+                    db_session=mock_db,
+                    campaign_contact=cc,
+                    contact=contact,
+                    conversation=conversation,
+                    script=script,
+                    account=account,
+                )
+
+        assert engine_inst.generate_response_with_guardrails.await_count == 2
+        sent_text = client_inst.send_message.call_args.kwargs["text"]
+        assert "выводить криптовалюту" not in sent_text.lower()
+        assert "Как сейчас обрабатываете" in sent_text
+
     async def test_guardrails_block_message(self, mock_db):
         from app.models.campaign import CampaignContact
         from app.models.contact import Contact

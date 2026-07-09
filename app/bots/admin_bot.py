@@ -17,6 +17,12 @@ from types import SimpleNamespace
 from app.config import get_settings
 from app.config.telegram import is_configured_bot_token
 from app.core.funnel import get_first_stage, get_max_length_for_stage
+from app.core.initial_message_quality import (
+    build_initial_message_retry_prompt,
+    build_safe_initial_fallback,
+    needs_initial_message_retry,
+)
+from app.core.scheduler import normalize_timezone
 from app.db.session import AsyncSessionLocal
 from app.llm.engine import FALLBACK_TEXT, LLMEngine
 from app.llm.prompts import build_initial_user_prompt, build_system_prompt
@@ -55,9 +61,11 @@ COMMANDS = [
 def _main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Scripts"), KeyboardButton(text="Campaigns")],
-            [KeyboardButton(text="Upload"), KeyboardButton(text="Analytics")],
+            [KeyboardButton(text="Scripts"), KeyboardButton(text="New Script")],
+            [KeyboardButton(text="Campaigns"), KeyboardButton(text="Start Campaign")],
+            [KeyboardButton(text="Upload"), KeyboardButton(text="Discover")],
             [KeyboardButton(text="Hot Leads"), KeyboardButton(text="Help")],
+            [KeyboardButton(text="Conversations"), KeyboardButton(text="Analytics")],
         ],
         resize_keyboard=True,
     )
@@ -196,6 +204,41 @@ def _build_campaign_buttons(campaign) -> list:
         ]
 
 
+def _build_script_buttons(scripts: List) -> types.InlineKeyboardMarkup:
+    rows = [
+        [types.InlineKeyboardButton(text="➕ New Script", callback_data="script_new")]
+    ]
+    for item in scripts:
+        try:
+            script, campaign_count = item[0], item[1]
+        except Exception:
+            script, campaign_count = item, 0
+
+        name = (script.name or "Script")[:18]
+        toggle_text = "⏸ Disable" if script.is_active else "▶️ Enable"
+        rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=f"{toggle_text} {name}",
+                    callback_data=f"script_toggle:{script.id}",
+                )
+            ]
+        )
+        rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=f"🗑 {name}",
+                    callback_data=f"script_delete:{script.id}:{campaign_count}",
+                )
+            ]
+        )
+
+    rows.append(
+        [types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_scripts")]
+    )
+    return types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _format_hotleads(rows: List) -> str:
     lines = []
     for idx, (conv, contact) in enumerate(rows, 1):
@@ -293,26 +336,83 @@ async def cmd_scripts(message: types.Message):
         scripts = result.all()
 
     if not scripts:
-        await message.answer("No scripts found.")
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(
+                        text="➕ New Script", callback_data="script_new"
+                    )
+                ]
+            ]
+        )
+        await message.answer("No scripts found.", reply_markup=kb)
         return
 
     text = _format_scripts(scripts)
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                types.InlineKeyboardButton(
-                    text="🔄 Refresh", callback_data="refresh_scripts"
-                )
-            ]
-        ]
-    )
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await message.answer(text, reply_markup=_build_script_buttons(scripts), parse_mode="HTML")
 
 
 @router.callback_query(lambda c: c.data == "refresh_scripts")
 async def refresh_scripts(callback: types.CallbackQuery):
     await cmd_scripts(callback.message)
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "script_new")
+async def handle_script_new(callback: types.CallbackQuery, state: FSMContext):
+    await cmd_newscript(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("script_toggle:"))
+async def handle_script_toggle(callback: types.CallbackQuery):
+    try:
+        script_id = UUID(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Неверный ID")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+        if not script:
+            await callback.answer("❌ Скрипт не найден")
+            return
+        script.is_active = not script.is_active
+        await session.commit()
+
+    await callback.answer("✅ Обновлено")
+    await cmd_scripts(callback.message)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("script_delete:"))
+async def handle_script_delete(callback: types.CallbackQuery):
+    try:
+        parts = callback.data.split(":")
+        script_id = UUID(parts[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Неверный ID")
+        return
+
+    async with AsyncSessionLocal() as session:
+        campaign_count_result = await session.execute(
+            select(func.count(Campaign.id)).where(Campaign.script_id == script_id)
+        )
+        campaign_count = campaign_count_result.scalar() or 0
+        if campaign_count:
+            await callback.answer("❌ Скрипт используется в кампаниях")
+            return
+
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+        if not script:
+            await callback.answer("❌ Скрипт не найден")
+            return
+        await session.delete(script)
+        await session.commit()
+
+    await callback.answer("🗑 Скрипт удалён")
+    await cmd_scripts(callback.message)
 
 
 async def _load_campaigns():
@@ -1084,7 +1184,7 @@ async def process_script_work_end(message: types.Message, state: FSMContext):
 
 @router.message(ScriptCreateFSM.timezone)
 async def process_script_timezone(message: types.Message, state: FSMContext):
-    tz = message.text.strip() or "Europe/Moscow"
+    tz = normalize_timezone(message.text.strip() or "Europe/Moscow")
     await state.update_data(timezone=tz)
     await state.set_state(ScriptCreateFSM.confirm)
     data = await state.get_data()
@@ -1340,7 +1440,25 @@ async def _generate_preview_message(script: Script, record: dict) -> str:
             max_retries=2,
             max_tokens=get_max_length_for_stage(script, stage),
         )
-        return result.get("text", FALLBACK_TEXT)
+        text = result.get("text", FALLBACK_TEXT)
+        if needs_initial_message_retry(text):
+            retry_result = await engine.generate_response_with_guardrails(
+                [
+                    *messages,
+                    {
+                        "role": "user",
+                        "content": build_initial_message_retry_prompt(text),
+                    },
+                ],
+                last_messages=[],
+                max_retries=1,
+                max_tokens=get_max_length_for_stage(script, stage),
+            )
+            retry_text = retry_result.get("text", "")
+            if retry_text and not needs_initial_message_retry(retry_text):
+                return retry_text
+            return build_safe_initial_fallback(contact)
+        return text
     except Exception:
         logger.exception("Failed to generate campaign preview")
         return FALLBACK_TEXT
@@ -1854,10 +1972,14 @@ async def handle_startcamp(callback: types.CallbackQuery, state: FSMContext):
 
 MENU_HANDLERS = {
     "Scripts": cmd_scripts,
+    "New Script": cmd_newscript,
     "Campaigns": cmd_campaigns,
+    "Start Campaign": cmd_startcampaign,
     "Upload": cmd_upload,
+    "Discover": cmd_discover,
     "Analytics": cmd_analytics,
     "Hot Leads": cmd_hotleads,
+    "Conversations": cmd_conversations,
     "Help": cmd_help,
 }
 
@@ -1865,7 +1987,7 @@ MENU_HANDLERS = {
 @router.message(F.text.in_(set(MENU_HANDLERS.keys())))
 async def handle_menu_button(message: types.Message, state: FSMContext):
     handler = MENU_HANDLERS[message.text]
-    if message.text == "Upload":
+    if message.text in {"Upload", "New Script", "Start Campaign", "Discover"}:
         await handler(message, state)
     else:
         await handler(message)

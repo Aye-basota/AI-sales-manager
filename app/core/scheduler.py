@@ -19,6 +19,14 @@ from app.db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
+TIMEZONE_ALIASES = {
+    "moscow": "Europe/Moscow",
+    "москва": "Europe/Moscow",
+    "msk": "Europe/Moscow",
+    "utc+3": "Europe/Moscow",
+    "utc": "UTC",
+}
+
 
 try:
     import asyncio
@@ -83,6 +91,14 @@ def _is_eligible_account(account, now: datetime) -> bool:
     return True
 
 
+def normalize_timezone(timezone_str: str | None) -> str:
+    """Return a ZoneInfo-compatible timezone name for common human inputs."""
+    value = (timezone_str or "Europe/Moscow").strip()
+    if not value:
+        return "Europe/Moscow"
+    return TIMEZONE_ALIASES.get(value.lower(), value)
+
+
 def should_send_to_contact(
     contact_status: str,
     last_sent_at: datetime | None,
@@ -120,7 +136,7 @@ def is_within_working_hours(
     server timezone differs from the campaign timezone.
     """
     try:
-        tz = ZoneInfo(timezone_str)
+        tz = ZoneInfo(normalize_timezone(timezone_str))
     except Exception:
         tz = ZoneInfo("UTC")
 
@@ -269,6 +285,13 @@ async def process_campaigns(db_session: AsyncSession) -> None:
             script.working_hours_end,
             now,
         ):
+            logger.info(
+                "Skipping campaign %s: outside working hours %s-%s %s",
+                campaign_id,
+                script.working_hours_start,
+                script.working_hours_end,
+                normalize_timezone(script.timezone),
+            )
             continue
 
         cc_result = await db_session.execute(
@@ -508,6 +531,11 @@ async def send_initial_message(
         split_message_into_chunks,
     )
     from app.core.funnel import get_first_stage
+    from app.core.initial_message_quality import (
+        build_initial_message_retry_prompt,
+        build_safe_initial_fallback,
+        needs_initial_message_retry,
+    )
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
@@ -545,6 +573,31 @@ async def send_initial_message(
     text = response.get("text", "")
     if not text:
         raise RuntimeError("LLM returned empty text")
+
+    if needs_initial_message_retry(text):
+        retry_messages = [
+            *messages,
+            {"role": "user", "content": build_initial_message_retry_prompt(text)},
+        ]
+        try:
+            retry_response = await engine.generate_response_with_guardrails(
+                retry_messages, [], max_tokens=max_tokens
+            )
+            retry_text = retry_response.get("text", "")
+            if retry_text and not needs_initial_message_retry(retry_text):
+                response = retry_response
+                text = retry_text
+            else:
+                logger.warning(
+                    "Initial message quality gate used safe fallback for contact %s",
+                    contact.id,
+                )
+                text = build_safe_initial_fallback(contact)
+                response = {"text": text, "model": "fallback", "tokens_used": 0}
+        except Exception:
+            logger.exception("Initial message quality retry failed")
+            text = build_safe_initial_fallback(contact)
+            response = {"text": text, "model": "fallback", "tokens_used": 0}
 
     text = maybe_self_correct(text)
     text = add_casual_markers(text)
