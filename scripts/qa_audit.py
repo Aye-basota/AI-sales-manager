@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import subprocess  # nosec B404
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +45,12 @@ def _format_cmd(cmd: list[str]) -> str:
     return " ".join(cmd)
 
 
+def _require_http_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Only absolute http(s) URLs are allowed: {url}")
+
+
 def run_cmd(
     name: str,
     cmd: list[str],
@@ -54,7 +61,7 @@ def run_cmd(
 ) -> CheckResult:
     started = time.monotonic()
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603
             cmd,
             cwd=PROJECT_ROOT,
             text=True,
@@ -100,6 +107,7 @@ def run_cmd(
 
 
 def http_request(method: str, url: str, body: bytes | None = None) -> tuple[int, str]:
+    _require_http_url(url)
     request = urllib.request.Request(
         url,
         data=body,
@@ -107,7 +115,7 @@ def http_request(method: str, url: str, body: bytes | None = None) -> tuple[int,
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=10) as response:  # nosec B310
             return response.status, response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")
@@ -166,7 +174,7 @@ def check_live_api_probe(base_url: str) -> CheckResult:
 def check_docker_logs(since: str) -> CheckResult:
     started = time.monotonic()
     cmd = ["docker", "compose", "logs", f"--since={since}", "api"]
-    completed = subprocess.run(
+    completed = subprocess.run(  # nosec B603
         cmd,
         cwd=PROJECT_ROOT,
         text=True,
@@ -270,16 +278,39 @@ def run_dialogue_lab(lead_id: int) -> CheckResult:
     return result
 
 
+def run_admin_ux_lab() -> CheckResult:
+    result = run_cmd(
+        "admin bot UX lab",
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "api",
+            "python",
+            "scripts/admin_ux_lab.py",
+        ],
+        timeout=120,
+        pass_patterns=["Admin UX lab finished.", "PASS"],
+    )
+    result.artifacts.append("scripts/.admin-ux-lab/latest.md")
+    return result
+
+
 def run_targeted_pytest() -> CheckResult:
     return run_cmd(
         "targeted behavioral pytest suite",
         [
             ".venv/bin/pytest",
             "tests/test_bots_admin_bot.py",
+            "tests/test_admin_analytics.py",
             "tests/test_bots_inbound_listener.py",
             "tests/test_inbound_fallback.py",
             "tests/test_core_scheduler.py",
             "tests/test_flood_wait.py",
+            "tests/test_main.py",
+            "tests/test_logging_config.py",
+            "tests/test_settings.py",
             "-q",
         ],
         timeout=180,
@@ -366,6 +397,7 @@ def main() -> int:
         check_db_snapshot(),
         check_docker_logs(args.logs_since),
         run_dialogue_lab(args.lead_id),
+        run_admin_ux_lab(),
         run_targeted_pytest(),
         run_static_checks(),
     ]

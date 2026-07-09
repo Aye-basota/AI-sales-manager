@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, time as dt_time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,9 +14,11 @@ from app.bots.admin_bot import (
     _format_analytics,
     _build_campaign_buttons,
     _main_menu_keyboard,
+    _notify_admin_error,
     _send_or_edit_campaigns,
     cmd_start,
     cmd_help,
+    cmd_cancel,
     cmd_scripts,
     cmd_campaigns,
     cmd_analytics,
@@ -55,6 +58,19 @@ from app.bots.admin_bot import (
     handle_preview_launch,
     handle_script_delete,
     handle_script_toggle,
+    handle_menu_button,
+    handle_unknown_callback,
+    handle_unknown_message,
+    MENU_ANALYTICS,
+    MENU_CAMPAIGNS,
+    MENU_CONVERSATIONS,
+    MENU_DISCOVER,
+    MENU_HOT_LEADS,
+    MENU_HANDLERS,
+    MENU_NEW_SCRIPT,
+    MENU_SCRIPTS,
+    MENU_START_CAMPAIGN,
+    MENU_UPLOAD,
     ScriptCreateFSM,
     CSVImportFSM,
     CampaignStartFSM,
@@ -114,7 +130,7 @@ class TestFormatScripts:
         )
         text = _format_scripts([script])
         assert "Test Script" in text
-        assert "Goal: Book demo" in text
+        assert "Цель: Book demo" in text
 
     def test_inactive_script(self):
         script = Script(
@@ -143,8 +159,8 @@ class TestFormatCampaigns:
         )
         text = _format_campaigns([campaign])
         assert "Summer Sale" in text
-        assert "Status: running" in text
-        assert "Contacts: 50/100" in text
+        assert "Статус: running" in text
+        assert "Контакты: 50/100" in text
 
 
 class TestFormatHotleads:
@@ -161,7 +177,7 @@ class TestFormatHotleads:
         )
         text = _format_hotleads([(conv, contact)])
         assert "@john" in text
-        assert "State: hot" in text
+        assert "Статус: hot" in text
 
     def test_meeting_booked(self):
         conv = Conversation(
@@ -176,7 +192,7 @@ class TestFormatHotleads:
         )
         text = _format_hotleads([(conv, contact)])
         assert "+79990000000" in text
-        assert "Sentiment: N/A" in text
+        assert "Настроение: N/A" in text
 
 
 class TestFormatAnalytics:
@@ -185,7 +201,7 @@ class TestFormatAnalytics:
         assert "Всего контактов: 150" in text
         assert "Отправлено: 142" in text
         assert "Ответили: 18 (12.7%)" in text
-        assert "Hot leads: 3" in text
+        assert "Горячие лиды: 3" in text
         assert "Встречи: 1" in text
         assert "Guardrails отказов: 2" in text
         assert "Средняя длина сообщения: 121 симв." in text
@@ -196,11 +212,10 @@ class TestCmdStart:
         await cmd_start(mock_message)
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
-        assert "Welcome to AI Sales Manager Admin Bot" in text
-        assert "/scripts" in text
-        assert "/newscript" in text
-        assert "/upload" in text
-        assert "/startcampaign" in text
+        assert "AI Sales Manager готов к работе" in text
+        assert "Сценарий" in text
+        assert "Контакты" in text
+        assert "Кампания" in text
         assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_main_menu_exposes_core_actions(self):
@@ -210,10 +225,15 @@ class TestCmdStart:
             for row in keyboard.keyboard
             for button in row
         }
-        assert "New Script" in labels
-        assert "Start Campaign" in labels
-        assert "Discover" in labels
-        assert "Conversations" in labels
+        assert MENU_NEW_SCRIPT in labels
+        assert MENU_START_CAMPAIGN in labels
+        assert MENU_DISCOVER in labels
+        assert MENU_CONVERSATIONS in labels
+        assert MENU_SCRIPTS in labels
+        assert MENU_UPLOAD in labels
+        assert MENU_CAMPAIGNS in labels
+        assert MENU_HOT_LEADS in labels
+        assert MENU_ANALYTICS in labels
 
 
 class TestCmdHelp:
@@ -221,10 +241,90 @@ class TestCmdHelp:
         await cmd_help(mock_message)
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
-        assert "Script (сценарий общения)" in text
-        assert "Campaign (рассылка по списку контактов)" in text
+        assert "Сценарий отвечает" in text
+        assert "Кампания связывает" in text
         assert "/scripts" in text
         assert "/upload" in text
+        assert "/cancel" in text
+
+
+class TestCmdCancel:
+    async def test_no_active_state_returns_menu(self, mock_message, mock_state):
+        mock_state.get_state.return_value = None
+        await cmd_cancel(mock_message, mock_state)
+        mock_state.clear.assert_not_awaited()
+        mock_message.answer.assert_called_once()
+        assert "Активного мастера нет" in mock_message.answer.call_args[0][0]
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+
+    async def test_active_state_is_cleared(self, mock_message, mock_state):
+        mock_state.get_state.return_value = "ScriptCreateFSM:name"
+        await cmd_cancel(mock_message, mock_state)
+        mock_state.clear.assert_awaited_once()
+        mock_message.answer.assert_called_once()
+        assert "остановил текущий мастер" in mock_message.answer.call_args[0][0]
+
+
+class TestAdminFallbacks:
+    async def test_unknown_message_without_state_returns_helpful_reply(
+        self, mock_message, mock_state
+    ):
+        mock_state.get_state.return_value = None
+        await handle_unknown_message(mock_message, mock_state)
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "Не понял команду" in text
+        assert "сценарий" in text.lower()
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+
+    async def test_unknown_message_inside_wizard_points_to_cancel(
+        self, mock_message, mock_state
+    ):
+        mock_state.get_state.return_value = "CampaignCreateFSM:name"
+        await handle_unknown_message(mock_message, mock_state)
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "открыт мастер" in text
+        assert "/cancel" in text
+
+    async def test_unknown_callback_is_answered(self, mock_callback):
+        mock_callback.data = "stale:button"
+        await handle_unknown_callback(mock_callback)
+        mock_callback.answer.assert_awaited_once_with(
+            "Не понял кнопку. Откройте /start или /help.", show_alert=True
+        )
+        mock_callback.message.answer.assert_awaited_once()
+
+    async def test_global_error_notifies_message_user(self, mock_message):
+        update = SimpleNamespace(message=mock_message, edited_message=None)
+        notified = await _notify_admin_error(update)
+        assert notified is True
+        mock_message.answer.assert_called_once()
+        assert "бот не упал молча" in mock_message.answer.call_args[0][0]
+
+    async def test_menu_button_routes_russian_stateful_action(self, mock_message, mock_state):
+        handler = AsyncMock()
+        original = MENU_HANDLERS[MENU_UPLOAD]
+        MENU_HANDLERS[MENU_UPLOAD] = handler
+        mock_message.text = MENU_UPLOAD
+        try:
+            await handle_menu_button(mock_message, mock_state)
+        finally:
+            MENU_HANDLERS[MENU_UPLOAD] = original
+
+        handler.assert_awaited_once_with(mock_message, mock_state)
+
+    async def test_menu_button_keeps_legacy_english_action(self, mock_message, mock_state):
+        handler = AsyncMock()
+        original = MENU_HANDLERS["Scripts"]
+        MENU_HANDLERS["Scripts"] = handler
+        mock_message.text = "Scripts"
+        try:
+            await handle_menu_button(mock_message, mock_state)
+        finally:
+            MENU_HANDLERS["Scripts"] = original
+
+        handler.assert_awaited_once_with(mock_message)
 
 
 class TestCmdScripts:
@@ -248,7 +348,7 @@ class TestCmdScripts:
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
         assert "Script A" in text
-        assert "Campaigns: 2" in text
+        assert "Кампаний с этим сценарием: 2" in text
 
     async def test_empty_scripts(self, mock_message):
         result_mock = MagicMock()
@@ -259,7 +359,7 @@ class TestCmdScripts:
             await cmd_scripts(mock_message)
 
         mock_message.answer.assert_called_once()
-        assert mock_message.answer.call_args[0][0] == "No scripts found."
+        assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
         assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_script_toggle_flips_active_status(self, mock_callback):
@@ -342,9 +442,9 @@ class TestCmdCampaigns:
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
         assert "Campaign B" in text
-        assert "Script: Script B" in text
-        assert "Contacts: 0/10" in text
-        assert "Replied: 0" in text
+        assert "Сценарий: Script B" in text
+        assert "Контакты: 0/10" in text
+        assert "Ответили: 0" in text
 
 
 class TestCmdAnalytics:
@@ -395,7 +495,8 @@ class TestCmdHotleads:
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
             await cmd_hotleads(mock_message)
 
-        mock_message.answer.assert_called_once_with("No hot leads or meetings booked.")
+        mock_message.answer.assert_called_once()
+        assert "Горячих лидов пока нет" in mock_message.answer.call_args[0][0]
 
 
 class TestStartBot:
@@ -436,12 +537,56 @@ class TestStopBot:
 
 
 class TestCmdConversations:
-    async def test_missing_args(self, mock_message):
+    async def test_missing_args_shows_recent_dialogs_help_when_empty(self, mock_message):
         mock_message.text = "/conversations"
-        await cmd_conversations(mock_message)
-        mock_message.answer.assert_called_once_with(
-            "Usage: /conversations <contact_id>"
+        result_mock = MagicMock()
+        result_mock.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once()
+        assert "Диалогов пока нет" in mock_message.answer.call_args[0][0]
+
+    async def test_missing_args_shows_recent_dialogs(self, mock_message):
+        contact = Contact(
+            id=uuid.uuid4(),
+            telegram_username="lead1",
+            first_name="Lead",
+            last_name="One",
         )
+        conv = Conversation(
+            id=uuid.uuid4(),
+            contact_id=contact.id,
+            current_state="hot",
+            last_message_at=datetime.now(),
+        )
+        mock_message.text = "/conversations"
+        result_mock = MagicMock()
+        result_mock.all.return_value = [(conv, contact)]
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "Последние диалоги" in text
+        assert "lead1" in text
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+
+    async def test_legacy_usage_text_removed(self, mock_message):
+        mock_message.text = "/conversations"
+        result_mock = MagicMock()
+        result_mock.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once()
+        assert "Usage:" not in mock_message.answer.call_args[0][0]
 
     async def test_invalid_uuid(self, mock_message):
         mock_message.text = "/conversations invalid"

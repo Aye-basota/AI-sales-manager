@@ -13,6 +13,18 @@ def test_debug_accepts_development_profile():
     assert settings.debug is True
 
 
+def test_sql_echo_is_disabled_by_default():
+    settings = Settings()
+
+    assert settings.sql_echo is False
+
+
+def test_sql_echo_accepts_bool_strings():
+    settings = Settings(sql_echo="yes")
+
+    assert settings.sql_echo is True
+
+
 def test_empty_telegram_api_id_uses_disabled_default():
     settings = Settings(telegram_api_id="")
 

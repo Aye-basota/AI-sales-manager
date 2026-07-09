@@ -35,6 +35,34 @@ _bot: Bot | None = None
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 
+MENU_SCRIPTS = "🧩 Сценарии"
+MENU_NEW_SCRIPT = "➕ Новый сценарий"
+MENU_CAMPAIGNS = "📣 Кампании"
+MENU_START_CAMPAIGN = "🚀 Запуск кампании"
+MENU_UPLOAD = "📤 Импорт контактов"
+MENU_DISCOVER = "🔎 Поиск лидов"
+MENU_HOT_LEADS = "🔥 Горячие лиды"
+MENU_HELP = "❓ Помощь"
+MENU_CONVERSATIONS = "💬 Диалоги"
+MENU_ANALYTICS = "📊 Аналитика"
+
+UNKNOWN_ADMIN_REPLY = (
+    "Не понял команду.\n\n"
+    "Откройте меню ниже или напишите /help.\n\n"
+    "Обычный путь: сначала создайте сценарий, затем добавьте контакты, "
+    "запустите кампанию и смотрите ответы в горячих лидах и диалогах."
+)
+ACTIVE_WIZARD_REPLY = (
+    "Сейчас открыт мастер настройки.\n\n"
+    "Ответьте на последний вопрос, нажмите кнопку в сообщении выше или напишите "
+    "/cancel, чтобы вернуться в главное меню."
+)
+ADMIN_ERROR_REPLY = (
+    "Что-то пошло не так, но бот не упал молча.\n\n"
+    "Попробуйте открыть /start или /help. Ошибка записана в логи, чтобы ее можно "
+    "было быстро разобрать."
+)
+
 TONE_OPTIONS = ["Деловой", "Дружелюбный", "Агрессивный"]
 TONE_MAP = {
     "Деловой": "professional",
@@ -46,6 +74,7 @@ TONE_MAP = {
 COMMANDS = [
     BotCommand(command="start", description="Главное меню"),
     BotCommand(command="help", description="Помощь и схема"),
+    BotCommand(command="cancel", description="Отменить текущий мастер"),
     BotCommand(command="scripts", description="Список скриптов"),
     BotCommand(command="campaigns", description="Список кампаний"),
     BotCommand(command="upload", description="Импорт контактов"),
@@ -61,11 +90,11 @@ COMMANDS = [
 def _main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Scripts"), KeyboardButton(text="New Script")],
-            [KeyboardButton(text="Campaigns"), KeyboardButton(text="Start Campaign")],
-            [KeyboardButton(text="Upload"), KeyboardButton(text="Discover")],
-            [KeyboardButton(text="Hot Leads"), KeyboardButton(text="Help")],
-            [KeyboardButton(text="Conversations"), KeyboardButton(text="Analytics")],
+            [KeyboardButton(text=MENU_SCRIPTS), KeyboardButton(text=MENU_NEW_SCRIPT)],
+            [KeyboardButton(text=MENU_CAMPAIGNS), KeyboardButton(text=MENU_START_CAMPAIGN)],
+            [KeyboardButton(text=MENU_UPLOAD), KeyboardButton(text=MENU_DISCOVER)],
+            [KeyboardButton(text=MENU_HOT_LEADS), KeyboardButton(text=MENU_CONVERSATIONS)],
+            [KeyboardButton(text=MENU_ANALYTICS), KeyboardButton(text=MENU_HELP)],
         ],
         resize_keyboard=True,
     )
@@ -139,9 +168,9 @@ def _format_scripts(scripts: List) -> str:
         status = "✅" if s.is_active else "❌"
         lines.append(
             f"{status} <b>{s.name}</b>\n"
-            f"Campaigns: {campaign_count}\n"
-            f"Goal: {s.goal}\n"
-            f"Max messages: {s.max_messages} | Tone: {s.tone}"
+            f"Кампаний с этим сценарием: {campaign_count}\n"
+            f"Цель: {s.goal}\n"
+            f"Максимум сообщений: {s.max_messages} | Тон: {s.tone}"
         )
     return "\n\n".join(lines)
 
@@ -156,10 +185,10 @@ def _format_campaigns(campaigns: List) -> str:
         script_name = script.name if script else "—"
         lines.append(
             f"📢 <b>{c.name}</b>\n"
-            f"Script: {script_name}\n"
-            f"Status: {c.status}\n"
-            f"Contacts: {c.processed_contacts}/{c.total_contacts}\n"
-            f"Replied: {c.replied_count} | Qualified: {c.qualified_count} | Meetings: {c.meeting_booked_count}"
+            f"Сценарий: {script_name}\n"
+            f"Статус: {c.status}\n"
+            f"Контакты: {c.processed_contacts}/{c.total_contacts}\n"
+            f"Ответили: {c.replied_count} | Квалифицированы: {c.qualified_count} | Встречи: {c.meeting_booked_count}"
         )
     return "\n\n".join(lines)
 
@@ -206,7 +235,7 @@ def _build_campaign_buttons(campaign) -> list:
 
 def _build_script_buttons(scripts: List) -> types.InlineKeyboardMarkup:
     rows = [
-        [types.InlineKeyboardButton(text="➕ New Script", callback_data="script_new")]
+        [types.InlineKeyboardButton(text="➕ Новый сценарий", callback_data="script_new")]
     ]
     for item in scripts:
         try:
@@ -215,7 +244,7 @@ def _build_script_buttons(scripts: List) -> types.InlineKeyboardMarkup:
             script, campaign_count = item, 0
 
         name = (script.name or "Script")[:18]
-        toggle_text = "⏸ Disable" if script.is_active else "▶️ Enable"
+        toggle_text = "⏸ Выключить" if script.is_active else "▶️ Включить"
         rows.append(
             [
                 types.InlineKeyboardButton(
@@ -234,7 +263,7 @@ def _build_script_buttons(scripts: List) -> types.InlineKeyboardMarkup:
         )
 
     rows.append(
-        [types.InlineKeyboardButton(text="🔄 Refresh", callback_data="refresh_scripts")]
+        [types.InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_scripts")]
     )
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -246,8 +275,8 @@ def _format_hotleads(rows: List) -> str:
         state_emoji = "🔥" if conv.current_state == "hot" else "📅"
         lines.append(
             f"{idx}. {state_emoji} <b>{name}</b>\n"
-            f"State: {conv.current_state}\n"
-            f"Sentiment: {conv.sentiment or 'N/A'}"
+            f"Статус: {conv.current_state}\n"
+            f"Настроение: {conv.sentiment or 'N/A'}"
         )
     return "\n\n".join(lines)
 
@@ -267,7 +296,7 @@ def _format_analytics(
         f"Всего контактов: {total_contacts}\n"
         f"Отправлено: {sent}\n"
         f"Ответили: {replied} ({reply_rate:.1f}%)\n"
-        f"Hot leads: {hot}\n"
+        f"Горячие лиды: {hot}\n"
         f"Встречи: {meetings}\n"
         f"Guardrails отказов: {rejected}\n"
         f"Средняя длина сообщения: {avg_length:.0f} симв."
@@ -282,17 +311,13 @@ def _format_analytics(
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
     welcome = (
-        "👋 Welcome to AI Sales Manager Admin Bot!\n\n"
-        "Выберите раздел в меню ниже или используйте команды.\n\n"
-        "/scripts — список скриптов\n"
-        "/campaigns — список кампаний\n"
-        "/analytics — аналитика\n"
-        "/hotleads — горячие лиды\n"
-        "/upload — импорт контактов\n"
-        "/newscript — создать скрипт\n"
-        "/startcampaign — запустить кампанию\n"
-        "/discover — поиск лидов\n"
-        "/help — помощь"
+        "AI Sales Manager готов к работе.\n\n"
+        "Как устроен запуск:\n"
+        "1. Сценарий — как бот будет говорить с лидами.\n"
+        "2. Контакты — кого добавляем через файл или поиск.\n"
+        "3. Кампания — какой сценарий отправляем каким контактам.\n"
+        "4. Горячие лиды и диалоги — где смотреть ответы.\n\n"
+        "Выберите действие в меню ниже. Если застряли, напишите /help."
     )
     await message.answer(welcome, reply_markup=_main_menu_keyboard())
 
@@ -300,26 +325,44 @@ async def cmd_start(message: types.Message):
 @router.message(Command("help"))
 async def cmd_help(message: types.Message):
     text = (
-        "Структура проекта:\n\n"
-        "Script (сценарий общения)\n"
-        "  ↓\n"
-        "Campaign (рассылка по списку контактов)\n"
-        "  ↓\n"
-        "Contact (человек) → Conversation (диалог)\n\n"
-        "Команды:\n"
+        "Короткая схема:\n\n"
+        "Сценарий отвечает на вопрос: что и каким тоном пишет бот.\n"
+        "Контакты отвечают на вопрос: кому писать.\n"
+        "Кампания связывает сценарий и контакты, а затем запускает рассылку.\n"
+        "Горячие лиды и диалоги показывают, кто ответил и что происходит дальше.\n\n"
+        "Основные команды:\n"
         "/start — главное меню\n"
+        "/cancel — отменить текущий мастер настройки\n"
         "/help — помощь\n"
-        "/scripts — список скриптов\n"
-        "/campaigns — список кампаний\n"
+        "/scripts — сценарии\n"
+        "/newscript — создать сценарий\n"
+        "/campaigns — кампании\n"
+        "/startcampaign — запустить черновик кампании\n"
         "/upload — импорт контактов\n"
+        "/discover — поиск лидов\n"
         "/analytics — аналитика\n"
         "/hotleads — горячие лиды\n"
-        "/newscript — создать скрипт\n"
-        "/startcampaign — запустить кампанию\n"
-        "/discover — поиск лидов\n"
-        "/conversations — история по contact_id"
+        "/conversations — последние диалоги\n"
+        "/conversations <contact_id> — история конкретного контакта"
     )
     await message.answer(text, reply_markup=_main_menu_keyboard())
+
+
+@router.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer(
+            "Активного мастера нет. Выберите действие в меню ниже.",
+            reply_markup=_main_menu_keyboard(),
+        )
+        return
+
+    await state.clear()
+    await message.answer(
+        "Ок, остановил текущий мастер. Возвращаю в главное меню.",
+        reply_markup=_main_menu_keyboard(),
+    )
 
 
 @router.message(Command("scripts"))
@@ -340,12 +383,16 @@ async def cmd_scripts(message: types.Message):
             inline_keyboard=[
                 [
                     types.InlineKeyboardButton(
-                        text="➕ New Script", callback_data="script_new"
+                        text="➕ Новый сценарий", callback_data="script_new"
                     )
                 ]
             ]
         )
-        await message.answer("No scripts found.", reply_markup=kb)
+        await message.answer(
+            "Сценариев пока нет. Создайте первый сценарий, чтобы бот понимал, "
+            "как общаться с лидами.",
+            reply_markup=kb,
+        )
         return
 
     text = _format_scripts(scripts)
@@ -430,7 +477,11 @@ async def _send_or_edit_campaigns(message: types.Message):
     campaigns = await _load_campaigns()
 
     if not campaigns:
-        text = "No campaigns found."
+        text = (
+            "Кампаний пока нет.\n\n"
+            "Сначала добавьте контакты через импорт или поиск, затем выберите сценарий "
+            "и запустите кампанию."
+        )
         kb = types.InlineKeyboardMarkup(inline_keyboard=[])
     else:
         text = _format_campaigns(campaigns)
@@ -693,7 +744,10 @@ async def cmd_hotleads(message: types.Message):
         rows = result.all()
 
     if not rows:
-        await message.answer("No hot leads or meetings booked.")
+        await message.answer(
+            "Горячих лидов пока нет.\n\n"
+            "Когда лид проявит интерес или согласится на встречу, он появится здесь."
+        )
         return
 
     text = _format_hotleads(rows)
@@ -883,7 +937,7 @@ async def handle_history(callback: types.CallbackQuery):
 async def cmd_conversations(message: types.Message):
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("Usage: /conversations <contact_id>")
+        await _send_recent_conversations(message)
         return
 
     try:
@@ -920,6 +974,53 @@ async def cmd_conversations(message: types.Message):
 
     text = "\n\n".join(lines)
     await message.answer(text)
+
+
+async def _send_recent_conversations(message: types.Message):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Conversation, Contact)
+            .join(Contact, Conversation.contact_id == Contact.id)
+            .order_by(Conversation.last_message_at.desc())
+            .limit(10)
+        )
+        rows = result.all()
+
+    if not rows:
+        await message.answer(
+            "Диалогов пока нет.\n\n"
+            "Они появятся здесь, когда лиды начнут отвечать. Если нужен конкретный "
+            "контакт, используйте /conversations <contact_id>."
+        )
+        return
+
+    lines = []
+    kb_rows = []
+    for idx, (conversation, contact) in enumerate(rows, 1):
+        name = (
+            contact.telegram_username
+            or f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+            or contact.phone
+            or str(contact.id)
+        )
+        lines.append(
+            f"{idx}. <b>{name}</b>\n"
+            f"Статус: {conversation.current_state}\n"
+            f"contact_id: <code>{contact.id}</code>"
+        )
+        kb_rows.append(
+            [
+                types.InlineKeyboardButton(
+                    text=f"📜 История {idx}", callback_data=f"history:{conversation.id}"
+                )
+            ]
+        )
+
+    await message.answer(
+        "Последние диалоги:\n\n" + "\n\n".join(lines),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        parse_mode="HTML",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1958,19 +2059,40 @@ async def handle_startcamp(callback: types.CallbackQuery, state: FSMContext):
 
         from app.core.scheduler import process_campaigns
 
+        processing_failed = False
         try:
             await process_campaigns(session)
         except Exception:
+            processing_failed = True
             logger.exception("Immediate process_campaigns failed after campaign start")
 
     await state.clear()
-    await callback.answer("✅ Кампания запущена!")
-    await callback.message.answer(
-        f"Кампания <b>{campaign.name}</b> запущена.", parse_mode="HTML"
-    )
+    if processing_failed:
+        await callback.answer("⚠️ Кампания запущена, отправка будет повторена")
+        await callback.message.answer(
+            f"Кампания <b>{campaign.name}</b> запущена, но первая попытка отправки "
+            "не завершилась. Планировщик повторит обработку автоматически; ошибка "
+            "записана в логи.",
+            parse_mode="HTML",
+        )
+    else:
+        await callback.answer("✅ Кампания запущена!")
+        await callback.message.answer(
+            f"Кампания <b>{campaign.name}</b> запущена.", parse_mode="HTML"
+        )
 
 
 MENU_HANDLERS = {
+    MENU_SCRIPTS: cmd_scripts,
+    MENU_NEW_SCRIPT: cmd_newscript,
+    MENU_CAMPAIGNS: cmd_campaigns,
+    MENU_START_CAMPAIGN: cmd_startcampaign,
+    MENU_UPLOAD: cmd_upload,
+    MENU_DISCOVER: cmd_discover,
+    MENU_ANALYTICS: cmd_analytics,
+    MENU_HOT_LEADS: cmd_hotleads,
+    MENU_CONVERSATIONS: cmd_conversations,
+    MENU_HELP: cmd_help,
     "Scripts": cmd_scripts,
     "New Script": cmd_newscript,
     "Campaigns": cmd_campaigns,
@@ -1982,15 +2104,91 @@ MENU_HANDLERS = {
     "Conversations": cmd_conversations,
     "Help": cmd_help,
 }
+STATEFUL_MENU_BUTTONS = {
+    MENU_NEW_SCRIPT,
+    MENU_START_CAMPAIGN,
+    MENU_UPLOAD,
+    MENU_DISCOVER,
+    "New Script",
+    "Start Campaign",
+    "Upload",
+    "Discover",
+}
 
 
 @router.message(F.text.in_(set(MENU_HANDLERS.keys())))
 async def handle_menu_button(message: types.Message, state: FSMContext):
     handler = MENU_HANDLERS[message.text]
-    if message.text in {"Upload", "New Script", "Start Campaign", "Discover"}:
+    if message.text in STATEFUL_MENU_BUTTONS:
         await handler(message, state)
     else:
         await handler(message)
+
+
+@router.callback_query()
+async def handle_unknown_callback(callback: types.CallbackQuery):
+    await callback.answer("Не понял кнопку. Откройте /start или /help.", show_alert=True)
+    if callback.message:
+        try:
+            await callback.message.answer(
+                "Эта кнопка устарела или не относится к текущему шагу. "
+                "Откройте главное меню и выберите действие заново.",
+                reply_markup=_main_menu_keyboard(),
+            )
+        except Exception:
+            logger.warning("Failed to send unknown callback fallback", exc_info=True)
+
+
+@router.message()
+async def handle_unknown_message(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    text = ACTIVE_WIZARD_REPLY if current_state else UNKNOWN_ADMIN_REPLY
+    await message.answer(text, reply_markup=_main_menu_keyboard())
+
+
+async def _notify_admin_error(update: types.Update) -> bool:
+    callback = getattr(update, "callback_query", None)
+    if callback:
+        try:
+            await callback.answer("Что-то пошло не так. Откройте /start.", show_alert=True)
+        except Exception:
+            logger.warning("Failed to answer callback after admin bot error", exc_info=True)
+
+        message = getattr(callback, "message", None)
+        if message:
+            try:
+                await message.answer(ADMIN_ERROR_REPLY, reply_markup=_main_menu_keyboard())
+                return True
+            except Exception:
+                logger.warning("Failed to send callback error fallback", exc_info=True)
+
+    message = (
+        getattr(update, "message", None)
+        or getattr(update, "edited_message", None)
+        or getattr(update, "business_message", None)
+    )
+    if message:
+        try:
+            await message.answer(ADMIN_ERROR_REPLY, reply_markup=_main_menu_keyboard())
+            return True
+        except Exception:
+            logger.warning("Failed to send message error fallback", exc_info=True)
+
+    return False
+
+
+@router.errors()
+async def handle_admin_error(event: types.ErrorEvent):
+    logger.error(
+        "Admin bot handler failed",
+        exc_info=(
+            type(event.exception),
+            event.exception,
+            event.exception.__traceback__,
+        ),
+    )
+    await _notify_admin_error(event.update)
+    return True
 
 
 dp.include_router(router)

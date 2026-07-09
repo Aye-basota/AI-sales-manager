@@ -38,9 +38,9 @@ def configure_logging(level: int | str | None = None) -> dict[str, Any]:
             "handlers": ["stderr"],
         },
         "loggers": {
-            # ``propagate`` is intentionally left at the default (True) so test
+            # App loggers propagate to root so records are emitted once and test
             # fixtures such as pytest's ``caplog`` can capture application logs.
-            "app": {"level": level, "handlers": ["stderr"]},
+            "app": {"level": level, "handlers": [], "propagate": True},
             "uvicorn": {"level": level, "handlers": ["stderr"], "propagate": False},
             "uvicorn.access": {"level": level, "handlers": ["stderr"], "propagate": False},
         },

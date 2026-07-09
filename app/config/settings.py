@@ -30,10 +30,11 @@ class Settings(BaseSettings):
     telegram_api_hash: str = ""
     daily_message_limit: int = 50
     debug: bool = True
+    sql_echo: bool = False
 
-    @field_validator("debug", mode="before")
+    @field_validator("debug", "sql_echo", mode="before")
     @classmethod
-    def parse_debug_flag(cls, value: Any) -> Any:
+    def parse_bool_flag(cls, value: Any) -> Any:
         if not isinstance(value, str):
             return value
 

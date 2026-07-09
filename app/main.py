@@ -31,6 +31,31 @@ setup_logging(_level)
 logger = logging.getLogger(__name__)
 
 
+def _observe_background_task(task: asyncio.Task, name: str) -> asyncio.Task:
+    """Attach logging to background startup tasks so failures are not silent."""
+
+    def _log_result(done_task: asyncio.Task) -> None:
+        if done_task.cancelled():
+            logger.info("Background task %s cancelled", name)
+            return
+        try:
+            exc = done_task.exception()
+        except asyncio.CancelledError:
+            logger.info("Background task %s cancelled", name)
+            return
+        if exc is not None:
+            logger.error(
+                "Background task %s failed",
+                name,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        else:
+            logger.info("Background task %s finished", name)
+
+    task.add_done_callback(_log_result)
+    return task
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Register signal handlers only when running in the main interpreter thread.
@@ -52,9 +77,15 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
 
-    bot_task = asyncio.create_task(start_bot())
+    bot_task = _observe_background_task(
+        asyncio.create_task(start_bot()),
+        "admin_bot",
+    )
 
-    inbound_task = asyncio.create_task(start_inbound_listeners())
+    inbound_task = _observe_background_task(
+        asyncio.create_task(start_inbound_listeners()),
+        "inbound_listeners",
+    )
 
     yield
 
@@ -86,6 +117,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=400,
         content={"detail": "Invalid request", "errors": exc.errors()},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Return a stable JSON fallback for unexpected API errors."""
+    logger.error(
+        "Unhandled API error for %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
     )
 
 

@@ -55,6 +55,7 @@ services:
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
       - DAILY_MESSAGE_LIMIT=${DAILY_MESSAGE_LIMIT:-50}
       - DEBUG=${DEBUG:-True}
+      - SQL_ECHO=${SQL_ECHO:-False}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
