@@ -1,7 +1,7 @@
 from datetime import time, datetime
 from typing import Optional, List, Any
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ScriptBase(BaseModel):
@@ -25,6 +25,38 @@ class ScriptBase(BaseModel):
     language: str = "ru"
     emoji_policy: str = "forbidden"
     max_first_message_length: int = 200
+
+    @field_validator("sales_funnel", mode="before")
+    @classmethod
+    def normalize_sales_funnel(cls, value):
+        if value == {}:
+            return []
+        return value
+
+    @field_validator("first_message_goal", mode="before")
+    @classmethod
+    def default_first_message_goal(cls, value):
+        return value or "trust"
+
+    @field_validator("call_to_action", mode="before")
+    @classmethod
+    def default_call_to_action(cls, value):
+        return value or "15-минутный созвон"
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def default_language(cls, value):
+        return value or "ru"
+
+    @field_validator("emoji_policy", mode="before")
+    @classmethod
+    def default_emoji_policy(cls, value):
+        return value or "forbidden"
+
+    @field_validator("max_first_message_length", mode="before")
+    @classmethod
+    def default_max_first_message_length(cls, value):
+        return value or 200
 
 
 class ScriptCreate(ScriptBase):

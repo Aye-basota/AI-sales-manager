@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 _inbound_clients: dict[str, SellerClient] = {}
 
 FALLBACK_TEXT = "Извините, не совсем понял. Могу ли я уточнить — вас интересует {goal}?"
+PUNCTUATION_ONLY_CHARS = {"?", "!", ".", " "}
 
 
 def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
@@ -76,7 +77,7 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
             "как обычно делают безопасный тест."
         )
 
-    if lead_text.strip() and set(lead_text.strip()) <= {"?", "!", ".", " "}:
+    if lead_text.strip() and set(lead_text.strip()) <= PUNCTUATION_ONLY_CHARS:
         return (
             "Понял, похоже написал не в самый удобный момент.\n\n"
             "Скажите, актуально ли вам сейчас улучшать обработку лидов, или лучше не беспокоить?"
@@ -387,16 +388,23 @@ async def _handle_inbound_message(
             max_length = get_max_length_for_stage(script, conversation_stage)
             max_tokens = int(max_length * 1.5) if max_length else None
 
-            try:
-                response = await engine.generate_response_with_guardrails(
-                    messages,
-                    last_messages=last_outbound,
-                    max_retries=1,
-                    max_tokens=max_tokens,
-                )
-            except Exception as exc:
-                logger.exception("LLM generation failed: %s", exc)
-                response = {"text": "", "model": None, "tokens_used": 0}
+            if text.strip() and set(text.strip()) <= PUNCTUATION_ONLY_CHARS:
+                response = {
+                    "text": _build_inbound_fallback_text(text, script),
+                    "model": "fallback",
+                    "tokens_used": 0,
+                }
+            else:
+                try:
+                    response = await engine.generate_response_with_guardrails(
+                        messages,
+                        last_messages=last_outbound,
+                        max_retries=1,
+                        max_tokens=max_tokens,
+                    )
+                except Exception as exc:
+                    logger.exception("LLM generation failed: %s", exc)
+                    response = {"text": "", "model": None, "tokens_used": 0}
 
             response_text = response.get("text", "")
 
