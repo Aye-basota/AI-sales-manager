@@ -106,6 +106,23 @@ def check_no_emoji(text: str) -> bool:
     return True
 
 
+def check_max_questions(text: str, max_questions: int = 1) -> bool:
+    """Return True when the message does not interrogate the lead too much."""
+    return text.count("?") <= max_questions
+
+
+def check_no_banned_sales_phrases(text: str) -> bool:
+    """Block phrases that make Telegram outreach sound templated."""
+    banned = (
+        "как сейчас решаете эту задачу",
+        "в вашем стеке",
+        "it-компаниям, как у вас",
+        "как у вас в",
+    )
+    lower_text = text.lower()
+    return not any(phrase in lower_text for phrase in banned)
+
+
 def check_no_cjk_arabic(text: str) -> bool:
     """Return True if *text* contains no CJK or Arabic script characters."""
     for ch in text:
@@ -144,6 +161,10 @@ def evaluate_guardrails(text: str, last_messages: list[str]) -> GuardrailsResult
         violations.append("markdown")
     if not check_no_emoji(text):
         violations.append("emoji")
+    if not check_max_questions(text):
+        violations.append("too_many_questions")
+    if not check_no_banned_sales_phrases(text):
+        violations.append("banned_sales_phrase")
     if not check_no_cjk_arabic(text):
         violations.append("foreign_script")
 

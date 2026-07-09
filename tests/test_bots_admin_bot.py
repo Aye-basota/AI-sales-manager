@@ -13,9 +13,12 @@ from app.bots.admin_bot import (
     _format_hotleads,
     _format_analytics,
     _build_campaign_buttons,
+    _dispatch_navigation_override,
     _main_menu_keyboard,
     _notify_admin_error,
+    _send_or_edit_scripts,
     _send_or_edit_campaigns,
+    CallbackStateGuardMiddleware,
     cmd_start,
     cmd_help,
     cmd_cancel,
@@ -326,6 +329,64 @@ class TestAdminFallbacks:
 
         handler.assert_awaited_once_with(mock_message)
 
+    async def test_command_inside_wizard_switches_function(self, mock_message, mock_state):
+        mock_message.text = "/scripts"
+        mock_state.get_state.return_value = "CSVImportFSM:waiting_file"
+        result_mock = MagicMock()
+        result_mock.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            handled = await _dispatch_navigation_override(mock_message, mock_state)
+
+        assert handled is True
+        mock_state.clear.assert_awaited_once()
+        mock_message.answer.assert_called_once()
+        assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
+
+    async def test_menu_inside_wizard_switches_function(self, mock_message, mock_state):
+        mock_message.text = MENU_SCRIPTS
+        mock_state.get_state.return_value = "CSVImportFSM:waiting_file"
+        result_mock = MagicMock()
+        result_mock.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            handled = await _dispatch_navigation_override(mock_message, mock_state)
+
+        assert handled is True
+        mock_state.clear.assert_awaited_once()
+        assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
+
+    async def test_unknown_command_inside_wizard_is_not_saved_as_answer(
+        self, mock_message, mock_state
+    ):
+        mock_message.text = "/wrong"
+        mock_state.get_state.return_value = "ScriptCreateFSM:name"
+
+        handled = await _dispatch_navigation_override(mock_message, mock_state)
+
+        assert handled is True
+        mock_state.clear.assert_not_awaited()
+        mock_message.answer.assert_called_once()
+        assert "не будет записана как ответ" in mock_message.answer.call_args[0][0]
+
+    async def test_stale_callback_is_blocked_before_handler(
+        self, mock_callback, mock_state
+    ):
+        middleware = CallbackStateGuardMiddleware()
+        handler = AsyncMock()
+        mock_callback.data = "preview:launch"
+        mock_state.get_state.return_value = "CSVImportFSM:waiting_file"
+
+        result = await middleware(handler, mock_callback, {"state": mock_state})
+
+        assert result is None
+        handler.assert_not_awaited()
+        mock_callback.answer.assert_awaited_once()
+        assert mock_callback.answer.call_args.kwargs["show_alert"] is True
+        mock_callback.message.answer.assert_awaited_once()
+
 
 class TestCmdScripts:
     async def test_returns_formatted_scripts(self, mock_message):
@@ -361,6 +422,27 @@ class TestCmdScripts:
         mock_message.answer.assert_called_once()
         assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
         assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+
+    async def test_edits_bot_message_for_callback_refresh(self, mock_message):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Script A",
+            goal="Greet",
+            max_messages=1,
+            tone="casual",
+            is_active=True,
+            created_at=datetime.now(),
+        )
+        mock_message.from_user.is_bot = True
+        result_mock = MagicMock()
+        result_mock.all.return_value = [(script, 0)]
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await _send_or_edit_scripts(mock_message)
+
+        mock_message.edit_text.assert_awaited_once()
+        mock_message.answer.assert_not_called()
 
     async def test_script_toggle_flips_active_status(self, mock_callback):
         script = Script(
@@ -975,11 +1057,17 @@ class TestCmdUpload:
         assert "Excel" in text
         assert "telegram_user_id" in text
         assert "telegram_id" in text
+        assert "/cancel" in text
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_rejects_non_document(self, mock_message, mock_state):
         mock_message.document = None
         await process_upload_file(mock_message, mock_state)
-        mock_message.answer.assert_called_once_with("❌ Пожалуйста, отправьте файл.")
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "Пожалуйста, отправьте файл" in text
+        assert "/cancel" in text
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_rejects_unsupported_extension(self, mock_message, mock_state):
         mock_message.document = MagicMock()

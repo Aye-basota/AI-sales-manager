@@ -7,7 +7,10 @@ import pytest
 from app.bots.inbound_listener import (
     start_inbound_listeners,
     stop_inbound_listeners,
+    _build_inbound_fallback_text,
     _handle_inbound_message,
+    _needs_deterministic_fallback,
+    _polish_inbound_response,
 )
 from app.models.telegram_account import TelegramAccount
 from app.models.contact import Contact
@@ -219,8 +222,19 @@ async def test_handle_inbound_message_new_conversation():
                                 await _handle_inbound_message(account, client, message)
 
                                 client.send_message.assert_awaited_once()
+                                sent_text = client.send_message.call_args.kwargs["text"]
+                                assert "извините за беспокойство" in sent_text
+                                assert "?" not in sent_text
                                 mock_add.assert_awaited()
                                 mock_notif.assert_not_awaited()
+                                generate = engine_inst.generate_response_with_guardrails
+                                generate.assert_not_awaited()
+                                created_conversation = next(
+                                    call.args[0]
+                                    for call in mock_db.add.call_args_list
+                                    if isinstance(call.args[0], Conversation)
+                                )
+                                assert created_conversation.current_state == "closed"
                                 assert account.daily_messages_sent == 1
 
 
@@ -474,6 +488,203 @@ async def test_handle_inbound_question_stays_warm_and_does_not_notify():
 
 
 @pytest.mark.asyncio
+async def test_handle_inbound_meeting_intent_confirms_and_stops():
+    account = TelegramAccount(id=uuid.uuid4(), phone="+123", daily_messages_sent=0)
+    client = MagicMock()
+    client.set_online = AsyncMock()
+    client.send_message = AsyncMock(return_value={"message_id": 1})
+    client.read_history = AsyncMock()
+
+    message = MagicMock()
+    message.from_user = MagicMock(id=123456)
+    message.text = "Давайте созвонимся завтра после обеда"
+
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        contact_id=contact.id,
+        campaign_id=uuid.uuid4(),
+        current_state="hot",
+    )
+    campaign = Campaign(
+        id=conversation.campaign_id,
+        script_id=uuid.uuid4(),
+        status="running",
+        meeting_booked_count=0,
+    )
+    script = Script(
+        id=campaign.script_id, name="Test", role_prompt="Sales", goal="Book"
+    )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
+
+    mock_db = build_mock_session()
+    mock_db.execute.side_effect = [
+        MockResult([contact]),
+        MockResult([conversation]),
+        MockResult([campaign]),
+        MockResult([cc]),
+        MockResult([script]),
+        MockResult([account]),
+    ]
+
+    with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
+        MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "app.bots.inbound_listener.classify_intent",
+            new_callable=AsyncMock,
+            return_value="meeting_intent",
+        ):
+            with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
+                engine_inst = MockEngine.return_value
+                engine_inst.generate_response_with_guardrails = AsyncMock()
+
+                with patch(
+                    "app.bots.inbound_listener.extract_facts_from_message",
+                    new_callable=AsyncMock,
+                    return_value={},
+                ):
+                    with patch(
+                        "app.bots.inbound_listener.NotificationService.send_hot_lead_alert",
+                        new_callable=AsyncMock,
+                    ) as mock_notif:
+                        with patch(
+                            "app.bots.inbound_listener.add_message",
+                            new_callable=AsyncMock,
+                        ):
+                            await _handle_inbound_message(account, client, message)
+
+    client.send_message.assert_awaited_once()
+    sent_text = client.send_message.call_args.kwargs["text"]
+    assert "договорились" in sent_text.lower()
+    assert "?" not in sent_text
+    assert conversation.current_state == "meeting_booked"
+    assert cc.status == "meeting_booked"
+    assert campaign.meeting_booked_count == 1
+    engine_inst.generate_response_with_guardrails.assert_not_awaited()
+    mock_notif.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_inbound_terminal_conversation_does_not_auto_reply():
+    account = TelegramAccount(id=uuid.uuid4(), phone="+123", daily_messages_sent=0)
+    client = MagicMock()
+    client.set_online = AsyncMock()
+    client.send_message = AsyncMock(return_value={"message_id": 1})
+    client.read_history = AsyncMock()
+
+    message = MagicMock()
+    message.from_user = MagicMock(id=123456)
+    message.text = "Спасибо, до завтра"
+
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        contact_id=contact.id,
+        campaign_id=uuid.uuid4(),
+        current_state="meeting_booked",
+    )
+    campaign = Campaign(
+        id=conversation.campaign_id, script_id=uuid.uuid4(), status="running"
+    )
+    script = Script(
+        id=campaign.script_id, name="Test", role_prompt="Sales", goal="Book"
+    )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="meeting_booked",
+    )
+
+    mock_db = build_mock_session()
+    mock_db.execute.side_effect = [
+        MockResult([contact]),
+        MockResult([conversation]),
+        MockResult([campaign]),
+        MockResult([cc]),
+        MockResult([script]),
+        MockResult([account]),
+    ]
+
+    with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
+        MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "app.bots.inbound_listener.classify_intent",
+            new_callable=AsyncMock,
+            return_value="informational",
+        ):
+            with patch("app.bots.inbound_listener.LLMEngine") as MockEngine:
+                engine_inst = MockEngine.return_value
+                engine_inst.generate_response_with_guardrails = AsyncMock()
+
+                with patch(
+                    "app.bots.inbound_listener.extract_facts_from_message",
+                    new_callable=AsyncMock,
+                    return_value={},
+                ):
+                    with patch(
+                        "app.bots.inbound_listener.NotificationService.send_hot_lead_alert",
+                        new_callable=AsyncMock,
+                    ) as mock_notif:
+                        with patch(
+                            "app.bots.inbound_listener.add_message",
+                            new_callable=AsyncMock,
+                        ):
+                            await _handle_inbound_message(account, client, message)
+
+    client.send_message.assert_not_awaited()
+    assert conversation.current_state == "meeting_booked"
+    engine_inst.generate_response_with_guardrails.assert_not_awaited()
+    mock_notif.assert_not_awaited()
+
+
+def test_polish_inbound_response_removes_robotic_pattern():
+    text = (
+        "Понимаю, а как сейчас решаете эту задачу?\n\n"
+        "AI Sales Manager может показать пример.\n\n"
+        "Кто у вас отвечает за это? Какой объем лидов?"
+    )
+
+    result = _polish_inbound_response(text)
+
+    assert "как сейчас решаете эту задачу" not in result.lower()
+    assert "AI Sales Manager" not in result
+    assert "наш инструмент" in result
+    assert result.count("?") <= 1
+    assert result.count("\n\n") == 0
+
+
+def test_deterministic_fallback_does_not_match_working_words():
+    assert (
+        _needs_deterministic_fallback(
+            "Не уверен, у нас сейчас и так все вручную работает."
+        )
+        is False
+    )
+    assert _needs_deterministic_fallback("Ты бот? Это автоматическая рассылка?") is True
+
+
+def test_fallback_text_does_not_match_bot_inside_working_words():
+    script = Script(name="Test", goal="обсудить обработку лидов")
+    text = _build_inbound_fallback_text(
+        "Не уверен, у нас сейчас и так все вручную работает.",
+        script,
+    )
+
+    assert "Пишу из рабочего Telegram" not in text
+    assert "обсудить обработку лидов" in text
+
+
+@pytest.mark.asyncio
 async def test_handle_inbound_message_skips_reply_when_daily_limit_reached():
     account = TelegramAccount(
         id=uuid.uuid4(), phone="+123", daily_messages_sent=50, last_message_at=None
@@ -520,10 +731,24 @@ async def test_handle_inbound_message_skips_reply_when_daily_limit_reached():
         MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.bots.inbound_listener.add_message", new_callable=AsyncMock):
-            await _handle_inbound_message(account, client, message)
+        with patch(
+            "app.bots.inbound_listener.classify_intent",
+            new_callable=AsyncMock,
+            return_value="positive",
+        ):
+            with patch(
+                "app.bots.inbound_listener.extract_facts_from_message",
+                new_callable=AsyncMock,
+                return_value={},
+            ):
+                with patch(
+                    "app.bots.inbound_listener.add_message",
+                    new_callable=AsyncMock,
+                ):
+                    await _handle_inbound_message(account, client, message)
 
     client.send_message.assert_not_awaited()
+    assert conversation.current_state == "hot"
 
 
 @pytest.mark.asyncio
@@ -576,7 +801,21 @@ async def test_handle_inbound_message_skips_reply_when_account_rate_limited():
         MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.bots.inbound_listener.add_message", new_callable=AsyncMock):
-            await _handle_inbound_message(account, client, message)
+        with patch(
+            "app.bots.inbound_listener.classify_intent",
+            new_callable=AsyncMock,
+            return_value="positive",
+        ):
+            with patch(
+                "app.bots.inbound_listener.extract_facts_from_message",
+                new_callable=AsyncMock,
+                return_value={},
+            ):
+                with patch(
+                    "app.bots.inbound_listener.add_message",
+                    new_callable=AsyncMock,
+                ):
+                    await _handle_inbound_message(account, client, message)
 
     client.send_message.assert_not_awaited()
+    assert conversation.current_state == "hot"

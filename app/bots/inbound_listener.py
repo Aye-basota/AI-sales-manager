@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,7 +43,7 @@ from app.core.humanizer import (
     split_message_into_chunks,
 )
 from app.core.funnel import next_stage
-from app.core.state_machine import transition
+from app.core.state_machine import is_terminal, transition
 from app.services.notification_service import NotificationService
 from app.services.conversation_service import (
     get_conversation_context,
@@ -57,24 +58,119 @@ _inbound_clients: dict[str, SellerClient] = {}
 
 FALLBACK_TEXT = "Извините, не совсем понял. Могу ли я уточнить — вас интересует {goal}?"
 PUNCTUATION_ONLY_CHARS = {"?", "!", ".", " "}
+BOT_CHECK_PATTERNS = (
+    r"(?<![0-9a-zа-яё])бот(?![0-9a-zа-яё])",
+    r"(?<![0-9a-zа-яё])ии(?![0-9a-zа-яё])",
+    r"(?<![0-9a-zа-яё])ai(?![0-9a-zа-яё])",
+    r"нейросет",
+    r"автомат",
+    r"рассыл",
+)
+DELIVERY_RISK_PATTERNS = (
+    r"спам",
+    r"заблок",
+    r"забан",
+    r"(?<![0-9a-zа-яё])бан(?![0-9a-zа-яё])",
+    r"лимит",
+    r"telegram.*руг",
+    r"руг.*telegram",
+    r"telegram.*огранич",
+    r"огранич.*telegram",
+)
+
+
+def _matches_any(patterns: tuple[str, ...], text: str) -> bool:
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _event_from_intent(intent: str) -> str:
+    return {
+        "meeting_intent": "meeting_intent",
+        "positive": "positive_reply",
+        "negative": "negative_reply",
+        "objection": "objection",
+        "question": "informational",
+        "informational": "informational",
+    }.get(intent, "positive_reply")
+
+
+def _sentiment_from_intent(intent: str) -> str:
+    if intent in ("positive", "meeting_intent"):
+        return "positive"
+    if intent == "negative":
+        return "negative"
+    return "neutral"
+
+
+def _terminal_response(intent: str) -> str:
+    if intent == "negative":
+        return "Понял, извините за беспокойство. Больше не буду писать."
+    if intent == "meeting_intent":
+        return "Отлично, договорились. Спасибо, дальше продолжим уже по созвону."
+    return ""
+
+
+def _polish_inbound_response(text: str) -> str:
+    """Reduce robotic reply patterns before sending a message to the lead."""
+    cleaned = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+    if not cleaned:
+        return cleaned
+
+    cleaned = re.sub(
+        r"(?i)понимаю,\s*а\s+как\s+сейчас\s+решаете\s+эту\s+задачу\??",
+        "Понимаю, спасибо за контекст.",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?i)как\s+сейчас\s+решаете\s+эту\s+задачу\??",
+        "как это устроено сейчас?",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?i)\bкак\s+(?:вы\s+)?(?:сейчас\s+)?решаете\b[^?]*\?",
+        "как это устроено сейчас?",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?i)\bв\s+вашем\s+стеке\b", "у вас", cleaned)
+    cleaned = re.sub(r"(?i)\bAI\s+Sales\s+Manager\b", "наш инструмент", cleaned)
+
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", cleaned) if p.strip()]
+    if len(paragraphs) > 2:
+        cleaned = " ".join(paragraphs)
+
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    kept: list[str] = []
+    question_seen = False
+    for sentence in sentences:
+        if not sentence:
+            continue
+        if "?" in sentence:
+            if question_seen:
+                continue
+            question_seen = True
+            kept.append(sentence)
+            break
+        kept.append(sentence)
+
+    return " ".join(kept).strip()
 
 
 def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
     lower = lead_text.lower()
 
-    if any(word in lower for word in ("бот", "ии", "нейросеть", "автомат", "рассыл")):
+    if _matches_any(BOT_CHECK_PATTERNS, lower):
         return (
             "Понимаю вопрос. Пишу из рабочего Telegram; если сообщение неактуально, "
             "спокойно остановлюсь.\n\n"
             "Могу коротко объяснить, почему обратился?"
         )
 
-    if any(word in lower for word in ("спам", "заблок", "бан", "лимит")):
+    if _matches_any(DELIVERY_RISK_PATTERNS, lower):
         return (
             "Понимаю риск блокировки — это правда важный момент.\n\n"
             "Мы не предлагаем массово слать одинаковые сообщения: сначала проверяем базу, "
-            "лимиты, паузы и реакцию на малом объеме. Если актуально, могу коротко рассказать, "
-            "как обычно делают безопасный тест."
+            "лимиты, паузы и реакцию на малом объеме. Если появляется риск, отправку лучше "
+            "остановить и разобрать причину, а не продолжать давить."
         )
 
     if lead_text.strip() and set(lead_text.strip()) <= PUNCTUATION_ONLY_CHARS:
@@ -85,6 +181,14 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
 
     goal = script.goal or "наше предложение"
     return FALLBACK_TEXT.format(goal=goal)
+
+
+def _needs_deterministic_fallback(lead_text: str) -> bool:
+    """Use hand-written replies for high-risk lead messages."""
+    lower = lead_text.lower()
+    if lead_text.strip() and set(lead_text.strip()) <= PUNCTUATION_ONLY_CHARS:
+        return True
+    return _matches_any(BOT_CHECK_PATTERNS + DELIVERY_RISK_PATTERNS, lower)
 
 
 async def start_inbound_listeners(db_session: AsyncSession | None = None) -> None:
@@ -294,16 +398,89 @@ async def _handle_inbound_message(
                 logger.warning("No script for campaign %s", campaign.id)
                 return
 
-            # 7.5 Inbound account limit guards
+            # 7.5 Load account counters. Terminal acknowledgements below are allowed
+            # even when the usual outbound limit is reached, so a refusal or meeting
+            # agreement does not leave the lead without a clear final answer.
             settings = get_settings()
             daily_limit = getattr(settings, "daily_message_limit", None) or 50
             account_result = await db.execute(
                 select(TelegramAccount).where(TelegramAccount.id == account.id)
             )
             db_account = account_result.scalar_one_or_none() or account
-
             current_daily = getattr(db_account, "daily_messages_sent", 0) or 0
+
+            # 8. Classify intent
+            engine = LLMEngine()
+            intent = await classify_intent(text, engine)
+            event = _event_from_intent(intent)
+            previous_state = conversation.current_state or "cold"
+            new_state = transition(previous_state, event)
+
+            # 8.5 Update funnel stage based on intent
+            conversation.conversation_stage = next_stage(
+                script,
+                getattr(conversation, "conversation_stage", None) or "hook",
+                intent,
+            )
+            conversation.current_state = new_state
+            conversation.sentiment = _sentiment_from_intent(intent)
+            current_facts = dict(conversation.facts_extracted or {})
+            current_facts["last_intent"] = intent
+            conversation.facts_extracted = current_facts
+
+            if campaign_contact and intent == "meeting_intent":
+                campaign_contact.status = "meeting_booked"
+                campaign.meeting_booked_count = (campaign.meeting_booked_count or 0) + 1
+
+            if is_terminal(previous_state):
+                await db.commit()
+                logger.info(
+                    "Conversation %s already terminal (%s), skipping automated reply",
+                    conversation.id,
+                    previous_state,
+                )
+                return
+
+            terminal_text = _terminal_response(intent)
+            if terminal_text:
+                response_text = terminal_text
+                chunks = split_message_into_chunks(response_text, max_chunks=2)
+                base_typing_delay = calculate_typing_delay(response_text)
+                thinking_delay = calculate_thinking_delay()
+                await client.set_online()
+                if thinking_delay > 0:
+                    await asyncio.sleep(thinking_delay / 1000.0)
+                for chunk in chunks:
+                    await client.send_message(
+                        user_id=user_id,
+                        text=chunk,
+                        typing_delay_ms=base_typing_delay,
+                    )
+                await add_message(
+                    db,
+                    conversation.id,
+                    "outbound",
+                    response_text,
+                    message_type="text",
+                    llm_model="terminal",
+                    tokens_used=0,
+                    typing_delay_ms=base_typing_delay + thinking_delay,
+                    intent_classification=intent,
+                )
+                db_account.daily_messages_sent = current_daily + len(chunks)
+                db_account.last_message_at = datetime.now(timezone.utc)
+                await db.commit()
+
+                if intent == "meeting_intent":
+                    notif = NotificationService()
+                    await notif.send_hot_lead_alert(
+                        contact, conversation, last_message_text=text
+                    )
+                return
+
+            # 8.75 Non-terminal outbound limit guards
             if current_daily >= daily_limit:
+                await db.commit()
                 logger.warning(
                     "Account %s reached daily limit (%s), skipping inbound reply",
                     account.id,
@@ -317,23 +494,13 @@ async def _handle_inbound_message(
                     last_message_at = last_message_at.replace(tzinfo=timezone.utc)
                 elapsed = (datetime.now(timezone.utc) - last_message_at).total_seconds()
                 if elapsed < 30:
+                    await db.commit()
                     logger.info(
                         "Account %s is rate limited for inbound reply (%.1fs since last message)",
                         account.id,
                         elapsed,
                     )
                     return
-
-            # 8. Classify intent
-            engine = LLMEngine()
-            intent = await classify_intent(text, engine)
-
-            # 8.5 Update funnel stage based on intent
-            conversation.conversation_stage = next_stage(
-                script,
-                getattr(conversation, "conversation_stage", None) or "hook",
-                intent,
-            )
 
             # 9. Build context
             context = await get_conversation_context(db, conversation.id, limit=10)
@@ -388,7 +555,7 @@ async def _handle_inbound_message(
             max_length = get_max_length_for_stage(script, conversation_stage)
             max_tokens = int(max_length * 1.5) if max_length else None
 
-            if text.strip() and set(text.strip()) <= PUNCTUATION_ONLY_CHARS:
+            if _needs_deterministic_fallback(text):
                 response = {
                     "text": _build_inbound_fallback_text(text, script),
                     "model": "fallback",
@@ -411,6 +578,7 @@ async def _handle_inbound_message(
             # If guardrails blocked even the retry, use fallback text
             if not response_text or response.get("model") == "fallback":
                 response_text = _build_inbound_fallback_text(text, script)
+            response_text = _polish_inbound_response(response_text)
 
             # 11. Humanizer delays and chunking
             chunks = split_message_into_chunks(response_text)
@@ -455,29 +623,6 @@ async def _handle_inbound_message(
                 db_account.daily_messages_sent = current_daily + sent_chunks
                 db_account.last_message_at = datetime.now(timezone.utc)
 
-            # 14. Update conversation state / facts / sentiment
-            event_map = {
-                "meeting_intent": "meeting_intent",
-                "positive": "positive_reply",
-                "negative": "negative_reply",
-                "objection": "objection",
-                "question": "informational",
-                "informational": "informational",
-            }
-            event = event_map.get(intent, "positive_reply")
-            previous_state = conversation.current_state or "cold"
-            new_state = transition(previous_state, event)
-            conversation.current_state = new_state
-            conversation.sentiment = (
-                "positive"
-                if intent in ("positive", "meeting_intent")
-                else "negative"
-                if intent == "negative"
-                else "neutral"
-            )
-            current_facts = dict(conversation.facts_extracted or {})
-            current_facts["last_intent"] = intent
-            conversation.facts_extracted = current_facts
             await db.commit()
 
             # 15. Notify if hot lead

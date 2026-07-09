@@ -1,16 +1,18 @@
 import asyncio
 import logging
 from datetime import datetime, time as dt_time, timezone
-from typing import List
+from collections.abc import Awaitable, Callable
+from typing import Any, List
 from uuid import UUID
 
-from aiogram import Bot, Dispatcher, F, Router, types
+from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router, types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types.base import TelegramObject
 from sqlalchemy import select, func, delete
 from types import SimpleNamespace
 
@@ -286,9 +288,6 @@ def _build_script_buttons(scripts: List) -> types.InlineKeyboardMarkup:
             ]
         )
 
-    rows.append(
-        [types.InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_scripts")]
-    )
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -391,6 +390,10 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
 
 @router.message(Command("scripts"))
 async def cmd_scripts(message: types.Message):
+    await _send_or_edit_scripts(message)
+
+
+async def _load_scripts_with_campaign_counts():
     async with AsyncSessionLocal() as session:
         campaign_count = (
             select(func.count(Campaign.id))
@@ -400,7 +403,11 @@ async def cmd_scripts(message: types.Message):
         result = await session.execute(
             select(Script, campaign_count).order_by(Script.created_at.desc()).limit(20)
         )
-        scripts = result.all()
+        return result.all()
+
+
+async def _send_or_edit_scripts(message: types.Message):
+    scripts = await _load_scripts_with_campaign_counts()
 
     if not scripts:
         kb = types.InlineKeyboardMarkup(
@@ -412,15 +419,30 @@ async def cmd_scripts(message: types.Message):
                 ]
             ]
         )
-        await message.answer(
+        text = (
             "Сценариев пока нет. Создайте первый сценарий, чтобы бот понимал, "
-            "как общаться с лидами.",
-            reply_markup=kb,
+            "как общаться с лидами."
         )
+        if message.from_user and message.from_user.is_bot:
+            try:
+                await message.edit_text(text, reply_markup=kb)
+            except TelegramBadRequest as exc:
+                if "message is not modified" not in str(exc).lower():
+                    raise
+        else:
+            await message.answer(text, reply_markup=kb)
         return
 
     text = _format_scripts(scripts)
-    await message.answer(text, reply_markup=_build_script_buttons(scripts), parse_mode="HTML")
+    kb = _build_script_buttons(scripts)
+    if message.from_user and message.from_user.is_bot:
+        try:
+            await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except TelegramBadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                raise
+    else:
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(lambda c: c.data == "refresh_scripts")
@@ -1400,16 +1422,22 @@ async def cmd_upload(message: types.Message, state: FSMContext):
     await message.answer(
         "📎 Отправьте CSV или Excel-файл с контактами.\n\n"
         "Обязательная колонка: telegram_user_id (или telegram_id).\n\n"
+        "Если открыли импорт случайно, выберите другой раздел в меню или напишите /cancel.\n\n"
         "Пример CSV:\n"
         "first_name,last_name,company_name,position,city,industry,telegram_user_id,phone\n"
-        "Иван,Иванов,ООО Ромашка,Директор,Москва,IT,123456789,+79990000000"
+        "Иван,Иванов,ООО Ромашка,Директор,Москва,IT,123456789,+79990000000",
+        reply_markup=_main_menu_keyboard(),
     )
 
 
 @router.message(CSVImportFSM.waiting_file)
 async def process_upload_file(message: types.Message, state: FSMContext):
     if not message.document:
-        await message.answer("❌ Пожалуйста, отправьте файл.")
+        await message.answer(
+            "❌ Пожалуйста, отправьте файл. Чтобы выйти, выберите другой раздел в меню "
+            "или напишите /cancel.",
+            reply_markup=_main_menu_keyboard(),
+        )
         return
 
     file_name = message.document.file_name.lower()
@@ -2138,6 +2166,118 @@ STATEFUL_MENU_BUTTONS = {
     "Upload",
     "Discover",
 }
+COMMAND_HANDLERS = {
+    "/start": (cmd_start, False),
+    "/help": (cmd_help, False),
+    "/cancel": (cmd_cancel, True),
+    "/scripts": (cmd_scripts, False),
+    "/campaigns": (cmd_campaigns, False),
+    "/upload": (cmd_upload, True),
+    "/analytics": (cmd_analytics, False),
+    "/hotleads": (cmd_hotleads, False),
+    "/newscript": (cmd_newscript, True),
+    "/startcampaign": (cmd_startcampaign, True),
+    "/discover": (cmd_discover, True),
+    "/conversations": (cmd_conversations, False),
+}
+
+
+async def _dispatch_navigation_override(message: types.Message, state: FSMContext) -> bool:
+    text = (message.text or "").strip()
+    if not text:
+        return False
+
+    if text in MENU_HANDLERS:
+        await state.clear()
+        handler = MENU_HANDLERS[text]
+        if text in STATEFUL_MENU_BUTTONS:
+            await handler(message, state)
+        else:
+            await handler(message)
+        return True
+
+    if not text.startswith("/"):
+        return False
+
+    command = text.split(maxsplit=1)[0].split("@", 1)[0].lower()
+    handler_info = COMMAND_HANDLERS.get(command)
+    if not handler_info:
+        await message.answer(
+            "Неизвестная команда не будет записана как ответ в текущем мастере.\n\n"
+            "Используйте меню, /help или /cancel.",
+            reply_markup=_main_menu_keyboard(),
+        )
+        return True
+
+    handler, needs_state = handler_info
+    if command != "/cancel":
+        await state.clear()
+    if needs_state:
+        await handler(message, state)
+    else:
+        await handler(message)
+    return True
+
+
+def _state_name(state: State) -> str:
+    return state.state
+
+
+CALLBACK_STATE_REQUIREMENTS: list[tuple[Callable[[str], bool], str]] = [
+    (lambda data: data.startswith("tone:"), _state_name(ScriptCreateFSM.tone)),
+    (lambda data: data.startswith("fmg:"), _state_name(ScriptCreateFSM.first_message_goal)),
+    (lambda data: data.startswith("emoji:"), _state_name(ScriptCreateFSM.emoji_policy)),
+    (lambda data: data.startswith("workhours:"), _state_name(ScriptCreateFSM.working_hours)),
+    (lambda data: data.startswith("script:"), _state_name(ScriptCreateFSM.confirm)),
+    (lambda data: data.startswith("csv:"), _state_name(CSVImportFSM.preview)),
+    (lambda data: data.startswith("campaign_script:"), _state_name(CampaignCreateFSM.select_script)),
+    (lambda data: data.startswith("preview:"), _state_name(CampaignCreateFSM.preview)),
+    (lambda data: data.startswith("campaign:"), _state_name(CampaignCreateFSM.confirm)),
+    (lambda data: data.startswith("discover:"), _state_name(DiscoverFSM.source)),
+    (lambda data: data.startswith("discover_confirm:"), _state_name(DiscoverFSM.confirm)),
+    (lambda data: data.startswith("startcamp:"), _state_name(CampaignStartFSM.selecting)),
+]
+
+
+class NavigationOverrideMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if isinstance(event, types.Message):
+            state: FSMContext | None = data.get("state")
+            if state and await state.get_state():
+                if await _dispatch_navigation_override(event, state):
+                    return None
+        return await handler(event, data)
+
+
+class CallbackStateGuardMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if isinstance(event, types.CallbackQuery):
+            callback_data = event.data or ""
+            state: FSMContext | None = data.get("state")
+            current_state = await state.get_state() if state else None
+            for matcher, expected_state in CALLBACK_STATE_REQUIREMENTS:
+                if matcher(callback_data) and current_state != expected_state:
+                    await event.answer(
+                        "Эта кнопка уже не относится к текущему шагу. Откройте меню или начните заново.",
+                        show_alert=True,
+                    )
+                    if event.message:
+                        await event.message.answer(
+                            "Я не стал выполнять устаревшее действие, чтобы не сломать текущий сценарий.",
+                            reply_markup=_main_menu_keyboard(),
+                        )
+                    return None
+        return await handler(event, data)
 
 
 @router.message(F.text.in_(set(MENU_HANDLERS.keys())))
@@ -2215,11 +2355,13 @@ async def handle_admin_error(event: types.ErrorEvent):
     return True
 
 
+router.message.outer_middleware(NavigationOverrideMiddleware())
+router.callback_query.outer_middleware(CallbackStateGuardMiddleware())
 dp.include_router(router)
 
 
 async def start_bot():
-    global _polling_active
+    global _bot, _polling_active
     if not is_admin_bot_configured():
         logger.warning("ADMIN_BOT_TOKEN is not configured, bot will not start.")
         return
@@ -2229,13 +2371,17 @@ async def start_bot():
         await dp.start_polling(
             bot,
             handle_signals=False,
-            close_bot_session=False,
+            close_bot_session=True,
         )
     finally:
         _polling_active = False
+        _bot = None
         logger.info("Admin bot polling task finished")
 
 
 async def stop_bot():
+    global _bot, _polling_active
+    _polling_active = False
     if _bot is not None:
         await _bot.session.close()
+        _bot = None

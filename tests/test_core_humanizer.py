@@ -219,3 +219,12 @@ class TestSplitMessageIntoChunks:
         assert len(chunks) == 1
         assert "Paragraph one" in chunks[0]
         assert "Paragraph two" in chunks[0]
+
+    def test_max_chunks_does_not_drop_tail_text(self):
+        text = "\n\n".join(f"Part {idx}" for idx in range(1, 8))
+        chunks = split_message_into_chunks(text, max_chars=20, max_chunks=3)
+
+        joined = "\n\n".join(chunks)
+        for idx in range(1, 8):
+            assert f"Part {idx}" in joined
+        assert len(chunks) == 3

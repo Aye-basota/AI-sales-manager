@@ -145,7 +145,7 @@ def build_user_prompt(
             "ФАКТЫ О ЛИДЕ:\n{facts_block}\n\n"
             "ТВОЯ ПРЕДЫДУЩАЯ РЕПЛИКА:\n{last_agent_message}\n\n"
             "ОТВЕТ КЛИЕНТА:\n{lead_message}\n\n"
-            "Напиши ответ (1-3 коротких абзаца)."
+            "Напиши естественный короткий ответ, обычно одним абзацем."
         ),
     )
     return _format_template(

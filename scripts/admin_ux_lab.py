@@ -137,6 +137,47 @@ async def _cancel_active_wizard() -> str:
     return text
 
 
+async def _command_switches_active_wizard() -> str:
+    state = FakeState("CSVImportFSM:waiting_file")
+    message = FakeMessage("/help")
+    handled = await admin_bot._dispatch_navigation_override(message, state)
+    if not handled:
+        raise AssertionError("Command inside wizard was not intercepted")
+    if not state.cleared:
+        raise AssertionError("Command switch did not clear the previous wizard")
+    text, kwargs = message.answers[-1]
+    _assert_contains(text, "Короткая схема", "/cancel")
+    if kwargs.get("reply_markup") is None:
+        raise AssertionError("Command switch did not return the main menu")
+    return text
+
+
+async def _menu_switches_active_wizard() -> str:
+    state = FakeState("ScriptCreateFSM:name")
+    message = FakeMessage(admin_bot.MENU_UPLOAD)
+    handled = await admin_bot._dispatch_navigation_override(message, state)
+    if not handled:
+        raise AssertionError("Menu button inside wizard was not intercepted")
+    if not state.current_state:
+        raise AssertionError("Upload menu did not enter its own wizard")
+    text, _ = message.answers[-1]
+    _assert_contains(text, "Отправьте CSV", "telegram_user_id")
+    return text
+
+
+async def _unknown_command_inside_wizard() -> str:
+    state = FakeState("ScriptCreateFSM:name")
+    message = FakeMessage("/wat")
+    handled = await admin_bot._dispatch_navigation_override(message, state)
+    if not handled:
+        raise AssertionError("Unknown command inside wizard was not intercepted")
+    if state.cleared:
+        raise AssertionError("Unknown command should not clear the current wizard")
+    text, _ = message.answers[-1]
+    _assert_contains(text, "не будет записана как ответ", "/cancel")
+    return text
+
+
 async def _unknown_callback() -> str:
     callback = FakeCallback("stale:button")
     await admin_bot.handle_unknown_callback(callback)
@@ -207,6 +248,9 @@ async def main() -> int:
         ("unknown message gets helpful fallback", _unknown_message),
         ("unknown wizard text points to cancel", _unknown_inside_wizard),
         ("cancel exits active wizard", _cancel_active_wizard),
+        ("command switches active wizard", _command_switches_active_wizard),
+        ("menu switches active wizard", _menu_switches_active_wizard),
+        ("unknown command is not saved as answer", _unknown_command_inside_wizard),
         ("stale callback gets explicit fallback", _unknown_callback),
         ("menu routing keeps compatibility", _menu_routing_compatibility),
     ]

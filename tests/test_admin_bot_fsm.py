@@ -200,11 +200,17 @@ class TestUploadFSM:
         text = mock_message.answer.call_args[0][0]
         assert "CSV" in text
         assert "Excel" in text
+        assert "/cancel" in text
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_rejects_non_document(self, mock_message, mock_state):
         mock_message.document = None
         await process_upload_file(mock_message, mock_state)
-        mock_message.answer.assert_called_once_with("❌ Пожалуйста, отправьте файл.")
+        mock_message.answer.assert_called_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "Пожалуйста, отправьте файл" in text
+        assert "/cancel" in text
+        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_rejects_unsupported_extension(self, mock_message, mock_state):
         mock_message.document = MagicMock()

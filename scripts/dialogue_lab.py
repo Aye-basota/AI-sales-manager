@@ -53,6 +53,11 @@ DEFAULT_SCENARIOS = [
         "expected": {"objection", "negative"},
     },
     {
+        "name": "hard_refusal",
+        "lead": "Не пишите мне больше, нам это не нужно.",
+        "expected": {"negative"},
+    },
+    {
         "name": "meeting_intent",
         "lead": "Ок, звучит интересно. Давай созвон завтра после обеда.",
         "expected": {"meeting_intent", "positive"},
@@ -292,7 +297,7 @@ def _analyze_result(
         issues.append("empty response")
     if len(response_text) > 650:
         issues.append(f"response too long: {len(response_text)} chars")
-    if response_text.count("?") > 2:
+    if response_text.count("?") > 1:
         issues.append("too many questions in one response")
     if len(chunks) > 3:
         issues.append(f"too many Telegram chunks: {len(chunks)}")
@@ -306,12 +311,17 @@ def _analyze_result(
         phrase in lower for phrase in ("я бот", "я ии", "искусственный интеллект")
     ):
         issues.append("bot_check response reveals automation")
-    if scenario["name"] == "spam_objection" and not any(
+    if scenario["name"] == "spam_objection" and intent != "negative" and not any(
         marker in lower for marker in ("заблок", "блокиров", "риск", "лимит")
     ):
         issues.append("spam objection did not address block/risk concern")
     if scenario["name"] == "meeting_intent" and state not in {"hot", "meeting_booked"}:
         issues.append(f"meeting intent did not become hot/meeting_booked: {state}")
+    if scenario["name"] == "hard_refusal":
+        if state != "closed":
+            issues.append(f"hard refusal did not close conversation: {state}")
+        if "?" in response_text:
+            issues.append("hard refusal response asked a follow-up question")
 
     return issues
 

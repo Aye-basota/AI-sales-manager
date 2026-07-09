@@ -3,7 +3,9 @@ from app.llm.guardrails import (
     apply_guardrails,
     check_anti_repetition,
     check_length,
+    check_max_questions,
     check_no_bot_words,
+    check_no_banned_sales_phrases,
     check_no_forbidden_topics,
     check_no_markdown,
     check_no_emoji,
@@ -65,6 +67,16 @@ def test_apply_guardrails_fails_forbidden():
 def test_apply_guardrails_fails_repetition():
     result = apply_guardrails("Same text", ["Same text"])
     assert result is None
+
+
+def test_check_max_questions_blocks_interrogation():
+    assert check_max_questions("Понял. Какой объем сейчас?") is True
+    assert check_max_questions("Какой объем? Кто отвечает?") is False
+
+
+def test_check_no_banned_sales_phrases_blocks_templated_hooks():
+    assert check_no_banned_sales_phrases("Понял, спасибо за контекст.") is True
+    assert check_no_banned_sales_phrases("Как сейчас решаете эту задачу?") is False
 
 
 class TestCheckNoBotWords:
@@ -149,6 +161,16 @@ class TestEvaluateGuardrails:
         result = evaluate_guardrails("**жирный текст**", [])
         assert result.approved is False
         assert "markdown" in result.violations
+
+    def test_rejected_too_many_questions(self):
+        result = evaluate_guardrails("Какой объем? Кто отвечает?", [])
+        assert result.approved is False
+        assert "too_many_questions" in result.violations
+
+    def test_rejected_banned_sales_phrase(self):
+        result = evaluate_guardrails("Понимаю, а как сейчас решаете эту задачу?", [])
+        assert result.approved is False
+        assert "banned_sales_phrase" in result.violations
 
     def test_multiple_violations(self):
         bad_text = "# политика и я бот"

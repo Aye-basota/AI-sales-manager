@@ -177,6 +177,7 @@ async def test_bot_check_uses_human_fallback_without_bot_words():
                             await _handle_inbound_message(account, client, message)
 
     client.send_message.assert_awaited_once()
+    engine_inst.generate_response_with_guardrails.assert_not_awaited()
     text = client.send_message.call_args.kwargs["text"].lower()
     assert "пишу из рабочего telegram" in text
     assert "бот" not in text
