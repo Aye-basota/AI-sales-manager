@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 _bot: Bot | None = None
+_polling_active = False
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 
@@ -97,12 +98,27 @@ def _main_menu_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text=MENU_ANALYTICS), KeyboardButton(text=MENU_HELP)],
         ],
         resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="Выберите действие",
     )
 
 
 @dp.startup()
 async def on_startup(bot: Bot):
-    await bot.set_my_commands(COMMANDS)
+    global _polling_active
+    try:
+        await asyncio.wait_for(bot.set_my_commands(COMMANDS), timeout=10)
+    except Exception:
+        logger.warning("Failed to set admin bot commands during startup", exc_info=True)
+    _polling_active = True
+    logger.info("Admin bot polling startup completed")
+
+
+@dp.shutdown()
+async def on_shutdown(bot: Bot):
+    global _polling_active
+    _polling_active = False
+    logger.info("Admin bot polling shutdown completed")
 
 
 def _get_bot() -> Bot:
@@ -110,6 +126,14 @@ def _get_bot() -> Bot:
     if _bot is None:
         _bot = Bot(token=settings.admin_bot_token)
     return _bot
+
+
+def is_admin_bot_configured() -> bool:
+    return is_configured_bot_token(settings.admin_bot_token)
+
+
+def is_admin_bot_running() -> bool:
+    return _polling_active
 
 
 # ---------------------------------------------------------------------------
@@ -2195,11 +2219,21 @@ dp.include_router(router)
 
 
 async def start_bot():
-    if not is_configured_bot_token(settings.admin_bot_token):
+    global _polling_active
+    if not is_admin_bot_configured():
         logger.warning("ADMIN_BOT_TOKEN is not configured, bot will not start.")
         return
     bot = _get_bot()
-    await dp.start_polling(bot)
+    logger.info("Starting admin bot polling")
+    try:
+        await dp.start_polling(
+            bot,
+            handle_signals=False,
+            close_bot_session=False,
+        )
+    finally:
+        _polling_active = False
+        logger.info("Admin bot polling task finished")
 
 
 async def stop_bot():

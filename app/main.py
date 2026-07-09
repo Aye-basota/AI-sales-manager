@@ -19,7 +19,7 @@ from app.api import (
     telegram_accounts,
     funnels,
 )
-from app.bots import start_bot, stop_bot
+from app.bots import is_admin_bot_configured, start_bot, stop_bot
 from app.bots.inbound_listener import start_inbound_listeners, stop_inbound_listeners
 from app.db.redis import close_redis
 from app.core.scheduler import scheduler
@@ -56,6 +56,25 @@ def _observe_background_task(task: asyncio.Task, name: str) -> asyncio.Task:
     return task
 
 
+async def _supervise_admin_bot() -> None:
+    if not is_admin_bot_configured():
+        await start_bot()
+        return
+
+    while True:
+        try:
+            await start_bot()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Admin bot polling crashed",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        logger.warning("Admin bot polling stopped; restarting in 5 seconds")
+        await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Register signal handlers only when running in the main interpreter thread.
@@ -78,7 +97,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
 
     bot_task = _observe_background_task(
-        asyncio.create_task(start_bot()),
+        asyncio.create_task(_supervise_admin_bot()),
         "admin_bot",
     )
 
