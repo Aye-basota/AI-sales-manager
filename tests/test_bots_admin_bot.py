@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 
 from app.bots.admin_bot import (
@@ -18,6 +19,7 @@ from app.bots.admin_bot import (
     _notify_admin_error,
     _send_or_edit_scripts,
     _send_or_edit_campaigns,
+    _generate_preview_message,
     CallbackStateGuardMiddleware,
     cmd_start,
     cmd_help,
@@ -1206,6 +1208,76 @@ class TestCampaignCreateFSM:
         mock_callback.message.edit_text.assert_called_once()
         assert "Новое сообщение" in mock_callback.message.edit_text.call_args[0][0]
         mock_callback.answer.assert_awaited_once_with("🔄 Обновлено")
+
+    async def test_preview_regenerate_ignores_not_modified(
+        self, mock_callback, mock_state
+    ):
+        script_id = uuid.uuid4()
+        mock_callback.data = "preview:regenerate"
+        mock_callback.message.edit_text = AsyncMock(
+            side_effect=TelegramBadRequest(
+                method=MagicMock(),
+                message=(
+                    "Bad Request: message is not modified: specified new message "
+                    "content and reply markup are exactly the same"
+                ),
+            )
+        )
+        mock_state.get_data.return_value = {
+            "script_id": script_id,
+            "records": [{"first_name": "Bob", "telegram_user_id": "456"}],
+        }
+        script = Script(
+            id=script_id,
+            name="Test Script",
+            goal="Book",
+            max_messages=2,
+            tone="professional",
+        )
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = script
+        context = _make_mock_session(result_mock)
+
+        mock_engine = MagicMock()
+        mock_engine.generate_response_with_guardrails = AsyncMock(
+            return_value={"text": "Новое сообщение"}
+        )
+
+        with (
+            patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
+            patch("app.bots.admin_bot.LLMEngine", return_value=mock_engine),
+        ):
+            await handle_preview_regenerate(mock_callback, mock_state)
+
+        mock_callback.message.edit_text.assert_awaited_once()
+        mock_callback.answer.assert_awaited_once_with("Без изменений")
+
+    async def test_preview_uses_safe_fallback_when_guardrails_fallback(self):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Test Script",
+            goal="Book",
+            max_messages=2,
+            tone="professional",
+        )
+        mock_engine = MagicMock()
+        mock_engine.generate_response_with_guardrails = AsyncMock(
+            return_value={
+                "text": "Здравствуйте! Есть 15 минут на короткий созвон?",
+                "model": "fallback",
+                "tokens_used": 0,
+            }
+        )
+
+        with patch("app.bots.admin_bot.LLMEngine", return_value=mock_engine):
+            text = await _generate_preview_message(
+                script,
+                {"first_name": "Максим", "telegram_user_id": "123"},
+            )
+
+        assert "Привет, Максим" in text
+        assert "Пишу коротко" in text
+        assert "15 минут" not in text
 
     async def test_preview_launch_asks_name(self, mock_callback, mock_state):
         mock_callback.data = "preview:launch"

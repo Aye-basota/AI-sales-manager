@@ -26,7 +26,7 @@ from app.core.initial_message_quality import (
 )
 from app.core.scheduler import normalize_timezone
 from app.db.session import AsyncSessionLocal
-from app.llm.engine import FALLBACK_TEXT, LLMEngine
+from app.llm.engine import LLMEngine
 from app.llm.prompts import build_initial_user_prompt, build_system_prompt
 from app.models import Script, Campaign, CampaignContact, Conversation, Contact, Message
 
@@ -1570,6 +1570,10 @@ def _preview_keyboard() -> types.InlineKeyboardMarkup:
     )
 
 
+def _is_message_not_modified(exc: TelegramBadRequest) -> bool:
+    return "message is not modified" in str(exc).lower()
+
+
 async def _generate_preview_message(script: Script, record: dict) -> str:
     stage = get_first_stage(script)
     contact = SimpleNamespace(**record)
@@ -1593,7 +1597,9 @@ async def _generate_preview_message(script: Script, record: dict) -> str:
             max_retries=2,
             max_tokens=get_max_length_for_stage(script, stage),
         )
-        text = result.get("text", FALLBACK_TEXT)
+        text = (result.get("text") or "").strip()
+        if not text or result.get("model") == "fallback":
+            return build_safe_initial_fallback(contact)
         if needs_initial_message_retry(text):
             retry_result = await engine.generate_response_with_guardrails(
                 [
@@ -1608,13 +1614,17 @@ async def _generate_preview_message(script: Script, record: dict) -> str:
                 max_tokens=get_max_length_for_stage(script, stage),
             )
             retry_text = retry_result.get("text", "")
-            if retry_text and not needs_initial_message_retry(retry_text):
+            if (
+                retry_text
+                and retry_result.get("model") != "fallback"
+                and not needs_initial_message_retry(retry_text)
+            ):
                 return retry_text
             return build_safe_initial_fallback(contact)
         return text
     except Exception:
         logger.exception("Failed to generate campaign preview")
-        return FALLBACK_TEXT
+        return build_safe_initial_fallback(contact)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("campaign_script:"))
@@ -1675,7 +1685,13 @@ async def handle_preview_regenerate(callback: types.CallbackQuery, state: FSMCon
     preview_text = await _generate_preview_message(script, records[0])
     await state.update_data(preview_text=preview_text)
     text = f"👁 Предпросмотр первого сообщения:\n\n{preview_text}"
-    await callback.message.edit_text(text, reply_markup=_preview_keyboard())
+    try:
+        await callback.message.edit_text(text, reply_markup=_preview_keyboard())
+    except TelegramBadRequest as exc:
+        if not _is_message_not_modified(exc):
+            raise
+        await callback.answer("Без изменений")
+        return
     await callback.answer("🔄 Обновлено")
 
 
