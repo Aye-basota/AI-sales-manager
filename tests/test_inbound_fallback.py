@@ -5,13 +5,33 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.bots.inbound_listener import _handle_inbound_message
+from app.bots.inbound_listener import (
+    _build_inbound_fallback_text,
+    _handle_inbound_message,
+    _needs_deterministic_fallback,
+)
 from app.models.campaign import Campaign, CampaignContact
 from app.models.contact import Contact
 from app.models.conversation import Conversation
 from app.models.script import Script
 from app.models.telegram_account import TelegramAccount
 from tests.conftest import build_mock_session, MockResult
+
+
+def test_design_request_uses_deterministic_fallback():
+    script = Script(
+        id=uuid.uuid4(),
+        name="Cups",
+        role_prompt="Делаем брендированные стаканчики для кофеен.",
+        goal="Заинтересовать и предложить короткий созвон.",
+    )
+
+    text = "А какой дизайн под нашу концепцию вы предложите?"
+
+    assert _needs_deterministic_fallback(text) is True
+    fallback = _build_inbound_fallback_text(text, script)
+    assert "не буду придумывать дизайн" in fallback
+    assert "зафиксировать вводные" in fallback
 
 
 @pytest.mark.asyncio
@@ -96,7 +116,8 @@ async def test_guardrails_reject_fallback_sent():
 
                             client.send_message.assert_awaited_once()
                             args, kwargs = client.send_message.call_args
-                            assert "Извините, я не до конца понял контекст" in kwargs["text"]
+                            assert "Похоже, я не до конца точно понял вопрос" in kwargs["text"]
+                            assert "Sales" in kwargs["text"]
                             assert "book a demo" not in kwargs["text"]
 
 

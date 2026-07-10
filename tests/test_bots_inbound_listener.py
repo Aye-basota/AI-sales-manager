@@ -20,6 +20,20 @@ from app.models.script import Script
 from tests.conftest import build_mock_session, MockResult
 
 
+class _FirstOnlyResult:
+    def __init__(self, items):
+        self._items = items
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._items[0] if self._items else None
+
+    def scalar_one_or_none(self):
+        raise AssertionError("handler should not use scalar_one_or_none for contacts")
+
+
 @pytest.mark.asyncio
 async def test_start_inbound_listeners_starts_clients():
     account = TelegramAccount(
@@ -41,6 +55,72 @@ async def test_start_inbound_listeners_starts_clients():
         MockClient.assert_called_once()
         client_inst.start.assert_awaited_once()
         client_inst.on_message.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_inbound_message_tolerates_duplicate_contacts():
+    account = TelegramAccount(id=uuid.uuid4(), phone="+123", daily_messages_sent=0)
+    client = MagicMock()
+    client.set_online = AsyncMock()
+    client.send_message = AsyncMock(return_value={"message_id": 1})
+    client.read_history = AsyncMock()
+
+    message = MagicMock()
+    message.from_user = MagicMock(id=123456)
+    message.text = "Не пишите мне"
+
+    contact = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="John")
+    duplicate = Contact(id=uuid.uuid4(), telegram_user_id=123456, first_name="Old")
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        contact_id=contact.id,
+        campaign_id=uuid.uuid4(),
+        current_state="warm",
+    )
+    campaign = Campaign(
+        id=conversation.campaign_id, script_id=uuid.uuid4(), status="running"
+    )
+    cc = CampaignContact(
+        id=uuid.uuid4(),
+        campaign_id=campaign.id,
+        contact_id=contact.id,
+        status="initial_sent",
+    )
+    script = Script(id=campaign.script_id, name="Test", role_prompt="Sales", goal="Book")
+
+    mock_db = build_mock_session()
+    mock_db.execute.side_effect = [
+        _FirstOnlyResult([contact, duplicate]),
+        MockResult([conversation]),
+        MockResult([campaign]),
+        MockResult([cc]),
+        MockResult([script]),
+        MockResult([account]),
+    ]
+
+    with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
+        MockSession.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        MockSession.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.bots.inbound_listener.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "app.bots.inbound_listener.extract_facts_from_message",
+                new_callable=AsyncMock,
+                return_value={},
+            ):
+                with patch(
+                    "app.bots.inbound_listener.classify_intent",
+                    new_callable=AsyncMock,
+                    return_value="negative",
+                ):
+                    with patch(
+                        "app.bots.inbound_listener.add_message",
+                        new_callable=AsyncMock,
+                    ):
+                        await _handle_inbound_message(account, client, message)
+
+    client.send_message.assert_awaited_once()
+    assert "Больше не буду писать" in client.send_message.call_args.kwargs["text"]
 
 
 @pytest.mark.asyncio
@@ -398,7 +478,8 @@ async def test_handle_inbound_message_guardrails_block():
                                 # Fallback text should still be sent
                                 client.send_message.assert_awaited_once()
                                 args, kwargs = client.send_message.call_args
-                                assert "Извините, я не до конца понял контекст" in kwargs["text"]
+                                assert "Похоже, я не до конца точно понял вопрос" in kwargs["text"]
+                                assert "Sales" in kwargs["text"]
                                 assert "созвон" not in kwargs["text"].lower()
                                 mock_notif.assert_not_awaited()
 
@@ -682,8 +763,44 @@ def test_fallback_text_does_not_match_bot_inside_working_words():
     )
 
     assert "Пишу из рабочего Telegram" not in text
-    assert "без лишней ручной рутины" in text
+    assert "обсудить обработку лидов" in text
     assert "созвон" not in text.lower()
+
+
+def test_short_positive_fallback_does_not_push_meeting():
+    script = Script(
+        name="Test",
+        role_prompt="Помогаем B2B-командам аккуратно начинать диалоги в Telegram.",
+        goal="объяснить механику",
+    )
+    text = _build_inbound_fallback_text("Ок, интересно", script)
+
+    assert "Помогаем B2B-командам" in text
+    assert "созвон" not in text.lower()
+    assert "встреч" not in text.lower()
+
+
+def test_short_positive_fallback_ignores_cta_goal_as_offer_context():
+    script = Script(
+        name="Test",
+        role_prompt="Ты живой B2B sales manager. Не называй себя ботом.",
+        goal="показать ценность AI Sales Manager и договориться о коротком созвоне",
+        target_audience="B2B founders and sales managers",
+    )
+    text = _build_inbound_fallback_text("Да", script)
+
+    assert "B2B-командам" in text
+    assert "созвон" not in text.lower()
+    assert "договориться" not in text.lower()
+
+
+def test_polish_keeps_neural_lead_brand_name():
+    result = _polish_inbound_response(
+        "Я из Neural Lead. Написал по рабочему контакту."
+    )
+
+    assert "Neural Lead" in result
+    assert "Neural лидом" not in result
 
 
 def test_fallback_for_wrong_person_does_not_push_meeting():
@@ -777,9 +894,53 @@ def test_fallback_for_case_question_avoids_fake_metrics():
         script,
     )
 
-    assert "без выдуманных цифр" in text
+    assert "Не буду выдумывать кейсы" in text
     assert "+27%" not in text
     assert "3 раза" not in text
+    assert "метрики обычно смотрят" not in text
+
+
+def test_materials_request_does_not_promise_fake_attachments():
+    script = Script(
+        name="Стаканчики",
+        role_prompt="Делаем кастомные бумажные стаканчики для кофеен.",
+        goal="Обсудить регулярные поставки",
+    )
+    text = _build_inbound_fallback_text("Да, покажите примеры стаканчиков", script)
+
+    lowered = text.lower()
+    assert "не могу прикрепить" in lowered or "не буду выдумывать" in lowered
+    assert "стаканчик" in lowered
+    assert "лидогенерац" not in lowered
+    assert "присылаю" not in lowered
+
+
+def test_cups_pricing_fallback_stays_in_cups_context():
+    script = Script(
+        name="Стаканчики",
+        role_prompt="Делаем кастомные бумажные стаканчики для кофеен.",
+        goal="Обсудить регулярные поставки",
+    )
+    text = _build_inbound_fallback_text("Что за цифра, можете говорить конкретнее?", script)
+
+    lowered = text.lower()
+    assert "стакан" in lowered
+    assert "тираж" in lowered
+    assert "контактов" not in lowered
+
+
+def test_context_confusion_fallback_resets_to_offer():
+    script = Script(
+        name="Стаканчики",
+        role_prompt="Делаем кастомные бумажные стаканчики для кофеен.",
+        goal="Обсудить регулярные поставки",
+    )
+    text = _build_inbound_fallback_text("Что ещё за сценарий? О чем вы?", script)
+
+    lowered = text.lower()
+    assert "сбился формулировкой" in lowered
+    assert "стаканчик" in lowered
+    assert "лидогенерац" not in lowered
 
 
 def test_fallback_for_competitor_compare_is_not_bot_check():

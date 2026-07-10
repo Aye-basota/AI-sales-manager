@@ -5,12 +5,15 @@ from unittest.mock import MagicMock
 
 from app.core.funnel import (
     DEFAULT_FUNNEL_STAGES,
+    build_sales_funnel,
     get_first_stage,
     get_funnel_stages,
     get_max_length_for_stage,
     get_stage_config,
+    infer_sales_strategy_from_funnel,
     is_call_to_action_allowed,
     next_stage,
+    sales_strategy_label,
 )
 
 
@@ -25,6 +28,9 @@ class TestFunnelDefaults:
     def test_cta_allows_cta(self):
         assert is_call_to_action_allowed(MagicMock(), "cta") is True
 
+    def test_qualification_does_not_allow_premature_cta(self):
+        assert is_call_to_action_allowed(MagicMock(), "qualification") is False
+
     def test_default_trust_max_length(self):
         script = MagicMock(max_first_message_length=200)
         assert get_max_length_for_stage(script, "trust") == 200
@@ -37,6 +43,21 @@ class TestFunnelDefaults:
     def test_default_value_max_length(self):
         script = MagicMock(max_first_message_length=200)
         assert get_max_length_for_stage(script, "value") == 400
+
+    def test_quick_call_strategy_allows_cta_after_interest(self):
+        script = MagicMock(
+            sales_funnel=build_sales_funnel("quick_call"),
+            first_message_goal="trust",
+        )
+        assert next_stage(script, "trust", "positive") == "interest"
+        assert is_call_to_action_allowed(script, "interest") is True
+
+    def test_strategy_labels_are_localized(self):
+        assert sales_strategy_label("quick_call", "ru") == "Быстрый созвон"
+        assert sales_strategy_label("quick_call", "en") == "Quick call"
+
+    def test_infers_strategy_from_existing_funnel(self):
+        assert infer_sales_strategy_from_funnel(build_sales_funnel("qualification")) == "qualification"
 
 
 class TestCustomFunnel:

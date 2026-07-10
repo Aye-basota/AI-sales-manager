@@ -125,6 +125,8 @@ def check_no_banned_sales_phrases(text: str) -> bool:
         "в вашем стеке",
         "it-компаниям, как у вас",
         "как у вас в",
+        "понял, что у вас",
+        "понимаю, что у вас",
     )
     lower_text = text.lower()
     return not any(phrase in lower_text for phrase in banned)
@@ -149,6 +151,35 @@ def check_no_unsupported_product_claims(text: str) -> bool:
         r"\bemail\b",
         r"не\s+пропускает\s+ни\s+одного",
         r"всегда\s+начинает",
+        r"недавно\s+делал\w*",
+        r"для\s+похож\w+\s+(?:места|компании|проекта|формата)",
+        r"у\s+нас\s+есть\s+готов\w+\s+(?:дизайн|макет|концепц)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_unsupported_creative_work(text: str) -> bool:
+    """Block invented creative/design deliverables in plain outreach replies."""
+    lower_text = text.lower()
+    patterns = (
+        r"вот\s+(?:два|три|несколько)\s+вариант\w*",
+        r"первый\s+вариант[^.?!]+(?:второй|ещ[её])",
+        r"можем\s+сделать\s+дизайн\s+",
+        r"предлож(?:у|им)\s+(?:дизайн|концепц|макет)",
+        r"использовал\w*[^.?!]*(?:цвет|шрифт|паттерн|график|иллюстрац)",
+        r"стаканчик\s+должен\s+быть",
+        r"сразу\s+понятно[^.?!]*(?:дизайн|стаканчик|макет|концепц)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_unsupported_actions(text: str) -> bool:
+    """Block promises to send files/media that the Telegram sender cannot actually attach."""
+    lower_text = text.lower()
+    patterns = (
+        r"\b(?:присылаю|отправляю|прикрепляю)\b[^.?!]*(?:фото|файл|каталог|презентац|пример)",
+        r"\b(?:send|sending|attach|attaching)\b[^.?!]*(?:photo|file|catalog|deck|presentation|example)",
+        r"вот\s+(?:фото|примеры|каталог)",
     )
     return not any(re.search(pattern, lower_text) for pattern in patterns)
 
@@ -197,6 +228,10 @@ def evaluate_guardrails(text: str, last_messages: list[str]) -> GuardrailsResult
         violations.append("banned_sales_phrase")
     if not check_no_unsupported_product_claims(text):
         violations.append("unsupported_product_claim")
+    if not check_no_unsupported_creative_work(text):
+        violations.append("unsupported_creative_work")
+    if not check_no_unsupported_actions(text):
+        violations.append("unsupported_action")
     if not check_no_cjk_arabic(text):
         violations.append("foreign_script")
 

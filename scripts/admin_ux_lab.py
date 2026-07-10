@@ -40,7 +40,7 @@ class FakeMessage:
         self.text = text
         self.answers: list[tuple[str, dict[str, Any]]] = []
         self.edits: list[tuple[str, dict[str, Any]]] = []
-        self.from_user = SimpleNamespace(is_bot=False)
+        self.from_user = SimpleNamespace(is_bot=False, id=1018688845)
 
     async def answer(self, text: str, **kwargs: Any) -> SimpleNamespace:
         self.answers.append((text, kwargs))
@@ -56,6 +56,7 @@ class FakeCallback:
     def __init__(self, data: str, message: FakeMessage | None = None) -> None:
         self.data = data
         self.message = message or FakeMessage()
+        self.from_user = SimpleNamespace(id=1018688845)
         self.answers: list[tuple[str | None, dict[str, Any]]] = []
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> None:
@@ -105,17 +106,34 @@ async def _start_screen() -> str:
     message = FakeMessage("/start")
     await admin_bot.cmd_start(message)
     text, kwargs = message.answers[-1]
-    _assert_contains(text, "Сценарий", "Контакты", "Кампания", "/help")
+    _assert_contains(text, "Выберите язык", "Choose interface language")
     if kwargs.get("reply_markup") is None:
-        raise AssertionError("Start screen did not attach the main menu")
+        raise AssertionError("Start screen did not attach the language picker")
     return text
+
+
+async def _english_language_choice() -> str:
+    message = FakeMessage("/start")
+    callback = FakeCallback("lang:en", message)
+    try:
+        await admin_bot.handle_language_choice(callback)
+        if not message.edits:
+            raise AssertionError("Language choice did not edit the picker message")
+        text, kwargs = message.answers[-1]
+        _assert_contains(text, "Ready", "Upload contacts", "Hot leads")
+        labels = {button.text for row in kwargs["reply_markup"].keyboard for button in row}
+        if "🧭 Businesses" not in labels or "👥 Contacts & launch" not in labels:
+            raise AssertionError(f"English menu labels are incomplete: {labels}")
+        return text
+    finally:
+        admin_bot._admin_language_by_user.pop(1018688845, None)
 
 
 async def _help_screen() -> str:
     message = FakeMessage("/help")
     await admin_bot.cmd_help(message)
     text, kwargs = message.answers[-1]
-    _assert_contains(text, "/cancel", "/conversations [contact_id]", "Горячие лиды")
+    _assert_contains(text, "/cancel", "/conversations [запрос]", "Горячие лиды")
     if kwargs.get("reply_markup") is None:
         raise AssertionError("Help screen did not attach the main menu")
     return text
@@ -143,9 +161,13 @@ async def _script_crud_buttons() -> str:
     labels = [button.text for button in buttons]
     callbacks = [button.callback_data for button in buttons]
 
-    _assert_contains("\n".join(labels), "Новый сценарий", "Выключить", "Main outbound")
+    _assert_contains("\n".join(labels), "Описать бизнес", "Выключить", "Main outbound")
     if not any(callback == "script_new" for callback in callbacks):
         raise AssertionError("Missing script creation callback")
+    if not any(callback.startswith("scriptv:") for callback in callbacks):
+        raise AssertionError("Missing script view callback")
+    if not any(callback.startswith("scripte:") for callback in callbacks):
+        raise AssertionError("Missing script edit callback")
     if not any(callback.startswith("script_toggle:") for callback in callbacks):
         raise AssertionError("Missing script toggle callback")
     if not any(callback.startswith("script_delete:") for callback in callbacks):
@@ -204,7 +226,7 @@ async def _preview_change_script_edits_message() -> str:
     if message.answers:
         raise AssertionError("Preview change script sent a new message")
     text, kwargs = message.edits[-1]
-    _assert_contains(text, "Выберите скрипт")
+    _assert_contains(text, "Выберите бизнес")
     if kwargs.get("reply_markup") is None:
         raise AssertionError("Script picker did not include inline keyboard")
     return text
@@ -214,7 +236,7 @@ async def _unknown_message() -> str:
     message = FakeMessage("что это вообще такое")
     await admin_bot.handle_unknown_message(message, FakeState())
     text, kwargs = message.answers[-1]
-    _assert_contains(text, "Не понял команду", "сценарий", "кампанию")
+    _assert_contains(text, "Не понял команду", "бизнес", "контакты")
     if kwargs.get("reply_markup") is None:
         raise AssertionError("Unknown message fallback did not attach the main menu")
     return text
@@ -347,7 +369,8 @@ def _write_report(results: list[ScenarioResult]) -> None:
 
 async def main() -> int:
     scenarios = [
-        ("start screen explains product flow", _start_screen),
+        ("start screen asks for language", _start_screen),
+        ("english language choice opens english menu", _english_language_choice),
         ("help screen explains commands and exit", _help_screen),
         ("help screen has no duplicated commands", _help_has_unique_commands),
         ("scripts expose create toggle delete controls", _script_crud_buttons),

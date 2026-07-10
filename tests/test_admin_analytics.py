@@ -92,11 +92,13 @@ class TestHotleadsCommand:
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
         assert "hotlead1" in text
-        assert "Статус: hot" in text
-        assert "Настроение: positive" in text
-        # Inline keyboard should contain qualify/reject/dialog buttons
+        assert "Статус: готов к передаче" in text
+        assert "Настроение: позитивное" in text
+        # Inline keyboard opens a lead card instead of dumping all action buttons at once.
         kb = mock_message.answer.call_args[1].get("reply_markup")
         assert kb is not None
+        callbacks = [button.callback_data for row in kb.inline_keyboard for button in row]
+        assert any(callback.startswith("lead:") for callback in callbacks)
 
     async def test_returns_meeting_booked(self, mock_message):
         conv = Conversation(
@@ -120,7 +122,8 @@ class TestHotleadsCommand:
 
         text = mock_message.answer.call_args[0][0]
         assert "+79990000000" in text
-        assert "Настроение: N/A" in text
+        assert "созвон согласован" in text
+        assert "Настроение: не определено" in text
         assert "📅" in text
 
     async def test_empty_hot_leads(self, mock_message):
@@ -157,7 +160,7 @@ class TestFormatHotleads:
         contact = Contact(id=uuid.uuid4(), telegram_username="@john", phone="")
         text = _format_hotleads([(conv, contact)])
         assert "@john" in text
-        assert "Статус: hot" in text
+        assert "Статус: готов к передаче" in text
         assert "🔥" in text
 
     def test_phone_fallback(self):

@@ -16,6 +16,10 @@ class ContactBase(BaseModel):
     industry: Optional[str] = None
     source: str = "csv_import"
     last_source: Optional[str] = None
+    source_url: Optional[str] = None
+    source_summary: Optional[str] = None
+    source_message_text: Optional[str] = None
+    source_message_date: Optional[str] = None
     is_valid: Optional[str] = "unknown"
     icp_score: Optional[int] = None
     status: str = "new"
@@ -39,6 +43,10 @@ class ContactUpdate(BaseModel):
     industry: Optional[str] = None
     source: Optional[str] = None
     last_source: Optional[str] = None
+    source_url: Optional[str] = None
+    source_summary: Optional[str] = None
+    source_message_text: Optional[str] = None
+    source_message_date: Optional[str] = None
     is_valid: Optional[str] = None
     icp_score: Optional[int] = None
     status: Optional[str] = None

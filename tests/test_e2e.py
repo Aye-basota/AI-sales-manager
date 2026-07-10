@@ -297,4 +297,4 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
         await handle_qualify(mock_callback)
 
         assert conversation.operator_status == "qualified"
-        mock_callback.answer.assert_awaited_once_with("✅ Статус обновлен: Qualified")
+        mock_callback.answer.assert_awaited_once_with("✅ Отмечено: готов к работе")

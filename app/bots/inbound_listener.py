@@ -100,7 +100,10 @@ PAUSE_PATTERNS = (
     r"через\s+пару\s+месяц",
 )
 PRICING_PATTERNS = (
-    r"цена",
+    r"\bцен(?:а|у|ы|е|ой)?\b",
+    r"ценник",
+    r"прайс",
+    r"цифр",
     r"стоим",
     r"стоит",
     r"сколько.*стоит",
@@ -131,6 +134,41 @@ COMPETITOR_PATTERNS = (
     r"обычн.*рассыл",
     r"чем\s+.*отлич",
     r"массов.*отправ",
+)
+SHORT_POSITIVE_PATTERNS = (
+    r"^\s*(?:да|ок|ок[,.]?\s*интересно|интересно|да[,.]?\s*интересно|расскажите|давайте)\s*[.!?]*\s*$",
+)
+MATERIALS_REQUEST_PATTERNS = (
+    r"пришл",
+    r"материал",
+    r"пример",
+    r"фото",
+    r"картинк",
+    r"каталог",
+    r"презентац",
+    r"коротко.*что\s+у\s+вас",
+    r"что\s+у\s+вас\s+есть",
+)
+CREATIVE_TERRITORY_PATTERNS = (
+    r"дизайн",
+    r"концепц",
+    r"макет",
+    r"брендбук",
+    r"логотип",
+    r"визуал",
+    r"цвет",
+    r"шрифт",
+    r"стиль",
+    r"атмосфер",
+    r"аудитор",
+    r"ценност",
+    r"вариант",
+)
+CONTEXT_CONFUSION_PATTERNS = (
+    r"что\s+ещ[её]\s+за\s+сценар",
+    r"о\s+ч[её]м\s+вы",
+    r"вы\s+о\s+ч[её]м",
+    r"не\s+понимаю",
 )
 ENGLISH_REQUEST_PATTERNS = (
     r"\benglish\b",
@@ -169,6 +207,37 @@ def _terminal_response(intent: str) -> str:
     return ""
 
 
+def _script_offer_context(script: Script | None) -> str:
+    if not script:
+        return "помогаем решить эту задачу аккуратно и без лишней ручной рутины"
+    default = "помогаем B2B-командам аккуратно начинать первые диалоги без лишней ручной рутины"
+    for attr in ("role_prompt", "goal", "target_audience"):
+        value = getattr(script, attr, None)
+        if value:
+            text = " ".join(str(value).split())
+            lowered = text.lower()
+            if attr == "role_prompt" and any(
+                marker in lowered
+                for marker in (
+                    "ты ",
+                    "пиши ",
+                    "не называй",
+                    "бот",
+                    "ии",
+                    "sales manager",
+                )
+            ):
+                continue
+            if any(marker in lowered for marker in ("созвон", "встреч", "договориться")):
+                continue
+            if attr == "target_audience" and "b2b founders" in lowered:
+                return default
+            if len(text) > 180:
+                text = text[:179].rstrip() + "…"
+            return text
+    return default
+
+
 def _polish_inbound_response(text: str) -> str:
     """Reduce robotic reply patterns before sending a message to the lead."""
     cleaned = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
@@ -193,7 +262,27 @@ def _polish_inbound_response(text: str) -> str:
     cleaned = re.sub(r"(?i)\bв\s+вашем\s+стеке\b", "у вас", cleaned)
     cleaned = re.sub(r"(?i)\bAI\s+Sales\s+Manager\b", "наш инструмент", cleaned)
     cleaned = re.sub(r"(?i)\bleads\b", "лидами", cleaned)
-    cleaned = re.sub(r"(?i)\blead\b", "лидом", cleaned)
+    cleaned = re.sub(r"(?i)Neural\s+лидом", "Neural Lead", cleaned)
+    cleaned = re.sub(
+        r"(?i)^\s*(?:понял|понимаю),?\s+что\s+у\s+вас\s+",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+—\s+", ", ", cleaned)
+    cleaned = re.sub(r"(?i)\bкоротко:\s*", "Коротко, ", cleaned)
+    cleaned = re.sub(
+        r"(?i)\b(?:присылаю|прикрепляю|отправляю)\b",
+        "Могу описать словами",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?i)\bкруто,\s*сразу\s+понятно,?\s*", "", cleaned)
+    cleaned = re.sub(r"(?i)\bсразу\s+понятно,?\s*", "предварительно понятно, ", cleaned)
+    cleaned = re.sub(r"(?i)\bнедавно\s+делали\b", "если есть похожие вводные, обычно обсуждаем", cleaned)
+    cleaned = re.sub(
+        r"(?i)\bвот\s+(?:два|три|несколько)\s+вариант\w*:?\.?",
+        "Конкретные варианты лучше не придумывать в переписке без вводных.",
+        cleaned,
+    )
 
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", cleaned) if p.strip()]
     if len(paragraphs) > 2:
@@ -218,6 +307,7 @@ def _polish_inbound_response(text: str) -> str:
 
 def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
     lower = lead_text.lower()
+    offer = _script_offer_context(script)
 
     if _matches_any(BOT_CHECK_PATTERNS, lower):
         return (
@@ -250,11 +340,24 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
     if _matches_any(PAUSE_PATTERNS, lower):
         return "Понял, не отвлекаю. Тогда вернусь позже, хорошего дня."
 
-    if _matches_any(PRICING_PATTERNS, lower):
+    if _matches_any(CONTEXT_CONFUSION_PATTERNS, lower):
         return (
-            "По цене не буду называть цифру без вводных: она зависит от объема контактов "
-            "и того, насколько глубоко нужно встраиваться в процесс. Могу сначала коротко "
-            "описать, из чего обычно складывается оценка."
+            f"Извините, сбился формулировкой. Речь именно про это: {offer}. "
+            "Без внутренних терминов: могу коротко ответить по условиям, срокам или следующему шагу."
+        )
+
+    if _matches_any(PRICING_PATTERNS, lower):
+        offer_lower = offer.lower()
+        if any(marker in offer_lower for marker in ("стакан", "cup", "кофе")):
+            return (
+                "По цене не буду называть точную цифру без вводных: она зависит от тиража, "
+                "материала, объема стакана, печати и регулярности поставок. "
+                "Если дадите примерный недельный или месячный объем, можно посчитать ближе к делу."
+            )
+        return (
+            "По цене не буду называть цифру без вводных: она зависит от объема, формата "
+            "работы и требований к качеству. Обычно сначала фиксируют вводные, а потом "
+            "уже считают оценку без гадания."
         )
 
     if _matches_any(INTEGRATION_PATTERNS, lower):
@@ -266,9 +369,8 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
 
     if _matches_any(CASE_PATTERNS, lower):
         return (
-            "Кейсы лучше отправлять с контекстом, без выдуманных цифр. Могу коротко "
-            "показать пример сценария и какие метрики обычно смотрят: ответы, встречи "
-            "и ручное время команды."
+            f"Не буду выдумывать кейсы или делать вид, что прикрепил файл. По сути: {offer}. "
+            "Могу описать словами типовой вариант работы и что обычно нужно уточнить для расчета."
         )
 
     if _matches_any(CONTACT_SOURCE_PATTERNS, lower):
@@ -284,6 +386,26 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
             "чтобы не давить объемом, а вести первый диалог бережно."
         )
 
+    if _matches_any(MATERIALS_REQUEST_PATTERNS, lower):
+        return (
+            "Я не могу прикрепить фото, файл или презентацию прямо здесь, поэтому не буду "
+            f"делать вид, что отправил материалы. Могу описать словами: {offer}. "
+            "Дальше лучше сверить нужный формат, объем и сроки."
+        )
+
+    if _matches_any(CREATIVE_TERRITORY_PATTERNS, lower):
+        return (
+            "Я не знаю вашу концепцию заранее и не буду придумывать дизайн на ходу. "
+            "Могу зафиксировать вводные для специалиста: стиль, аудиторию, объемы и сроки. "
+            "Если актуально, лучше коротко сверить это на созвоне."
+        )
+
+    if _matches_any(SHORT_POSITIVE_PATTERNS, lower):
+        return (
+            f"Отлично. Коротко по сути: {offer}. Обычно начинаем с небольшого объема, "
+            "смотрим реакцию людей и быстро убираем формулировки, которые звучат давяще."
+        )
+
     if _matches_any(ENGLISH_REQUEST_PATTERNS, lower):
         return (
             "In short: it helps teams start careful first conversations with potential "
@@ -296,7 +418,10 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
             "Скажите, актуально ли вам сейчас улучшать обработку лидов, или лучше не беспокоить?"
         )
 
-    return FALLBACK_TEXT
+    return (
+        "Похоже, я не до конца точно понял вопрос. Сформулирую проще: "
+        f"{offer}. Если актуально, могу коротко разложить следующий шаг."
+    )
 
 
 def _needs_deterministic_fallback(lead_text: str) -> bool:
@@ -315,6 +440,10 @@ def _needs_deterministic_fallback(lead_text: str) -> bool:
         + CASE_PATTERNS
         + CONTACT_SOURCE_PATTERNS
         + COMPETITOR_PATTERNS
+        + MATERIALS_REQUEST_PATTERNS
+        + CREATIVE_TERRITORY_PATTERNS
+        + CONTEXT_CONFUSION_PATTERNS
+        + SHORT_POSITIVE_PATTERNS
         + ENGLISH_REQUEST_PATTERNS,
         lower,
     )
@@ -376,7 +505,7 @@ async def start_inbound_listeners(db_session: AsyncSession | None = None) -> Non
 
         client.on_message(_make_handler(account, client))
         _inbound_clients[str(account.id)] = client
-        logger.warning("Inbound listener started for account %s", account.id)
+        logger.info("Inbound listener started for account %s", account.id)
 
 
 async def stop_inbound_listeners() -> None:
@@ -410,9 +539,15 @@ async def _handle_inbound_message(
         try:
             # 1. Find contact
             result = await db.execute(
-                select(Contact).where(Contact.telegram_user_id == telegram_user_id)
+                select(Contact)
+                .where(Contact.telegram_user_id == telegram_user_id)
+                .order_by(
+                    Contact.updated_at.desc().nullslast(),
+                    Contact.created_at.desc().nullslast(),
+                )
+                .limit(1)
             )
-            contact: Contact | None = result.scalar_one_or_none()
+            contact: Contact | None = result.scalars().first()
             if not contact:
                 logger.info(
                     "Creating new contact for telegram_user_id %s", telegram_user_id

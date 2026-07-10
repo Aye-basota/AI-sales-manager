@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 import re
 from datetime import datetime, time as dt_time
@@ -21,6 +23,9 @@ from app.bots.admin_bot import (
     _notify_admin_error,
     _send_or_edit_scripts,
     _send_or_edit_campaigns,
+    handle_script_view,
+    handle_script_edit_field,
+    process_script_edit_value,
     _generate_preview_message,
     CallbackStateGuardMiddleware,
     cmd_start,
@@ -44,6 +49,7 @@ from app.bots.admin_bot import (
     process_script_goal,
     process_script_criteria,
     process_script_tone,
+    process_script_strategy,
     process_script_max_messages,
     process_script_delay,
     process_script_timezone,
@@ -69,6 +75,10 @@ from app.bots.admin_bot import (
     handle_menu_button,
     handle_unknown_callback,
     handle_unknown_message,
+    _set_admin_bot_commands,
+    handle_language_choice,
+    _admin_language_by_user,
+    LANG_EN,
     MENU_ANALYTICS,
     MENU_CAMPAIGNS,
     MENU_CONVERSATIONS,
@@ -80,6 +90,7 @@ from app.bots.admin_bot import (
     MENU_START_CAMPAIGN,
     MENU_UPLOAD,
     ScriptCreateFSM,
+    ScriptEditFSM,
     CSVImportFSM,
     CampaignStartFSM,
     CampaignCreateFSM,
@@ -153,6 +164,39 @@ class TestFormatScripts:
         text = _format_scripts([script])
         assert "Inactive" in text
 
+    def test_script_list_stays_compact_for_telegram_limit(self):
+        scripts = []
+        for idx in range(10):
+            script = Script(
+                id=uuid.uuid4(),
+                name=f"Long Business {idx}",
+                role_prompt="Long description " * 80,
+                target_audience="Coffee shop owners " * 40,
+                goal="Book a short call " * 40,
+                max_messages=3,
+                tone="friendly",
+                is_active=True,
+            )
+            scripts.append((script, idx))
+
+        text = _format_scripts(scripts)
+
+        assert len(text) < 4096
+        assert "Long description" not in text
+
+    def test_script_list_english_is_fully_english(self):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Cups",
+            goal="Book a call",
+            target_audience="Coffee shops",
+            is_active=True,
+        )
+        text = _format_scripts([script], LANG_EN)
+        assert "Businesses" in text
+        assert "Goal:" in text
+        assert "Запусков" not in text
+
 
 class TestFormatCampaigns:
     def test_single_campaign(self):
@@ -168,8 +212,24 @@ class TestFormatCampaigns:
         )
         text = _format_campaigns([campaign])
         assert "Summer Sale" in text
-        assert "Статус: running" in text
+        assert "Статус: идет отправка" in text
         assert "Контакты: 50/100" in text
+
+    def test_campaigns_english_labels(self):
+        campaign = Campaign(
+            id=uuid.uuid4(),
+            name="Summer Sale",
+            status="draft",
+            total_contacts=100,
+            processed_contacts=0,
+            replied_count=0,
+            qualified_count=0,
+            meeting_booked_count=0,
+        )
+        text = _format_campaigns([campaign], LANG_EN)
+        assert "Business:" in text
+        assert "Status: draft" in text
+        assert "Контакты" not in text
 
 
 class TestFormatHotleads:
@@ -186,7 +246,7 @@ class TestFormatHotleads:
         )
         text = _format_hotleads([(conv, contact)])
         assert "@john" in text
-        assert "Статус: hot" in text
+        assert "Статус: готов к передаче" in text
 
     def test_meeting_booked(self):
         conv = Conversation(
@@ -201,7 +261,8 @@ class TestFormatHotleads:
         )
         text = _format_hotleads([(conv, contact)])
         assert "+79990000000" in text
-        assert "Настроение: N/A" in text
+        assert "созвон согласован" in text
+        assert "Настроение: не определено" in text
 
 
 class TestFormatAnalytics:
@@ -215,17 +276,69 @@ class TestFormatAnalytics:
         assert "Guardrails отказов: 2" in text
         assert "Средняя длина сообщения: 121 симв." in text
 
+    def test_analytics_english_output(self):
+        text = _format_analytics(150, 142, 18, 3, 1, 2, 120.7, LANG_EN)
+        assert "Total contacts: 150" in text
+        assert "Replied: 18 (12.7%)" in text
+        assert "Guardrail fallbacks: 2" in text
+        assert "Всего" not in text
+
+
+@pytest.mark.asyncio
+async def test_admin_bot_command_registration_retries_timeout_without_traceback(monkeypatch, caplog):
+    from app.bots import admin_bot
+
+    calls = 0
+    bot = AsyncMock()
+
+    async def set_my_commands(_commands):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(1)
+        return True
+
+    bot.set_my_commands = AsyncMock(side_effect=set_my_commands)
+    monkeypatch.setattr(admin_bot, "COMMAND_REGISTRATION_ATTEMPTS", 2)
+    monkeypatch.setattr(admin_bot, "COMMAND_REGISTRATION_TIMEOUT_S", 0.001)
+    monkeypatch.setattr(admin_bot, "COMMAND_REGISTRATION_RETRY_DELAY_S", 0)
+    caplog.set_level(logging.WARNING)
+
+    result = await _set_admin_bot_commands(bot)
+
+    assert result is True
+    assert bot.set_my_commands.await_count == 2
+    assert "TimeoutError" in caplog.text
+    assert "Traceback" not in caplog.text
+
 
 class TestCmdStart:
-    async def test_sends_welcome_with_menu(self, mock_message):
+    async def test_sends_language_choice_first(self, mock_message):
         await cmd_start(mock_message)
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
-        assert "AI Sales Manager готов к работе" in text
-        assert "Сценарий" in text
-        assert "Контакты" in text
-        assert "Кампания" in text
-        assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
+        assert "Выберите язык" in text
+        assert "Choose interface language" in text
+        keyboard = mock_message.answer.call_args.kwargs.get("reply_markup")
+        assert keyboard is not None
+        assert keyboard.inline_keyboard[0][0].text == "Русский"
+
+    async def test_language_choice_sends_english_menu(self, mock_callback):
+        user_id = 12345
+        mock_callback.from_user = MagicMock(id=user_id)
+        mock_callback.data = "lang:en"
+
+        await handle_language_choice(mock_callback)
+
+        assert _admin_language_by_user[user_id] == "en"
+        mock_callback.message.edit_text.assert_awaited_once_with("Language: English")
+        mock_callback.message.answer.assert_awaited_once()
+        text = mock_callback.message.answer.call_args[0][0]
+        assert "Ready" in text
+        keyboard = mock_callback.message.answer.call_args.kwargs["reply_markup"]
+        labels = {button.text for row in keyboard.keyboard for button in row}
+        assert "🧭 Businesses" in labels
+        assert "👥 Contacts & launch" in labels
 
     async def test_main_menu_exposes_core_actions(self):
         keyboard = _main_menu_keyboard()
@@ -250,10 +363,11 @@ class TestCmdHelp:
         await cmd_help(mock_message)
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
-        assert "Сценарий отвечает" in text
-        assert "Кампания связывает" in text
+        assert "Бизнес отвечает" in text
+        assert "Запуск связывает" in text
         assert "/scripts" in text
         assert "/upload" in text
+        assert "/back" in text
         assert "/cancel" in text
         commands = re.findall(r"^(/[a-z]+)", text, flags=re.MULTILINE)
         assert len(commands) == len(set(commands))
@@ -285,7 +399,7 @@ class TestAdminFallbacks:
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
         assert "Не понял команду" in text
-        assert "сценарий" in text.lower()
+        assert "бизнес" in text.lower()
         assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_unknown_message_inside_wizard_points_to_cancel(
@@ -350,7 +464,7 @@ class TestAdminFallbacks:
         assert handled is True
         mock_state.clear.assert_awaited_once()
         mock_message.answer.assert_called_once()
-        assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
+        assert "Бизнесов пока нет" in mock_message.answer.call_args[0][0]
 
     async def test_menu_inside_wizard_switches_function(self, mock_message, mock_state):
         mock_message.text = MENU_SCRIPTS
@@ -364,7 +478,7 @@ class TestAdminFallbacks:
 
         assert handled is True
         mock_state.clear.assert_awaited_once()
-        assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
+        assert "Бизнесов пока нет" in mock_message.answer.call_args[0][0]
 
     async def test_unknown_command_inside_wizard_is_not_saved_as_answer(
         self, mock_message, mock_state
@@ -412,6 +526,8 @@ class TestCmdScripts:
         callbacks = [button.callback_data for button in buttons]
 
         assert "script_new" in callbacks
+        assert any(callback.startswith("scriptv:") for callback in callbacks)
+        assert any(callback.startswith("scripte:") for callback in callbacks)
         assert any(callback.startswith("script_toggle:") for callback in callbacks)
         assert any(callback.startswith("script_delete:") for callback in callbacks)
 
@@ -435,7 +551,7 @@ class TestCmdScripts:
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
         assert "Script A" in text
-        assert "Кампаний с этим сценарием: 2" in text
+        assert "Запусков с этим бизнесом: 2" in text
 
     async def test_empty_scripts(self, mock_message):
         result_mock = MagicMock()
@@ -446,7 +562,7 @@ class TestCmdScripts:
             await cmd_scripts(mock_message)
 
         mock_message.answer.assert_called_once()
-        assert "Сценариев пока нет" in mock_message.answer.call_args[0][0]
+        assert "Бизнесов пока нет" in mock_message.answer.call_args[0][0]
         assert mock_message.answer.call_args.kwargs.get("reply_markup") is not None
 
     async def test_edits_bot_message_for_callback_refresh(self, mock_message):
@@ -517,7 +633,7 @@ class TestCmdScripts:
             await handle_script_delete(mock_callback)
 
         session.delete.assert_not_awaited()
-        mock_callback.answer.assert_awaited_once_with("❌ Скрипт используется в кампаниях")
+        mock_callback.answer.assert_awaited_once_with("❌ Бизнес используется в запусках")
 
     async def test_script_delete_removes_unused_script(self, mock_callback):
         script = Script(id=uuid.uuid4(), name="Unused", goal="Greet", is_active=True)
@@ -541,8 +657,95 @@ class TestCmdScripts:
 
         session.delete.assert_awaited_once_with(script)
         session.commit.assert_awaited_once()
-        mock_callback.answer.assert_awaited_once_with("🗑 Скрипт удалён")
+        mock_callback.answer.assert_awaited_once_with("🗑 Бизнес удален")
         mock_scripts.assert_awaited_once_with(mock_callback.message)
+
+    async def test_script_view_shows_business_details(self, mock_callback):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Стаканчики",
+            role_prompt="Поставляем бумажные стаканчики для кофеен.",
+            target_audience="Кофейни",
+            goal="Предложить образцы",
+            success_criteria="Лид попросил каталог",
+            tone="friendly",
+            is_active=True,
+        )
+        script_result = MagicMock()
+        script_result.scalar_one_or_none.return_value = script
+        count_result = MagicMock()
+        count_result.scalar.return_value = 1
+        session = AsyncMock()
+        session.execute.side_effect = [script_result, count_result]
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        mock_callback.data = f"scriptv:{script.id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_script_view(mock_callback)
+
+        mock_callback.message.edit_text.assert_awaited_once()
+        text = mock_callback.message.edit_text.call_args[0][0]
+        assert "Стаканчики" in text
+        assert "Поставляем бумажные стаканчики" in text
+        assert "Кофейни" in text
+
+    async def test_script_edit_field_sets_value_state(self, mock_callback, mock_state):
+        script = Script(id=uuid.uuid4(), name="Biz", role_prompt="Old", goal="Goal")
+        script_result = MagicMock()
+        script_result.scalar_one_or_none.return_value = script
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        session = AsyncMock()
+        session.execute.side_effect = [script_result, count_result]
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=session)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        mock_callback.data = f"scriptf:role:{script.id}"
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await handle_script_edit_field(mock_callback, mock_state)
+
+        mock_state.set_state.assert_awaited_with(ScriptEditFSM.value)
+        mock_state.update_data.assert_awaited_with(
+            edit_script_id=str(script.id), edit_field="role_prompt"
+        )
+        assert "Описание бизнеса" in mock_callback.message.edit_text.call_args[0][0]
+
+    async def test_script_edit_value_updates_timezone_strictly(
+        self, mock_message, mock_state
+    ):
+        script = Script(id=uuid.uuid4(), name="Biz", role_prompt="Role", goal="Goal")
+        mock_state.get_data.return_value = {
+            "edit_script_id": str(script.id),
+            "edit_field": "timezone",
+        }
+        mock_message.text = "msk"
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = script
+        context = _make_mock_session(result)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await process_script_edit_value(mock_message, mock_state)
+
+        assert script.timezone == "Europe/Moscow"
+        mock_state.clear.assert_awaited_once()
+        assert "Сохранил" in mock_message.answer.call_args[0][0]
+
+    async def test_script_edit_value_rejects_unknown_timezone(
+        self, mock_message, mock_state
+    ):
+        mock_state.get_data.return_value = {
+            "edit_script_id": str(uuid.uuid4()),
+            "edit_field": "timezone",
+        }
+        mock_message.text = "mop"
+
+        await process_script_edit_value(mock_message, mock_state)
+
+        mock_message.answer.assert_called_once()
+        assert "Не понял часовой пояс" in mock_message.answer.call_args[0][0]
 
 
 class TestCmdCampaigns:
@@ -575,7 +778,7 @@ class TestCmdCampaigns:
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
         assert "Campaign B" in text
-        assert "Сценарий: Script B" in text
+        assert "Бизнес: Script B" in text
         assert "Контакты: 0/10" in text
         assert "Ответили: 0" in text
 
@@ -682,6 +885,21 @@ class TestCmdConversations:
         mock_message.answer.assert_called_once()
         assert "Диалогов пока нет" in mock_message.answer.call_args[0][0]
 
+    async def test_menu_label_shows_recent_dialogs_instead_of_searching(self, mock_message):
+        from app.bots.admin_bot import MENU_CONVERSATIONS
+
+        mock_message.text = MENU_CONVERSATIONS
+        result_mock = MagicMock()
+        result_mock.all.return_value = []
+        context = _make_mock_session(result_mock)
+
+        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+            await cmd_conversations(mock_message)
+
+        mock_message.answer.assert_called_once()
+        assert "Не нашел диалог" not in mock_message.answer.call_args[0][0]
+        assert "Диалогов пока нет" in mock_message.answer.call_args[0][0]
+
     async def test_missing_args_shows_recent_dialogs(self, mock_message):
         contact = Contact(
             id=uuid.uuid4(),
@@ -723,30 +941,31 @@ class TestCmdConversations:
 
     async def test_invalid_uuid(self, mock_message):
         mock_message.text = "/conversations invalid"
-        await cmd_conversations(mock_message)
-        mock_message.answer.assert_called_once_with(
-            "Неверный формат contact_id. Ожидается UUID."
-        )
+        with patch(
+            "app.bots.admin_bot._find_conversation_id_by_query",
+            new=AsyncMock(return_value=None),
+        ):
+            await cmd_conversations(mock_message)
+        mock_message.answer.assert_called_once()
+        assert "Не нашел диалог" in mock_message.answer.call_args[0][0]
+        assert "@username" in mock_message.answer.call_args[0][0]
 
     async def test_conversation_not_found(self, mock_message):
         mock_message.text = f"/conversations {uuid.uuid4()}"
-        result_mock = MagicMock()
-        result_mock.scalar_one_or_none.return_value = None
-        context = _make_mock_session(result_mock)
-
-        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+        with patch(
+            "app.bots.admin_bot._find_conversation_id_by_query",
+            new=AsyncMock(return_value=None),
+        ):
             await cmd_conversations(mock_message)
 
-        mock_message.answer.assert_called_once_with(
-            "Диалог для данного контакта не найден."
-        )
+        mock_message.answer.assert_called_once()
+        assert "Не нашел диалог" in mock_message.answer.call_args[0][0]
 
     async def test_returns_messages(self, mock_message):
         contact_id = uuid.uuid4()
         conv_id = uuid.uuid4()
         mock_message.text = f"/conversations {contact_id}"
 
-        conv = Conversation(id=conv_id, contact_id=contact_id, current_state="hot")
         msg = Message(
             id=uuid.uuid4(),
             conversation_id=conv_id,
@@ -754,18 +973,16 @@ class TestCmdConversations:
             content="Hello",
         )
 
-        session = AsyncMock()
-        result1 = MagicMock()
-        result1.scalar_one_or_none.return_value = conv
-        result2 = MagicMock()
-        result2.scalars.return_value.all.return_value = [msg]
-        session.execute.side_effect = [result1, result2]
-
-        context = AsyncMock()
-        context.__aenter__ = AsyncMock(return_value=session)
-        context.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+        with (
+            patch(
+                "app.bots.admin_bot._find_conversation_id_by_query",
+                new=AsyncMock(return_value=conv_id),
+            ),
+            patch(
+                "app.bots.admin_bot._load_conversation_messages",
+                new=AsyncMock(return_value=[msg]),
+            ),
+        ):
             await cmd_conversations(mock_message)
 
         mock_message.answer.assert_called_once()
@@ -777,20 +994,16 @@ class TestCmdConversations:
         conv_id = uuid.uuid4()
         mock_message.text = f"/conversations {contact_id}"
 
-        conv = Conversation(id=conv_id, contact_id=contact_id, current_state="hot")
-
-        session = AsyncMock()
-        result1 = MagicMock()
-        result1.scalar_one_or_none.return_value = conv
-        result2 = MagicMock()
-        result2.scalars.return_value.all.return_value = []
-        session.execute.side_effect = [result1, result2]
-
-        context = AsyncMock()
-        context.__aenter__ = AsyncMock(return_value=session)
-        context.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+        with (
+            patch(
+                "app.bots.admin_bot._find_conversation_id_by_query",
+                new=AsyncMock(return_value=conv_id),
+            ),
+            patch(
+                "app.bots.admin_bot._load_conversation_messages",
+                new=AsyncMock(return_value=[]),
+            ),
+        ):
             await cmd_conversations(mock_message)
 
         mock_message.answer.assert_called_once_with("В диалоге пока нет сообщений.")
@@ -808,7 +1021,7 @@ class TestHandleQualify:
             await handle_qualify(mock_callback)
 
         assert conv.operator_status == "qualified"
-        mock_callback.answer.assert_awaited_once_with("✅ Статус обновлен: Qualified")
+        mock_callback.answer.assert_awaited_once_with("✅ Отмечено: готов к работе")
 
     async def test_conversation_not_found(self, mock_callback):
         result_mock = MagicMock()
@@ -839,7 +1052,7 @@ class TestHandleReject:
             await handle_reject(mock_callback)
 
         assert conv.operator_status == "rejected"
-        mock_callback.answer.assert_awaited_once_with("❌ Статус обновлен: Rejected")
+        mock_callback.answer.assert_awaited_once_with("🚫 Отмечено: не целевой")
 
     async def test_conversation_not_found(self, mock_callback):
         result_mock = MagicMock()
@@ -972,7 +1185,7 @@ class TestCmdNewScript:
         await cmd_newscript(mock_message, mock_state)
         mock_state.set_state.assert_awaited_once_with(ScriptCreateFSM.name)
         mock_message.answer.assert_called_once()
-        assert "название скрипта" in mock_message.answer.call_args[0][0].lower()
+        assert "бизнес" in mock_message.answer.call_args[0][0].lower()
 
 
 class TestProcessScriptFSM:
@@ -1008,8 +1221,28 @@ class TestProcessScriptFSM:
     async def test_tone_callback(self, mock_callback, mock_state):
         mock_callback.data = "tone:Деловой"
         await process_script_tone(mock_callback, mock_state)
-        mock_state.update_data.assert_awaited_with(tone="professional")
-        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.first_message_goal)
+        mock_state.update_data.assert_awaited_with(
+            tone="professional",
+            first_message_goal="trust",
+            language="ru",
+            emoji_policy="forbidden",
+            max_first_message_length=240,
+            max_messages=3,
+        )
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.sales_strategy)
+
+    async def test_strategy_callback_sets_real_sales_funnel(self, mock_callback, mock_state):
+        mock_callback.data = "strategy:quick_call"
+        await process_script_strategy(mock_callback, mock_state)
+
+        update_kwargs = mock_state.update_data.await_args.kwargs
+        assert update_kwargs["sales_strategy"] == "quick_call"
+        assert [stage["stage"] for stage in update_kwargs["sales_funnel"]] == [
+            "trust",
+            "interest",
+            "cta",
+        ]
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.call_to_action)
 
     async def test_max_messages_invalid(self, mock_message, mock_state):
         mock_message.text = "abc"
@@ -1062,7 +1295,7 @@ class TestProcessScriptFSM:
         mock_state.update_data.assert_awaited_with(timezone="Europe/Moscow")
         mock_state.set_state.assert_awaited_with(ScriptCreateFSM.confirm)
         mock_message.answer.assert_called_once()
-        assert "Проверьте данные" in mock_message.answer.call_args[0][0]
+        assert "Проверьте бизнес" in mock_message.answer.call_args[0][0]
 
 
 class TestConfirmCreateScript:
@@ -1088,7 +1321,7 @@ class TestConfirmCreateScript:
             await confirm_create_script(mock_callback, mock_state)
 
         mock_state.clear.assert_awaited_once()
-        mock_callback.answer.assert_awaited_once_with("✅ Скрипт создан!")
+        mock_callback.answer.assert_awaited_once_with("✅ Бизнес сохранен!")
 
 
 class TestCancelCreateScript:
@@ -1138,7 +1371,8 @@ class TestCmdStartCampaign:
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
             await cmd_startcampaign(mock_message, mock_state)
 
-        mock_message.answer.assert_called_once_with("Нет кампаний со статусом draft.")
+        mock_message.answer.assert_called_once()
+        assert "Черновиков запуска нет" in mock_message.answer.call_args[0][0]
 
     async def test_shows_draft_campaigns(self, mock_message, mock_state):
         campaign = Campaign(
@@ -1156,7 +1390,7 @@ class TestCmdStartCampaign:
         mock_state.set_state.assert_awaited_with(CampaignStartFSM.selecting)
         mock_message.answer.assert_called_once()
         text = mock_message.answer.call_args[0][0]
-        assert "Выберите кампанию" in text
+        assert "Выберите сохраненный черновик" in text
 
 
 class TestHandleStartcamp:
@@ -1180,7 +1414,7 @@ class TestHandleStartcamp:
         with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
             await handle_startcamp(mock_callback, mock_state)
 
-        mock_callback.answer.assert_awaited_once_with("❌ Кампания не найдена")
+        mock_callback.answer.assert_awaited_once_with("❌ Запуск не найден")
         mock_state.clear.assert_awaited_once()
 
 
@@ -1335,7 +1569,7 @@ class TestCampaignCreateFSM:
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.name)
         mock_callback.message.answer.assert_called_once()
         assert (
-            "название кампании" in mock_callback.message.answer.call_args[0][0].lower()
+            "назвать этот запуск" in mock_callback.message.answer.call_args[0][0].lower()
         )
 
     async def test_preview_change_script(self, mock_callback, mock_state):
@@ -1361,7 +1595,7 @@ class TestCampaignCreateFSM:
         mock_state.set_state.assert_awaited_with(CampaignCreateFSM.select_script)
         mock_callback.message.edit_text.assert_awaited_once()
         mock_callback.message.answer.assert_not_awaited()
-        assert "Выберите скрипт" in mock_callback.message.edit_text.call_args[0][0]
+        assert "Выберите бизнес" in mock_callback.message.edit_text.call_args[0][0]
 
     async def test_campaign_script_selection_cancel(self, mock_callback, mock_state):
         mock_callback.data = "campaign_select:cancel"
@@ -1371,7 +1605,7 @@ class TestCampaignCreateFSM:
         mock_state.clear.assert_awaited_once()
         mock_callback.answer.assert_awaited_once_with("❌ Отменено")
         mock_callback.message.edit_text.assert_awaited_once_with(
-            "Создание кампании отменено.",
+            "Создание запуска отменено.",
             reply_markup=None,
             parse_mode=None,
         )
@@ -1506,7 +1740,7 @@ class TestCampActions:
         assert campaign.status == "running"
         assert schedule.call_count == 1
         mock_callback.answer.assert_any_await("▶️ Запущено")
-        mock_callback.answer.assert_any_await("❌ Кампания уже запущена или не найдена")
+        mock_callback.answer.assert_any_await("❌ Запуск уже начат или не найден")
 
     @pytest.mark.asyncio
     async def test_handle_camp_start_rejects_malformed_callback_data(

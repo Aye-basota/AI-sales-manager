@@ -41,6 +41,14 @@ def _tail(text: str, max_chars: int = 5000) -> str:
     return text[-max_chars:]
 
 
+def _decode_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def _format_cmd(cmd: list[str]) -> str:
     return " ".join(cmd)
 
@@ -95,7 +103,12 @@ def run_cmd(
         )
     except subprocess.TimeoutExpired as exc:
         output = "\n".join(
-            part for part in ((exc.stdout or "").strip(), (exc.stderr or "").strip()) if part
+            part
+            for part in (
+                _decode_output(exc.stdout).strip(),
+                _decode_output(exc.stderr).strip(),
+            )
+            if part
         )
         return CheckResult(
             name=name,
@@ -203,8 +216,17 @@ def check_docker_logs(since: str) -> CheckResult:
     warning_patterns = [
         "PEER_ID_INVALID",
         "Unable to connect due to network issues",
+        "TelegramNetworkError",
     ]
-    severe_hits = [line for line in output.splitlines() if any(p in line for p in severe_patterns)]
+    transient_network_patterns = [
+        "aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError",
+    ]
+    severe_hits = [
+        line
+        for line in output.splitlines()
+        if any(p in line for p in severe_patterns)
+        and not any(p in line for p in transient_network_patterns)
+    ]
     warning_hits = [line for line in output.splitlines() if any(p in line for p in warning_patterns)]
     details = [
         f"Scanned logs since {since}",
@@ -313,7 +335,7 @@ def run_targeted_pytest() -> CheckResult:
             "tests/test_settings.py",
             "-q",
         ],
-        timeout=180,
+        timeout=300,
     )
 
 

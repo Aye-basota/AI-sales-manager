@@ -10,6 +10,8 @@ from app.llm.guardrails import (
     check_no_markdown,
     check_no_emoji,
     check_no_unsupported_product_claims,
+    check_no_unsupported_creative_work,
+    check_no_unsupported_actions,
     evaluate_guardrails,
 )
 
@@ -78,6 +80,7 @@ def test_check_max_questions_blocks_interrogation():
 def test_check_no_banned_sales_phrases_blocks_templated_hooks():
     assert check_no_banned_sales_phrases("Понял, спасибо за контекст.") is True
     assert check_no_banned_sales_phrases("Как сейчас решаете эту задачу?") is False
+    assert check_no_banned_sales_phrases("Понял, что у вас сейчас нет времени.") is False
 
 
 def test_check_no_unsupported_product_claims_blocks_hallucinated_integrations():
@@ -112,6 +115,18 @@ def test_check_no_unsupported_product_claims_blocks_guarantee_language():
         )
         is False
     )
+
+
+def test_check_no_unsupported_actions_blocks_fake_attachments():
+    assert check_no_unsupported_actions("Могу описать примеры словами.") is True
+    assert check_no_unsupported_actions("Присылаю три фото стаканчиков.") is False
+    assert check_no_unsupported_actions("Sending a product deck now.") is False
+
+
+def test_check_no_unsupported_creative_work_blocks_invented_designs():
+    assert check_no_unsupported_creative_work("Можем зафиксировать вводные для дизайнера.") is True
+    assert check_no_unsupported_creative_work("Вот два варианта дизайна стаканчика.") is False
+    assert check_no_unsupported_creative_work("Круто, сразу понятно, каким должен быть стаканчик.") is False
 
 
 class TestCheckNoBotWords:
@@ -210,6 +225,11 @@ class TestEvaluateGuardrails:
         assert result.approved is False
         assert "banned_sales_phrase" in result.violations
 
+    def test_rejected_unsupported_creative_work(self):
+        result = evaluate_guardrails("Вот два варианта дизайна стаканчика.", [])
+        assert result.approved is False
+        assert "unsupported_creative_work" in result.violations
+
     def test_rejected_unsupported_product_claim(self):
         result = evaluate_guardrails(
             "Интеграция с Bitrix24 работает через готовые коннекторы.",
@@ -217,6 +237,11 @@ class TestEvaluateGuardrails:
         )
         assert result.approved is False
         assert "unsupported_product_claim" in result.violations
+
+    def test_rejected_unsupported_action(self):
+        result = evaluate_guardrails("Присылаю фото примеров прямо сейчас.", [])
+        assert result.approved is False
+        assert "unsupported_action" in result.violations
 
     def test_multiple_violations(self):
         bad_text = "# политика и я бот"

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, BigInteger, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, String, BigInteger, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -20,6 +20,10 @@ class Contact(Base):
     industry = Column(String(100))
     source = Column(String(50), default="csv_import")
     last_source = Column(String(50), default="csv_import")
+    source_url = Column(Text)
+    source_summary = Column(Text)
+    source_message_text = Column(Text)
+    source_message_date = Column(String(50))
     is_valid = Column(String(20), default="unknown")
     icp_score = Column(Integer)
     status = Column(String(20), default="new")

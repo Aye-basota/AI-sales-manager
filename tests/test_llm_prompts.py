@@ -77,7 +77,7 @@ def test_initial_prompt_asks_for_human_like_opening():
     assert "без рекламного слогана" in prompt
     assert "как у вас в" in prompt
     assert "в вашем стеке" in prompt
-    assert "Задай один простой вопрос" in prompt
+    assert "Можно завершить не вопросом" in prompt
 
 
 def test_build_intent_classification_prompt():
@@ -129,6 +129,6 @@ def test_system_prompt_includes_nurturing_rules():
 
     prompt = build_system_prompt(script)
 
-    assert "ПРИНЦИПЫ LEAD NURTURING" in prompt
+    assert "ПРИНЦИПЫ ДИАЛОГА" in prompt
     assert "{nurturing_rules}" not in prompt
     assert "{ nurturing_rules }" not in prompt

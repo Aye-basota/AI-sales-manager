@@ -40,7 +40,7 @@ class TestBuildSystemPrompt:
             sales_funnel=None,
         )
         prompt = build_system_prompt(script, conversation_stage="cta")
-        assert "можешь предложить демо" in prompt
+        assert "можешь мягко предложить демо" in prompt
 
 
 class TestBuildInitialUserPrompt:

@@ -15,6 +15,7 @@ from app.bots.admin_bot import (
     process_script_goal,
     process_script_criteria,
     process_script_tone,
+    process_script_strategy,
     process_script_first_message_goal,
     process_script_max_messages,
     process_script_delay,
@@ -105,10 +106,25 @@ class TestNewScriptFSM:
     async def test_tone_selection(self, mock_callback, mock_state):
         mock_callback.data = "tone:Деловой"
         await process_script_tone(mock_callback, mock_state)
-        mock_state.update_data.assert_awaited_with(tone="professional")
-        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.first_message_goal)
+        mock_state.update_data.assert_awaited_with(
+            tone="professional",
+            first_message_goal="trust",
+            language="ru",
+            emoji_policy="forbidden",
+            max_first_message_length=240,
+            max_messages=3,
+        )
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.sales_strategy)
         mock_callback.message.answer.assert_called_once()
         mock_callback.answer.assert_awaited_once()
+
+    async def test_strategy_selection_sets_funnel(self, mock_callback, mock_state):
+        mock_callback.data = "strategy:consultative"
+        await process_script_strategy(mock_callback, mock_state)
+        update_kwargs = mock_state.update_data.await_args.kwargs
+        assert update_kwargs["sales_strategy"] == "consultative"
+        assert "situation" in [stage["stage"] for stage in update_kwargs["sales_funnel"]]
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.call_to_action)
 
     async def test_first_message_goal_selection(self, mock_callback, mock_state):
         mock_callback.data = "fmg:hook"
@@ -157,7 +173,16 @@ class TestNewScriptFSM:
         await process_script_timezone(mock_message, mock_state)
         mock_state.update_data.assert_awaited_with(timezone="Europe/Moscow")
         mock_state.set_state.assert_awaited_with(ScriptCreateFSM.confirm)
-        assert "Проверьте данные" in mock_message.answer.call_args[0][0]
+        assert "Проверьте бизнес" in mock_message.answer.call_args[0][0]
+
+    async def test_timezone_rejects_unknown_value(self, mock_message, mock_state):
+        mock_message.text = "mop"
+
+        await process_script_timezone(mock_message, mock_state)
+
+        mock_state.set_state.assert_not_awaited()
+        mock_state.update_data.assert_not_awaited()
+        assert "Не понял часовой пояс" in mock_message.answer.call_args[0][0]
 
     async def test_confirm_creates_script(self, mock_callback, mock_state):
         mock_state.get_data.return_value = {
@@ -186,7 +211,7 @@ class TestNewScriptFSM:
             await confirm_create_script(mock_callback, mock_state)
 
         mock_state.clear.assert_awaited_once()
-        mock_callback.answer.assert_awaited_once_with("✅ Скрипт создан!")
+        mock_callback.answer.assert_awaited_once_with("✅ Бизнес сохранен!")
 
     async def test_cancel_clears_state(self, mock_callback, mock_state):
         await cancel_create_script(mock_callback, mock_state)
@@ -268,4 +293,4 @@ class TestUploadFSM:
         mock_callback.message.edit_text.assert_awaited_once()
         mock_callback.message.answer.assert_not_awaited()
         text = mock_callback.message.edit_text.call_args[0][0]
-        assert "Выберите скрипт" in text
+        assert "Выберите бизнес" in text

@@ -160,7 +160,7 @@ class SellerClient:
                         )
                         return
                     await self._client.start()
-                    logger.warning("SellerClient %s: connected", self.account_id)
+                    logger.info("SellerClient %s: connected", self.account_id)
                     return
             except Exception as exc:
                 logger.warning(

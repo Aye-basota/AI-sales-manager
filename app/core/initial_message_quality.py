@@ -38,12 +38,28 @@ def build_initial_message_retry_prompt(previous_text: str) -> str:
     )
 
 
-def build_safe_initial_fallback(contact: Any | None = None) -> str:
+def _offer_context(script: Any | None = None) -> str:
+    if not script:
+        return "помогаем с вашей задачей без лишней ручной рутины"
+    for attr in ("role_prompt", "goal", "target_audience"):
+        value = getattr(script, attr, None)
+        if value:
+            text = " ".join(str(value).split())
+            if len(text) > 180:
+                text = text[:179].rstrip() + "…"
+            return text
+    return "помогаем с вашей задачей без лишней ручной рутины"
+
+
+def build_safe_initial_fallback(
+    contact: Any | None = None,
+    script: Any | None = None,
+) -> str:
     """Return a conservative first message if generation stays weak."""
     name = getattr(contact, "first_name", None) if contact else None
     greeting = f"Привет, {name}." if name else "Привет."
+    offer = _offer_context(script)
     return (
-        f"{greeting} Пишу коротко: помогаем командам аккуратно начинать "
-        "первые диалоги с потенциальными клиентами без лишней ручной рутины. "
-        "У вас это сейчас больше вручную или уже есть понятный процесс?"
+        f"{greeting} Пишу коротко: {offer}. "
+        "Если актуально, могу в двух словах рассказать, как это обычно организуем."
     )

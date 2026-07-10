@@ -23,6 +23,7 @@ TIMEZONE_ALIASES = {
     "moscow": "Europe/Moscow",
     "москва": "Europe/Moscow",
     "msk": "Europe/Moscow",
+    "мск": "Europe/Moscow",
     "utc+3": "Europe/Moscow",
     "utc": "UTC",
 }
@@ -573,6 +574,9 @@ async def send_initial_message(
     text = response.get("text", "")
     if not text:
         raise RuntimeError("LLM returned empty text")
+    if response.get("model") == "fallback":
+        text = build_safe_initial_fallback(contact, script)
+        response = {"text": text, "model": "fallback", "tokens_used": 0}
 
     if needs_initial_message_retry(text):
         retry_messages = [
@@ -592,11 +596,11 @@ async def send_initial_message(
                     "Initial message quality gate used safe fallback for contact %s",
                     contact.id,
                 )
-                text = build_safe_initial_fallback(contact)
+                text = build_safe_initial_fallback(contact, script)
                 response = {"text": text, "model": "fallback", "tokens_used": 0}
         except Exception:
             logger.exception("Initial message quality retry failed")
-            text = build_safe_initial_fallback(contact)
+            text = build_safe_initial_fallback(contact, script)
             response = {"text": text, "model": "fallback", "tokens_used": 0}
 
     text = maybe_self_correct(text)
