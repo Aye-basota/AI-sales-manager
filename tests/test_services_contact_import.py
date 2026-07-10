@@ -33,6 +33,22 @@ class TestParseCsv:
         result = parse_csv(csv_bytes)
         assert result[0]["telegram_user_id"] == 123
 
+    def test_tgstat_source_context_columns_are_accepted(self):
+        csv_bytes = (
+            "first_name,telegram_user_id,source,source_url,source_summary,"
+            "source_message_text,source_message_date,is_valid,icp_score\n"
+            "Alice,123,tgstat,https://t.me/group/10,Asked for CRM,"
+            "Can anyone recommend CRM?,2026-07-10T10:00:00+00:00,unknown,82"
+        ).encode()
+
+        result = parse_csv(csv_bytes)
+
+        assert result[0]["telegram_user_id"] == 123
+        assert result[0]["source"] == "tgstat"
+        assert result[0]["source_url"] == "https://t.me/group/10"
+        assert result[0]["source_summary"] == "Asked for CRM"
+        assert result[0]["icp_score"] == 82
+
     def test_empty_csv_returns_empty_list(self):
         csv_bytes = b"first_name,last_name,telegram_user_id\n"
         result = parse_csv(csv_bytes)

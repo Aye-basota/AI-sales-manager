@@ -54,7 +54,10 @@ services:
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
       - DAILY_MESSAGE_LIMIT=${DAILY_MESSAGE_LIMIT:-50}
+      - TGSTAT_TOKEN=${TGSTAT_TOKEN}
+      - TGSTAT_BASE_URL=${TGSTAT_BASE_URL:-https://api.tgstat.ru}
       - DEBUG=${DEBUG:-True}
+      - SQL_ECHO=${SQL_ECHO:-False}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       postgres:

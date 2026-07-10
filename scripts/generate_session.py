@@ -8,33 +8,42 @@
 import asyncio
 import os
 import sys
+import tempfile
 import time
+from pathlib import Path
 
 from pyrogram import Client
 import pyrogram.utils
 import pyrogram.client
 
 
-CODE_FILE = "/tmp/telegram_code.txt"
-TWOFA_FILE = "/tmp/telegram_2fa.txt"
+INPUT_DIR = Path(
+    os.getenv(
+        "TELEGRAM_SESSION_INPUT_DIR",
+        str(Path(tempfile.gettempdir()) / "ai-sales-manager-session"),
+    )
+)
+CODE_FILE = INPUT_DIR / "telegram_code.txt"
+TWOFA_FILE = INPUT_DIR / "telegram_2fa.txt"
 POLL_INTERVAL = 2
 TIMEOUT = 300
 
 
-async def wait_for_file(path: str, label: str) -> str:
+async def wait_for_file(path: Path, label: str) -> str:
+    INPUT_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     print(f"\n[ОЖИДАНИЕ] Введите {label} и запишите его в файл {path}")
-    print(f"          Пример команды в другом терминале:")
+    print("          Пример команды в другом терминале:")
     print(f"          docker-compose exec api bash -c 'echo 12345 > {path}'")
     print(f"[ОЖИДАНИЕ] Ожидаю до {TIMEOUT} секунд...\n", flush=True)
 
     deadline = time.time() + TIMEOUT
     while time.time() < deadline:
-        if os.path.exists(path):
-            with open(path, "r") as f:
+        if path.exists():
+            with path.open("r", encoding="utf-8") as f:
                 value = f.read().strip()
             if value:
                 try:
-                    os.remove(path)
+                    path.unlink()
                 except OSError:
                     pass
                 print(f"[ПОЛУЧЕНО] {label}: {value}\n", flush=True)

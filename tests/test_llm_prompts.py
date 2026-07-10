@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 
 from app.llm.prompts import (
+    build_initial_user_prompt,
     build_intent_classification_prompt,
     build_system_prompt,
     build_user_prompt,
@@ -60,6 +61,25 @@ def test_build_user_prompt():
     assert "Расскажите о вашем продукте" in prompt
 
 
+def test_initial_prompt_asks_for_human_like_opening():
+    script = MagicMock()
+    script.sales_funnel = None
+    script.max_first_message_length = 200
+    contact = MagicMock()
+    contact.first_name = "Максим"
+    contact.company_name = "Рога и копыта"
+    contact.position = "CTO"
+    contact.city = None
+    contact.industry = None
+
+    prompt = build_initial_user_prompt(script, contact)
+
+    assert "без рекламного слогана" in prompt
+    assert "как у вас в" in prompt
+    assert "в вашем стеке" in prompt
+    assert "Можно завершить не вопросом" in prompt
+
+
 def test_build_intent_classification_prompt():
     prompt = build_intent_classification_prompt("Я заинтересован")
 
@@ -97,3 +117,18 @@ def test_system_prompt_no_bot_rule():
     prompt = build_system_prompt(script)
     assert "Никогда не признавайся" in prompt
     assert "что ты бот или ИИ" in prompt
+
+
+def test_system_prompt_includes_nurturing_rules():
+    script = MagicMock()
+    script.role_prompt = None
+    script.target_audience = None
+    script.goal = None
+    script.success_criteria = None
+    script.tone = None
+
+    prompt = build_system_prompt(script)
+
+    assert "ПРИНЦИПЫ ДИАЛОГА" in prompt
+    assert "{nurturing_rules}" not in prompt
+    assert "{ nurturing_rules }" not in prompt

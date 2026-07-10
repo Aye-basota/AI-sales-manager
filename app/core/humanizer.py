@@ -151,27 +151,26 @@ def split_message_into_chunks(
             pieces.extend(_split_paragraph_into_sentences(paragraph, max_chars))
 
     chunks: list[str] = []
-    current = pieces[0]
-    for piece in pieces[1:]:
+    current = ""
+    for piece in pieces:
+        if not current:
+            current = piece
+            continue
         if len(current) + len(piece) + 2 <= max_chars:
             current = f"{current}\n\n{piece}"
         else:
             chunks.append(current)
             current = piece
-            if len(chunks) >= max_chunks - 1:
-                break
-    chunks.append(current)
+    if current:
+        chunks.append(current)
 
-    # If there are remaining pieces and we hit the chunk limit, append them
-    # to the last chunk up to a reasonable ceiling so nothing is silently lost.
-    remaining = pieces[len(chunks) :]
-    if remaining and len(chunks) >= max_chunks:
-        tail = "\n\n".join(remaining)
-        combined = f"{chunks[-1]}\n\n{tail}"
-        if len(combined) <= max_chars * 2:
-            chunks[-1] = combined
+    if max_chunks > 0 and len(chunks) > max_chunks:
+        head = chunks[: max_chunks - 1]
+        tail = "\n\n".join(chunks[max_chunks - 1:])
+        if len(tail) <= max_chars * 3:
+            return [*head, tail]
 
-    return chunks[:max_chunks]
+    return chunks
 
 
 def chunk_pause_seconds(min_sec: float = 2.0, max_sec: float = 6.0) -> float:

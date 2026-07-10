@@ -11,6 +11,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.config import get_settings
+from app.config.telegram import is_configured_bot_token
 from app.models import Contact, Conversation
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class NotificationService:
 
     def _get_bot(self) -> Bot | None:
         if self._bot is None:
-            if not settings.admin_bot_token:
+            if not is_configured_bot_token(settings.admin_bot_token):
                 return None
             self._bot = Bot(token=settings.admin_bot_token)
         return self._bot

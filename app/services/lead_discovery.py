@@ -157,11 +157,17 @@ class TelegramPublicSearch:
 
         if client is None:
             settings = get_settings()
-            if settings.telegram_api_id and settings.telegram_api_hash:
+            session_string = (
+                os.getenv("TELEGRAM_DISCOVERY_SESSION_STRING")
+                or os.getenv("TELEGRAM_SESSION_STRING")
+                or ""
+            )
+            if settings.telegram_api_id and settings.telegram_api_hash and session_string:
                 client = Client(
                     name="lead_discovery",
                     api_id=settings.telegram_api_id,
                     api_hash=settings.telegram_api_hash,
+                    session_string=session_string,
                     in_memory=True,
                 )
                 temporary_client = True
@@ -243,11 +249,17 @@ class ChannelMembersParser:
 
         if client is None:
             settings = get_settings()
-            if settings.telegram_api_id and settings.telegram_api_hash:
+            session_string = (
+                os.getenv("TELEGRAM_DISCOVERY_SESSION_STRING")
+                or os.getenv("TELEGRAM_SESSION_STRING")
+                or ""
+            )
+            if settings.telegram_api_id and settings.telegram_api_hash and session_string:
                 client = Client(
                     name="channel_parser",
                     api_id=settings.telegram_api_id,
                     api_hash=settings.telegram_api_hash,
+                    session_string=session_string,
                     in_memory=True,
                 )
                 temporary_client = True
@@ -333,11 +345,17 @@ async def enrich_contact(
     temp_client = False
     if client is None:
         settings = get_settings()
-        if settings.telegram_api_id and settings.telegram_api_hash:
+        session_string = (
+            os.getenv("TELEGRAM_DISCOVERY_SESSION_STRING")
+            or os.getenv("TELEGRAM_SESSION_STRING")
+            or ""
+        )
+        if settings.telegram_api_id and settings.telegram_api_hash and session_string:
             client = Client(
                 name="enricher",
                 api_id=settings.telegram_api_id,
                 api_hash=settings.telegram_api_hash,
+                session_string=session_string,
                 in_memory=True,
             )
             temp_client = True

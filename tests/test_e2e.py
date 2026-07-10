@@ -224,6 +224,7 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
         MockResult([campaign]),  # find campaign
         MockResult([cc]),  # find campaign contact for analytics
         MockResult([e2e_script]),  # find script
+        MockResult([e2e_account]),  # find account for inbound rate limits
     ]
 
     # Mock Pyrogram message
@@ -274,6 +275,7 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
 
                                 # Verify both inbound and outbound messages were saved
                                 assert mock_add_msg.call_count == 2
+                                assert e2e_account.daily_messages_sent >= 1
 
                                 # 10. Verify notification was sent to Admin Bot
                                 mock_notif.assert_awaited_once()
@@ -295,4 +297,4 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
         await handle_qualify(mock_callback)
 
         assert conversation.operator_status == "qualified"
-        mock_callback.answer.assert_awaited_once_with("✅ Статус обновлен: Qualified")
+        mock_callback.answer.assert_awaited_once_with("✅ Отмечено: готов к работе")

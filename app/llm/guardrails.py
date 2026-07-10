@@ -1,6 +1,7 @@
 import difflib
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,14 @@ def check_anti_repetition(
 
 def check_no_bot_words(text: str, forbidden: list[str] | None = None) -> bool:
     if forbidden is None:
-        forbidden = ["бот", "ассистент", "искусственный интеллект", "нейросеть", "я ии"]
+        forbidden = [
+            "бот",
+            "ассистент",
+            "искусственный интеллект",
+            "нейросеть",
+            "я ии",
+            "ai",
+        ]
     lower_text = text.lower()
     for word in forbidden:
         # Match whole words only to avoid false positives like "работаю" or "робот".
@@ -84,7 +92,7 @@ def check_no_markdown(text: str) -> bool:
 def check_no_emoji(text: str) -> bool:
     """Return True if *text* contains no emoji characters."""
     for ch in text:
-        cat = ch.category if hasattr(ch, "category") else None
+        cat = unicodedata.category(ch)
         if cat in ("So",):
             return False
         code = ord(ch)
@@ -103,6 +111,77 @@ def check_no_emoji(text: str) -> bool:
         ):
             return False
     return True
+
+
+def check_max_questions(text: str, max_questions: int = 1) -> bool:
+    """Return True when the message does not interrogate the lead too much."""
+    return text.count("?") <= max_questions
+
+
+def check_no_banned_sales_phrases(text: str) -> bool:
+    """Block phrases that make Telegram outreach sound templated."""
+    banned = (
+        "как сейчас решаете эту задачу",
+        "в вашем стеке",
+        "it-компаниям, как у вас",
+        "как у вас в",
+        "понял, что у вас",
+        "понимаю, что у вас",
+    )
+    lower_text = text.lower()
+    return not any(phrase in lower_text for phrase in banned)
+
+
+def check_no_unsupported_product_claims(text: str) -> bool:
+    """Block factual product claims that must not be invented by the model."""
+    lower_text = text.lower()
+    patterns = (
+        r"интеграц\w*\s+с\s+[^.?!]+(?:работа|поддерж|есть|можно)",
+        r"готов\w*\s+коннектор",
+        r"через\s+вебхук",
+        r"есть\s+реальн\w*\s+кейс",
+        r"сократил\w*[^.?!]*\d",
+        r"\+\d+\s*%",
+        r"в\s+\d+\s+раз",
+        r"зашифрован\w*\s+вид",
+        r"доступ\s+только\s+у\s+вас",
+        r"без\s+сохранения\s+сообщен",
+        r"официальн\w*\s+telegram\s+bot\s+api",
+        r"\blinkedin\b",
+        r"\bemail\b",
+        r"не\s+пропускает\s+ни\s+одного",
+        r"всегда\s+начинает",
+        r"недавно\s+делал\w*",
+        r"для\s+похож\w+\s+(?:места|компании|проекта|формата)",
+        r"у\s+нас\s+есть\s+готов\w+\s+(?:дизайн|макет|концепц)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_unsupported_creative_work(text: str) -> bool:
+    """Block invented creative/design deliverables in plain outreach replies."""
+    lower_text = text.lower()
+    patterns = (
+        r"вот\s+(?:два|три|несколько)\s+вариант\w*",
+        r"первый\s+вариант[^.?!]+(?:второй|ещ[её])",
+        r"можем\s+сделать\s+дизайн\s+",
+        r"предлож(?:у|им)\s+(?:дизайн|концепц|макет)",
+        r"использовал\w*[^.?!]*(?:цвет|шрифт|паттерн|график|иллюстрац)",
+        r"стаканчик\s+должен\s+быть",
+        r"сразу\s+понятно[^.?!]*(?:дизайн|стаканчик|макет|концепц)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_unsupported_actions(text: str) -> bool:
+    """Block promises to send files/media that the Telegram sender cannot actually attach."""
+    lower_text = text.lower()
+    patterns = (
+        r"\b(?:присылаю|отправляю|прикрепляю)\b[^.?!]*(?:фото|файл|каталог|презентац|пример)",
+        r"\b(?:send|sending|attach|attaching)\b[^.?!]*(?:photo|file|catalog|deck|presentation|example)",
+        r"вот\s+(?:фото|примеры|каталог)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
 
 
 def check_no_cjk_arabic(text: str) -> bool:
@@ -143,6 +222,16 @@ def evaluate_guardrails(text: str, last_messages: list[str]) -> GuardrailsResult
         violations.append("markdown")
     if not check_no_emoji(text):
         violations.append("emoji")
+    if not check_max_questions(text):
+        violations.append("too_many_questions")
+    if not check_no_banned_sales_phrases(text):
+        violations.append("banned_sales_phrase")
+    if not check_no_unsupported_product_claims(text):
+        violations.append("unsupported_product_claim")
+    if not check_no_unsupported_creative_work(text):
+        violations.append("unsupported_creative_work")
+    if not check_no_unsupported_actions(text):
+        violations.append("unsupported_action")
     if not check_no_cjk_arabic(text):
         violations.append("foreign_script")
 

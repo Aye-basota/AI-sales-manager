@@ -21,9 +21,8 @@ try:
         asyncio.set_event_loop(_tmp_loop)
 
     from pyrogram import Client
+    from pyrogram.enums import ChatAction
     from pyrogram.raw.functions.account import UpdateStatus
-    from pyrogram.raw.functions.messages import SetTyping, ReadHistory
-    from pyrogram.raw.types import InputPeerUser, SendMessageTypingAction
     from pyrogram.errors import FloodWait, PeerFlood
 
     _PYROGRAM_AVAILABLE = True
@@ -161,7 +160,7 @@ class SellerClient:
                         )
                         return
                     await self._client.start()
-                    logger.warning("SellerClient %s: connected", self.account_id)
+                    logger.info("SellerClient %s: connected", self.account_id)
                     return
             except Exception as exc:
                 logger.warning(
@@ -301,9 +300,9 @@ class SellerClient:
         if self._client is not None:
 
             async def _do_set_typing():
-                peer = InputPeerUser(user_id=user_id, access_hash=0)
-                await self._client.invoke(
-                    SetTyping(peer=peer, action=SendMessageTypingAction())
+                await self._client.send_chat_action(
+                    chat_id=user_id,
+                    action=ChatAction.TYPING,
                 )
 
             try:
@@ -336,8 +335,7 @@ class SellerClient:
         if self._client is not None:
 
             async def _do_read_history():
-                peer = InputPeerUser(user_id=user_id, access_hash=0)
-                await self._client.invoke(ReadHistory(peer=peer, max_id=0))
+                await self._client.read_chat_history(chat_id=user_id)
 
             try:
                 await self._with_reconnect(_do_read_history)

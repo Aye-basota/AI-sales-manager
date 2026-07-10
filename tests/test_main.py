@@ -1,11 +1,13 @@
 """Tests for app main module wiring."""
 
+import asyncio
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, _observe_background_task, unhandled_exception_handler
 
 
 class TestMainApp:
@@ -47,3 +49,26 @@ class TestMainApp:
             )
         assert response.status_code == 400
         assert response.json()["detail"] == "Invalid request"
+
+    async def test_background_task_failure_is_logged(self, caplog):
+        async def fail():
+            raise RuntimeError("startup boom")
+
+        with caplog.at_level("ERROR"):
+            task = _observe_background_task(asyncio.create_task(fail()), "test_task")
+            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.sleep(0)
+
+        assert "Background task test_task failed" in caplog.text
+        assert "startup boom" in caplog.text
+
+    async def test_unhandled_exception_returns_stable_json(self, caplog):
+        request = SimpleNamespace(method="GET", url=SimpleNamespace(path="/boom"))
+        exc = RuntimeError("private details")
+
+        with caplog.at_level("ERROR"):
+            response = await unhandled_exception_handler(request, exc)
+
+        assert response.status_code == 500
+        assert response.body == b'{"detail":"Internal server error"}'
+        assert "Unhandled API error for GET /boom" in caplog.text

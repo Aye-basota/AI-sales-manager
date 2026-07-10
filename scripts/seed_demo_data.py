@@ -72,7 +72,7 @@ def _make_demo_contacts() -> list[Contact]:
                 source="demo_seed",
                 last_source="demo_seed",
                 is_valid="yes",
-                icp_score=random.randint(60, 95),
+                icp_score=random.randint(60, 95),  # nosec B311
                 status="new",
             )
         )
@@ -157,7 +157,10 @@ async def _seed() -> None:
             outbound = Message(
                 conversation_id=conversation.id,
                 direction="outbound",
-                content=f"Привет, {contact.first_name}! Расскажу, как Neural Lead помогает B2B-компаниям находить клиентов в Telegram.",
+                content=(
+                    f"Привет, {contact.first_name}! Расскажу, как Neural Lead "
+                    "помогает B2B-компаниям находить клиентов в Telegram."
+                ),
                 message_type="text",
                 intent_classification="greeting",
                 llm_model="qwen",

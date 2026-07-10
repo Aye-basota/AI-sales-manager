@@ -11,6 +11,27 @@ def test_list_scripts(client, mock_db, sample_script):
     assert data[0]["name"] == "Test Script"
 
 
+def test_list_scripts_normalizes_legacy_nullable_fields(client, mock_db, sample_script):
+    sample_script.sales_funnel = {}
+    sample_script.first_message_goal = None
+    sample_script.call_to_action = None
+    sample_script.language = None
+    sample_script.emoji_policy = None
+    sample_script.max_first_message_length = None
+    mock_db.execute.return_value = MockResult([sample_script])
+
+    response = client.get("/scripts")
+
+    assert response.status_code == 200
+    data = response.json()[0]
+    assert data["sales_funnel"] == []
+    assert data["first_message_goal"] == "trust"
+    assert data["call_to_action"] == "15-минутный созвон"
+    assert data["language"] == "ru"
+    assert data["emoji_policy"] == "forbidden"
+    assert data["max_first_message_length"] == 200
+
+
 def test_get_script(client, mock_db, sample_script):
     mock_db.execute.return_value = MockResult([sample_script])
     response = client.get(f"/scripts/{sample_script.id}")

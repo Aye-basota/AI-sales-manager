@@ -3,9 +3,15 @@ from app.llm.guardrails import (
     apply_guardrails,
     check_anti_repetition,
     check_length,
+    check_max_questions,
     check_no_bot_words,
+    check_no_banned_sales_phrases,
     check_no_forbidden_topics,
     check_no_markdown,
+    check_no_emoji,
+    check_no_unsupported_product_claims,
+    check_no_unsupported_creative_work,
+    check_no_unsupported_actions,
     evaluate_guardrails,
 )
 
@@ -66,6 +72,63 @@ def test_apply_guardrails_fails_repetition():
     assert result is None
 
 
+def test_check_max_questions_blocks_interrogation():
+    assert check_max_questions("Понял. Какой объем сейчас?") is True
+    assert check_max_questions("Какой объем? Кто отвечает?") is False
+
+
+def test_check_no_banned_sales_phrases_blocks_templated_hooks():
+    assert check_no_banned_sales_phrases("Понял, спасибо за контекст.") is True
+    assert check_no_banned_sales_phrases("Как сейчас решаете эту задачу?") is False
+    assert check_no_banned_sales_phrases("Понял, что у вас сейчас нет времени.") is False
+
+
+def test_check_no_unsupported_product_claims_blocks_hallucinated_integrations():
+    assert check_no_unsupported_product_claims("По интеграциям нужно проверить схему.") is True
+    assert (
+        check_no_unsupported_product_claims(
+            "Интеграция с amoCRM работает через вебхуки и готовые коннекторы."
+        )
+        is False
+    )
+
+
+def test_check_no_unsupported_product_claims_blocks_fake_case_metrics():
+    assert check_no_unsupported_product_claims("Могу прислать пример сценария.") is True
+    assert (
+        check_no_unsupported_product_claims(
+            "Есть реальные кейсы: клиент сократил время в 3 раза и получил +27%."
+        )
+        is False
+    )
+
+
+def test_check_no_unsupported_product_claims_blocks_unproven_channels():
+    assert check_no_unsupported_product_claims("Работаем аккуратно в Telegram.") is True
+    assert check_no_unsupported_product_claims("Работает через LinkedIn и email.") is False
+
+
+def test_check_no_unsupported_product_claims_blocks_guarantee_language():
+    assert (
+        check_no_unsupported_product_claims(
+            "Он не устает и не пропускает ни одного контакта."
+        )
+        is False
+    )
+
+
+def test_check_no_unsupported_actions_blocks_fake_attachments():
+    assert check_no_unsupported_actions("Могу описать примеры словами.") is True
+    assert check_no_unsupported_actions("Присылаю три фото стаканчиков.") is False
+    assert check_no_unsupported_actions("Sending a product deck now.") is False
+
+
+def test_check_no_unsupported_creative_work_blocks_invented_designs():
+    assert check_no_unsupported_creative_work("Можем зафиксировать вводные для дизайнера.") is True
+    assert check_no_unsupported_creative_work("Вот два варианта дизайна стаканчика.") is False
+    assert check_no_unsupported_creative_work("Круто, сразу понятно, каким должен быть стаканчик.") is False
+
+
 class TestCheckNoBotWords:
     def test_clean_text(self):
         assert check_no_bot_words("Здравствуйте, хотел уточнить детали.") is True
@@ -85,6 +148,9 @@ class TestCheckNoBotWords:
     def test_detects_ya_ii(self):
         assert check_no_bot_words("я ИИ") is False
 
+    def test_detects_latin_ai(self):
+        assert check_no_bot_words("AI ведет первые сообщения") is False
+
 
 class TestCheckNoMarkdown:
     def test_plain_text_passes(self):
@@ -101,6 +167,14 @@ class TestCheckNoMarkdown:
 
     def test_backtick_fails(self):
         assert check_no_markdown("`код`") is False
+
+
+class TestCheckNoEmoji:
+    def test_plain_text_passes(self):
+        assert check_no_emoji("Просто текст без эмодзи.") is True
+
+    def test_common_emoji_fails(self):
+        assert check_no_emoji("Привет 🙂") is False
 
 
 class TestGuardrailsResult:
@@ -140,6 +214,34 @@ class TestEvaluateGuardrails:
         result = evaluate_guardrails("**жирный текст**", [])
         assert result.approved is False
         assert "markdown" in result.violations
+
+    def test_rejected_too_many_questions(self):
+        result = evaluate_guardrails("Какой объем? Кто отвечает?", [])
+        assert result.approved is False
+        assert "too_many_questions" in result.violations
+
+    def test_rejected_banned_sales_phrase(self):
+        result = evaluate_guardrails("Понимаю, а как сейчас решаете эту задачу?", [])
+        assert result.approved is False
+        assert "banned_sales_phrase" in result.violations
+
+    def test_rejected_unsupported_creative_work(self):
+        result = evaluate_guardrails("Вот два варианта дизайна стаканчика.", [])
+        assert result.approved is False
+        assert "unsupported_creative_work" in result.violations
+
+    def test_rejected_unsupported_product_claim(self):
+        result = evaluate_guardrails(
+            "Интеграция с Bitrix24 работает через готовые коннекторы.",
+            [],
+        )
+        assert result.approved is False
+        assert "unsupported_product_claim" in result.violations
+
+    def test_rejected_unsupported_action(self):
+        result = evaluate_guardrails("Присылаю фото примеров прямо сейчас.", [])
+        assert result.approved is False
+        assert "unsupported_action" in result.violations
 
     def test_multiple_violations(self):
         bad_text = "# политика и я бот"

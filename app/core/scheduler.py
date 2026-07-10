@@ -9,13 +9,24 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import select, update
+from sqlalchemy.exc import NoInspectionAvailable
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
+
+TIMEZONE_ALIASES = {
+    "moscow": "Europe/Moscow",
+    "москва": "Europe/Moscow",
+    "msk": "Europe/Moscow",
+    "мск": "Europe/Moscow",
+    "utc+3": "Europe/Moscow",
+    "utc": "UTC",
+}
 
 
 try:
@@ -27,12 +38,13 @@ try:
         _tmp_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_tmp_loop)
 
-    from pyrogram.errors import FloodWait, PeerFlood
+    from pyrogram.errors import FloodWait, PeerFlood, PeerIdInvalid
 
     _PYROGRAM_ERRORS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     FloodWait = Exception
     PeerFlood = Exception
+    PeerIdInvalid = Exception
     _PYROGRAM_ERRORS_AVAILABLE = False
 
 
@@ -53,6 +65,18 @@ class AccountPeerFloodError(Exception):
         super().__init__(f"Account {account_id} peer flood error")
 
 
+class ContactPeerInvalidError(Exception):
+    """Raised when Telegram cannot resolve or message a contact peer."""
+
+    def __init__(self, account_id, contact_id, telegram_user_id) -> None:
+        self.account_id = account_id
+        self.contact_id = contact_id
+        self.telegram_user_id = telegram_user_id
+        super().__init__(
+            f"Account {account_id} cannot message Telegram peer {telegram_user_id}"
+        )
+
+
 def _is_eligible_account(account, now: datetime) -> bool:
     """Return True if *account* can be used to send a message right now."""
     if account.status not in ("ready", "active"):
@@ -66,6 +90,14 @@ def _is_eligible_account(account, now: datetime) -> bool:
         if cooldown > now:
             return False
     return True
+
+
+def normalize_timezone(timezone_str: str | None) -> str:
+    """Return a ZoneInfo-compatible timezone name for common human inputs."""
+    value = (timezone_str or "Europe/Moscow").strip()
+    if not value:
+        return "Europe/Moscow"
+    return TIMEZONE_ALIASES.get(value.lower(), value)
 
 
 def should_send_to_contact(
@@ -105,7 +137,7 @@ def is_within_working_hours(
     server timezone differs from the campaign timezone.
     """
     try:
-        tz = ZoneInfo(timezone_str)
+        tz = ZoneInfo(normalize_timezone(timezone_str))
     except Exception:
         tz = ZoneInfo("UTC")
 
@@ -175,6 +207,31 @@ def next_contact_to_process(
     return ready
 
 
+async def _increment_processed_contacts(
+    db_session: AsyncSession,
+    campaign_id,
+    campaign,
+) -> None:
+    """Increment processed contacts without touching expired ORM state."""
+    try:
+        state = sa_inspect(campaign)
+    except NoInspectionAvailable:
+        campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
+        return
+
+    if state.expired:
+        from app.models.campaign import Campaign
+
+        await db_session.execute(
+            update(Campaign)
+            .where(Campaign.id == campaign_id)
+            .values(processed_contacts=Campaign.processed_contacts + 1)
+        )
+        return
+
+    campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
+
+
 # ---------------------------------------------------------------------------
 # Campaign processing
 # ---------------------------------------------------------------------------
@@ -207,10 +264,13 @@ async def process_campaigns(db_session: AsyncSession) -> None:
         select(Campaign).where(Campaign.status == "running")
     )
     campaigns = campaigns_result.scalars().all()
+    campaign_refs = [
+        (campaign.id, campaign.script_id, campaign) for campaign in campaigns
+    ]
 
-    for campaign in campaigns:
+    for campaign_id, script_id, campaign in campaign_refs:
         script_result = await db_session.execute(
-            select(Script).where(Script.id == campaign.script_id)
+            select(Script).where(Script.id == script_id)
         )
         script = script_result.scalar_one_or_none()
         if not script:
@@ -226,11 +286,18 @@ async def process_campaigns(db_session: AsyncSession) -> None:
             script.working_hours_end,
             now,
         ):
+            logger.info(
+                "Skipping campaign %s: outside working hours %s-%s %s",
+                campaign_id,
+                script.working_hours_start,
+                script.working_hours_end,
+                normalize_timezone(script.timezone),
+            )
             continue
 
         cc_result = await db_session.execute(
             select(CampaignContact)
-            .where(CampaignContact.campaign_id == campaign.id)
+            .where(CampaignContact.campaign_id == campaign_id)
             .where(CampaignContact.status.in_(["pending", "initial_sent"]))
         )
         campaign_contacts = cc_result.scalars().all()
@@ -253,16 +320,22 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                 logger.debug("Skipping contact %s (no telegram_user_id)", contact.id)
                 continue
 
+            if contact.is_valid == "invalid" or contact.status == "invalid_peer":
+                logger.debug("Skipping contact %s (invalid Telegram peer)", contact.id)
+                cc.status = "invalid_peer"
+                await db_session.commit()
+                continue
+
             conv_result = await db_session.execute(
                 select(Conversation)
                 .where(Conversation.contact_id == contact.id)
-                .where(Conversation.campaign_id == campaign.id)
+                .where(Conversation.campaign_id == campaign_id)
             )
             conversation = conv_result.scalar_one_or_none()
             if conversation is None:
                 conversation = Conversation(
                     contact_id=contact.id,
-                    campaign_id=campaign.id,
+                    campaign_id=campaign_id,
                     current_state="cold",
                 )
                 db_session.add(conversation)
@@ -413,15 +486,29 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     )
                     await db_session.commit()
                     continue
+            except ContactPeerInvalidError as exc:
+                logger.warning(
+                    "Contact %s has invalid Telegram peer %s for account %s",
+                    contact.id,
+                    exc.telegram_user_id,
+                    exc.account_id,
+                )
+                cc.status = "invalid_peer"
+                contact.is_valid = "invalid"
+                contact.status = "invalid_peer"
+                await db_session.commit()
+                continue
             except Exception as exc:
                 logger.exception(
                     "Error sending message to contact %s: %s", contact.id, exc
                 )
                 await db_session.rollback()
-                continue
+                break
 
             if was_first_message:
-                campaign.processed_contacts = (campaign.processed_contacts or 0) + 1
+                await _increment_processed_contacts(
+                    db_session, campaign_id, campaign
+                )
             await db_session.commit()
 
 
@@ -445,6 +532,11 @@ async def send_initial_message(
         split_message_into_chunks,
     )
     from app.core.funnel import get_first_stage
+    from app.core.initial_message_quality import (
+        build_initial_message_retry_prompt,
+        build_safe_initial_fallback,
+        needs_initial_message_retry,
+    )
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
@@ -482,6 +574,34 @@ async def send_initial_message(
     text = response.get("text", "")
     if not text:
         raise RuntimeError("LLM returned empty text")
+    if response.get("model") == "fallback":
+        text = build_safe_initial_fallback(contact, script)
+        response = {"text": text, "model": "fallback", "tokens_used": 0}
+
+    if needs_initial_message_retry(text):
+        retry_messages = [
+            *messages,
+            {"role": "user", "content": build_initial_message_retry_prompt(text)},
+        ]
+        try:
+            retry_response = await engine.generate_response_with_guardrails(
+                retry_messages, [], max_tokens=max_tokens
+            )
+            retry_text = retry_response.get("text", "")
+            if retry_text and not needs_initial_message_retry(retry_text):
+                response = retry_response
+                text = retry_text
+            else:
+                logger.warning(
+                    "Initial message quality gate used safe fallback for contact %s",
+                    contact.id,
+                )
+                text = build_safe_initial_fallback(contact, script)
+                response = {"text": text, "model": "fallback", "tokens_used": 0}
+        except Exception:
+            logger.exception("Initial message quality retry failed")
+            text = build_safe_initial_fallback(contact, script)
+            response = {"text": text, "model": "fallback", "tokens_used": 0}
 
     text = maybe_self_correct(text)
     text = add_casual_markers(text)
@@ -526,6 +646,15 @@ async def send_initial_message(
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
         raise AccountPeerFloodError(account.id) from exc
+    except PeerIdInvalid as exc:
+        logger.warning(
+            "PeerIdInvalid for contact %s via account %s",
+            contact.id,
+            account.id,
+        )
+        raise ContactPeerInvalidError(
+            account.id, contact.id, contact.telegram_user_id
+        ) from exc
     finally:
         await client.stop()
 
@@ -686,6 +815,15 @@ async def send_follow_up_message(
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
         raise AccountPeerFloodError(account.id) from exc
+    except PeerIdInvalid as exc:
+        logger.warning(
+            "PeerIdInvalid for contact %s via account %s",
+            contact.id,
+            account.id,
+        )
+        raise ContactPeerInvalidError(
+            account.id, contact.id, contact.telegram_user_id
+        ) from exc
     finally:
         await client.stop()
 

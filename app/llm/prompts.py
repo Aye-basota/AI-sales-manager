@@ -60,6 +60,9 @@ def build_system_prompt(
     """Build a dynamic system prompt based on the script, funnel stage, and prompt config."""
     cfg = _prompt_config()
     role = script.role_prompt or "Ты менеджер по продажам."
+    script_name = getattr(script, "name", None)
+    if script_name:
+        role = f"Название бизнеса/оффера: {script_name}\nОписание: {role}"
     audience = script.target_audience or ""
     goal = script.goal or "Довести до созвона."
     criteria = script.success_criteria or "Клиент согласился на демо или назвал удобное время."
@@ -80,7 +83,8 @@ def build_system_prompt(
     cta_text = getattr(script, "call_to_action", None) or "15-минутный созвон"
 
     cta_rule = (
-        f"Призыв к действию: можешь предложить {cta_text} и 2 варианта времени."
+        f"Призыв к действию: если интерес уже есть, можешь мягко предложить {cta_text}. "
+        "Не навязывай время без согласия клиента."
         if cta_allowed
         else "Запрещено предлагать созвон/встречу на этом этапе."
     )
@@ -145,7 +149,7 @@ def build_user_prompt(
             "ФАКТЫ О ЛИДЕ:\n{facts_block}\n\n"
             "ТВОЯ ПРЕДЫДУЩАЯ РЕПЛИКА:\n{last_agent_message}\n\n"
             "ОТВЕТ КЛИЕНТА:\n{lead_message}\n\n"
-            "Напиши ответ (1-3 коротких абзаца)."
+            "Напиши естественный короткий ответ, обычно одним абзацем."
         ),
     )
     return _format_template(

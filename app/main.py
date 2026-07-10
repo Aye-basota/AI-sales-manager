@@ -19,7 +19,7 @@ from app.api import (
     telegram_accounts,
     funnels,
 )
-from app.bots import start_bot, stop_bot
+from app.bots import is_admin_bot_configured, start_bot, stop_bot
 from app.bots.inbound_listener import start_inbound_listeners, stop_inbound_listeners
 from app.db.redis import close_redis
 from app.core.scheduler import scheduler
@@ -29,6 +29,50 @@ _level = os.getenv("LOG_LEVEL")
 setup_logging(_level)
 
 logger = logging.getLogger(__name__)
+
+
+def _observe_background_task(task: asyncio.Task, name: str) -> asyncio.Task:
+    """Attach logging to background startup tasks so failures are not silent."""
+
+    def _log_result(done_task: asyncio.Task) -> None:
+        if done_task.cancelled():
+            logger.info("Background task %s cancelled", name)
+            return
+        try:
+            exc = done_task.exception()
+        except asyncio.CancelledError:
+            logger.info("Background task %s cancelled", name)
+            return
+        if exc is not None:
+            logger.error(
+                "Background task %s failed",
+                name,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        else:
+            logger.info("Background task %s finished", name)
+
+    task.add_done_callback(_log_result)
+    return task
+
+
+async def _supervise_admin_bot() -> None:
+    if not is_admin_bot_configured():
+        await start_bot()
+        return
+
+    while True:
+        try:
+            await start_bot()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "Admin bot polling crashed",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        logger.warning("Admin bot polling stopped; restarting in 5 seconds")
+        await asyncio.sleep(5)
 
 
 @asynccontextmanager
@@ -52,9 +96,15 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
 
-    bot_task = asyncio.create_task(start_bot())
+    bot_task = _observe_background_task(
+        asyncio.create_task(_supervise_admin_bot()),
+        "admin_bot",
+    )
 
-    inbound_task = asyncio.create_task(start_inbound_listeners())
+    inbound_task = _observe_background_task(
+        asyncio.create_task(start_inbound_listeners()),
+        "inbound_listeners",
+    )
 
     yield
 
@@ -77,7 +127,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="AI Sales Manager API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AI Sales Manager API", version="0.4.0", lifespan=lifespan)
 
 
 @app.exception_handler(RequestValidationError)
@@ -86,6 +136,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=400,
         content={"detail": "Invalid request", "errors": exc.errors()},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Return a stable JSON fallback for unexpected API errors."""
+    logger.error(
+        "Unhandled API error for %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
     )
 
 

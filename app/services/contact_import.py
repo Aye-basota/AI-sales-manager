@@ -138,35 +138,69 @@ async def upsert_contacts(
     created: list[Contact] = []
     updated: list[Contact] = []
 
-    # Pre-load existing contacts by username and phone to avoid N+1 queries
+    # Pre-load existing contacts by stable identifiers to avoid N+1 queries.
+    telegram_user_ids = [
+        int(r["telegram_user_id"]) for r in records if r.get("telegram_user_id")
+    ]
     usernames = [
         r["telegram_username"].lower() for r in records if r.get("telegram_username")
     ]
     phones = [r["phone"] for r in records if r.get("phone")]
 
+    existing_by_telegram_user_id: dict[int, Contact] = {}
     existing_by_username: dict[str, Contact] = {}
     existing_by_phone: dict[str, Contact] = {}
 
+    if telegram_user_ids:
+        result = await db.execute(
+            select(Contact)
+            .where(Contact.telegram_user_id.in_(telegram_user_ids))
+            .order_by(
+                Contact.updated_at.desc().nullslast(),
+                Contact.created_at.desc().nullslast(),
+            )
+        )
+        for contact in result.scalars().all():
+            if contact.telegram_user_id and contact.telegram_user_id not in existing_by_telegram_user_id:
+                existing_by_telegram_user_id[int(contact.telegram_user_id)] = contact
+
     if usernames:
         result = await db.execute(
-            select(Contact).where(Contact.telegram_username.in_(usernames))
+            select(Contact)
+            .where(Contact.telegram_username.in_(usernames))
+            .order_by(
+                Contact.updated_at.desc().nullslast(),
+                Contact.created_at.desc().nullslast(),
+            )
         )
         for contact in result.scalars().all():
             if contact.telegram_username:
-                existing_by_username[contact.telegram_username.lower()] = contact
+                key = contact.telegram_username.lower()
+                if key not in existing_by_username:
+                    existing_by_username[key] = contact
 
     if phones:
-        result = await db.execute(select(Contact).where(Contact.phone.in_(phones)))
+        result = await db.execute(
+            select(Contact)
+            .where(Contact.phone.in_(phones))
+            .order_by(
+                Contact.updated_at.desc().nullslast(),
+                Contact.created_at.desc().nullslast(),
+            )
+        )
         for contact in result.scalars().all():
-            if contact.phone:
+            if contact.phone and contact.phone not in existing_by_phone:
                 existing_by_phone[contact.phone] = contact
 
     for record in records:
+        telegram_user_id = record.get("telegram_user_id")
         username = record.get("telegram_username")
         phone = record.get("phone")
         existing: Contact | None = None
 
-        if username:
+        if telegram_user_id:
+            existing = existing_by_telegram_user_id.get(int(telegram_user_id))
+        if not existing and username:
             existing = existing_by_username.get(username.lower())
         if not existing and phone:
             existing = existing_by_phone.get(phone)
@@ -188,6 +222,8 @@ async def upsert_contacts(
             contact = Contact(**record)
             db.add(contact)
             created.append(contact)
+            if telegram_user_id:
+                existing_by_telegram_user_id[int(telegram_user_id)] = contact
             if username:
                 existing_by_username[username.lower()] = contact
             if phone:

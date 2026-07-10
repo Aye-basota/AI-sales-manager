@@ -1,8 +1,13 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Any
+
+from pydantic import ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     database_url: str = "postgresql+asyncpg://sales:salespass@localhost:5432/ai_sales"
     redis_url: str = "redis://localhost:6379/0"
 
@@ -24,11 +29,32 @@ class Settings(BaseSettings):
     telegram_api_id: int = 0
     telegram_api_hash: str = ""
     daily_message_limit: int = 50
+    tgstat_token: str = ""
+    tgstat_base_url: str = "https://api.tgstat.ru"
     debug: bool = True
+    sql_echo: bool = False
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    @field_validator("debug", "sql_echo", mode="before")
+    @classmethod
+    def parse_bool_flag(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip().lower()
+        if normalized in {"release", "prod", "production", "off", "false", "0", "no"}:
+            return False
+        if normalized in {"debug", "dev", "development", "on", "true", "1", "yes"}:
+            return True
+        return value
+
+    @field_validator("telegram_api_id", "daily_message_limit", mode="before")
+    @classmethod
+    def parse_empty_int_defaults(cls, value: Any, info: ValidationInfo) -> Any:
+        if not (isinstance(value, str) and value.strip() == ""):
+            return value
+        if info.field_name == "daily_message_limit":
+            return 50
+        return 0
 
 
 @lru_cache()

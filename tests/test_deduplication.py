@@ -100,6 +100,60 @@ async def test_upsert_updates_by_phone_when_username_missing():
 
 
 @pytest.mark.asyncio
+async def test_upsert_updates_by_telegram_user_id():
+    existing = Contact(
+        id=uuid4(),
+        telegram_user_id=123456,
+        telegram_username=None,
+        phone=None,
+        first_name="Old",
+        source="csv_import",
+        last_source="csv_import",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    session = _build_mock_session_with_results([existing])
+
+    records = [
+        {
+            "telegram_user_id": 123456,
+            "telegram_username": "fresh_user",
+            "company_name": "Fresh Corp",
+        },
+    ]
+    created, updated = await upsert_contacts(session, records, source="csv_import")
+
+    assert len(created) == 0
+    assert len(updated) == 1
+    assert updated[0].telegram_username == "fresh_user"
+    assert updated[0].company_name == "Fresh Corp"
+    assert updated[0].last_source == "csv_import"
+
+
+@pytest.mark.asyncio
+async def test_upsert_preserves_tgstat_source_context_on_create(mock_db):
+    records = [
+        {
+            "telegram_user_id": 123456,
+            "telegram_username": "lead",
+            "source_url": "https://t.me/group/10",
+            "source_summary": "Asked for CRM",
+            "source_message_text": "Can anyone recommend CRM?",
+            "source_message_date": "2026-07-10T10:00:00+00:00",
+        }
+    ]
+
+    created, updated = await upsert_contacts(mock_db, records, source="tgstat")
+
+    assert len(created) == 1
+    assert len(updated) == 0
+    assert created[0].source == "tgstat"
+    assert created[0].last_source == "tgstat"
+    assert created[0].source_url == "https://t.me/group/10"
+    assert created[0].source_summary == "Asked for CRM"
+
+
+@pytest.mark.asyncio
 async def test_upsert_case_insensitive_username():
     existing = Contact(
         id=uuid4(),
