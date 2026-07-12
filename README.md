@@ -4,6 +4,15 @@
 
 Построена для автономной работы: запустил кампанию — система сама отправляет первичные сообщения, обрабатывает ответы, ведет диалог, назначает встречи и уведомляет оператора о горячих лидах.
 
+## Для заказчика и ревьюера
+
+- **Доступ к продукту:** нет постоянного продакшн-хостинга — команда поднимает инстанс по запросу через Docker Compose и делится временной публичной ссылкой (localtunnel). Актуальный статус и инструкции: [`docs/customer-handover.md`](docs/customer-handover.md).
+- **Документация:** [hosted docs site](https://aye-basota.github.io/AI-sales-manager/)
+- **Handover / статус передачи проекта:** [`docs/customer-handover.md`](docs/customer-handover.md)
+- **Как контрибьютить:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- **Инструкции для AI-агентов:** [`AGENTS.md`](AGENTS.md)
+- **Быстрый запуск:** см. [«Быстрый старт (Docker)»](#быстрый-старт-docker) ниже или подробный гид [`LAUNCH_GUIDE.md`](LAUNCH_GUIDE.md)
+
 ---
 
 ## Промо-сайт для заказчиков
@@ -24,6 +33,7 @@
 - **[AI Sales Manager Docs](https://aye-basota.github.io/AI-sales-manager/)** — hosted documentation site
 
 Ключевые файлы документации в репозитории:
+- [`docs/customer-handover.md`](docs/customer-handover.md) — актуальный статус передачи проекта заказчику
 - [`docs/roadmap.md`](docs/roadmap.md) — Sprint-by-Sprint план поставки
 - [`docs/architecture/README.md`](docs/architecture/README.md) — архитектура системы (static / dynamic / deployment views)
 - [`docs/development-process.md`](docs/development-process.md) — процесс разработки, git workflow и управление конфигурацией
@@ -34,11 +44,14 @@
 - [`docs/user-acceptance-tests.md`](docs/user-acceptance-tests.md) — UAT сценарии
 - [`docs/interface.md`](docs/interface.md) — интерфейсная спецификация
 - [`docs/user-stories.md`](docs/user-stories.md) — реестр user stories
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — как контрибьютить в проект
+- [`AGENTS.md`](AGENTS.md) — инструкции для AI-агентов, работающих в этом репозитории
 
 ---
 
 ## Содержание
 
+- [Для заказчика и ревьюера](#для-заказчика-и-ревьюера)
 - [Промо-сайт для заказчиков](#промо-сайт-для-заказчиков)
 - [Документация проекта](#документация-проекта)
 - [Ключевые возможности](#ключевые-возможности)

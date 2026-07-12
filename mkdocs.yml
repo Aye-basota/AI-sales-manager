@@ -35,6 +35,7 @@ site_dir: site_docs
 
 nav:
   - Home: index.md
+  - Customer Handover: customer-handover.md
   - Roadmap: roadmap.md
   - Development Process: development-process.md
   - Architecture:
