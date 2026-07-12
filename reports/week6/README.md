@@ -150,7 +150,7 @@ Full session transcript: [`sprint-review-transcript.md`](sprint-review-transcrip
 
 ## 10. Release
 
-**Not yet created — this is the primary blocker for this report.** `CHANGELOG.md` already documents a `[0.4.0] - 2026-07-08` entry describing the Week 6 trial release, but as of this report there is **no `v0.4.0` git tag or GitHub Release** (`git ls-remote --tags` shows only `v0.1.0`–`v0.3.0`). Assignment 6 Part 2 requires a SemVer release, tagged `v`-prefixed, pointing to a commit on `main`, linking the Sprint 4 milestone, access instructions, `docs/customer-handover.md`, and this report. This must be created before Week 6 submission — see [Open Items](#open-items-before-submission).
+[**`v0.4.0` — AI Sales Manager v0.4.0**](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.4.0) — the Week 6 trial / handover-candidate release for Assignment 6 Sprint 4. Tagged `v`-prefixed, points to a commit on `main`, and links the Sprint 4 milestone, this report, run/access instructions, `docs/customer-handover.md`, and `CHANGELOG.md`.
 
 - [`CHANGELOG.md`](../../CHANGELOG.md)
 
@@ -217,7 +217,7 @@ Full session transcript: [`sprint-review-transcript.md`](sprint-review-transcrip
 
 This report intentionally surfaces gaps rather than papering over them. Before the Week 6 submission deadline, the team still needs to:
 
-1. **Create the `v0.4.0` SemVer release** (tag + GitHub Release) per Assignment 6 Part 2 — see [§10](#10-release).
+1. ~~Create the `v0.4.0` SemVer release~~ — **done**, see [§10](#10-release).
 2. **Resolve or explain the VPS/local-machine uptime contradiction** surfaced in the Week 6 demo — see [§4](#4-deployment-and-run-instructions), [§6](#6-transition-readiness-summary), [§8](#8-uat-and-customer-trial-results).
 3. **Create the Sprint 5 milestone and file the four customer-feedback issues** — see [§7](#7-customer-feedback-response).
 4. **Complete the customer-facing documentation review with the customer** — see [§5](#5-customer-facing-documentation).
@@ -226,3 +226,4 @@ This report intentionally surfaces gaps rather than papering over them. Before t
 7. **Capture and embed screenshots** — see [§15](#15-screenshots).
 8. **Close or update the 11 Sprint 4 milestone issues** on GitHub to reflect delivered work — see [§2](#2-backlog-and-sprint-planning).
 9. **Add the lead-discovery feature and bot-hardening work to `CHANGELOG.md`** if not already covered by `[0.4.0]` — see [§3](#3-delivered-product-changes).
+10. **Fix the Week 5/Week 6 mislabeling in `llm-report.md`** — it was committed as a copy of `reports/week5/llm-report.md`; see the `week6-llm-report-fix` branch for a proposed correction.
