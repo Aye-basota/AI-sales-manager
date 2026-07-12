@@ -95,6 +95,10 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 - TECH-12: Configure Production Infrastructure and Monitoring
 - TECH-13: Prompt Configuration and Versioning
 
+**Week 6 Trial Outcome:**
+
+Sprint 4 reached a trial / handover-candidate state and was reviewed with the customer on 2026-07-12. The live review covered business setup, contact upload, campaign launch, AI conversation behavior, and Telegram lead discovery. The customer asked for stronger lead-search quality, less manual setup before campaign launch, and continued prompt/model quality improvement.
+
 **Sprint Scope Rationale:**
 
 The sprint scope focuses on strengthening the AI Sales Manager core workflow by addressing key product capabilities required for the Week 6 trial release and production readiness. The selected items improve the complete lead management journey — from campaign setup and contact handling to AI-powered conversations, manager involvement, performance analytics, and system reliability.
@@ -109,25 +113,27 @@ This scope ensures the platform can support real user trials by providing a stab
 
 ---
 
-## Next Sprint
+## Planned Next Sprint
 
-### Sprint 5 — Post-Trial Optimization and Product Scaling
+### Sprint 5 — Week 7 Follow-Up Maintenance and Final Handover
 
-**Goal:** Improve the AI Sales Manager experience based on trial release feedback by optimizing AI performance, expanding analytics capabilities, and preparing the platform for broader adoption and increased campaign volume.
+**Goal:** Use Week 6 trial feedback to remove the main transition blockers, confirm final product access, update handover documentation, and prepare the final course version (`MVP v3`) for customer and TA evaluation.
+
+**Planned dates:** 2026-07-13 – 2026-07-19
 
 **Planned Focus:**
 
-- Analyze trial release feedback and identify improvement areas
-- Optimize AI conversation quality and lead qualification accuracy
-- Improve campaign performance monitoring and reporting
-- Enhance scalability and reliability for increased usage
-- Expand automation capabilities and reduce manual intervention
-- Improve user experience based on real-world usage patterns
+- Create the Sprint 5 GitHub milestone and assign Week 6 follow-up issues to it.
+- Confirm the final product access arrangement.
+- Improve or explicitly scope lead-discovery result quality.
+- Reduce campaign setup friction where feasible.
+- Improve prompt/model behavior where Week 6 trial evidence showed role-breaking risk.
+- Update customer-facing documentation and handover material after the final transition decision.
+- Collect written customer confirmation for the reached handover level.
 
 **Planned Outcomes:**
 
-- Higher-quality AI-driven customer conversations
-- Improved lead conversion visibility and decision-making
-- More scalable campaign execution
-- Better operational efficiency for sales managers
-- Increased platform readiness for wider adoptionng and performance optimization
+- Final `MVP v3` release candidate ready for SemVer release.
+- Customer-facing documentation matches the actual transition state.
+- Week 7 public report links the complete Week 6 evidence without duplicating it.
+- Remaining limitations are explicit rather than hidden.

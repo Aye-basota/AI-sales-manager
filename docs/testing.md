@@ -3,7 +3,7 @@
 ## Overview
 
 The project uses **pytest** for all automated testing. Tests are organized by module in `tests/`.
-As of the latest QA audit, the suite contains **708 tests**. Application code coverage is approximately **82%** for `app/`; coverage is **81%** when manual utility scripts in `scripts/` are included.
+As of the latest Week 6 QA audit, the suite contains **974 tests**. Application code coverage is approximately **98%** for `app/` in the local audit environment.
 
 Run the full suite:
 ```bash
@@ -85,7 +85,7 @@ Integration tests verify interactions between components using `AsyncMock` for e
 | `app/services/tgstat_lead_search.py` | ~91% | Covered with mocked TGStat and Telegram clients | ✅ |
 | `app/bots/admin_bot.py` | ~64% | Large Telegram UI surface remains the biggest gap | ⚠️ |
 | `app/core/scheduler.py` | ~80% | Remaining misses are mostly rare failure/recovery branches | ⚠️ |
-| **Global `app/`** | **~82%** | CI gate: ≥ 75% | ✅ |
+| **Global `app/`** | **~98%** | CI gate: ≥ 75% | ✅ |
 
 The CI coverage gate is intentionally below the current `app/` coverage so routine refactors have a small buffer, but high enough to catch major untested additions. Manual scripts under `scripts/` are audited separately because several require live credentials, local files, or operator interaction.
 

@@ -6,7 +6,7 @@
 
 ## Для заказчика и ревьюера
 
-- **Доступ к продукту:** нет постоянного продакшн-хостинга — команда поднимает инстанс по запросу через Docker Compose и делится временной публичной ссылкой (localtunnel). Актуальный статус и инструкции: [`docs/customer-handover.md`](docs/customer-handover.md).
+- **Доступ к продукту:** основной пользовательский вход — Telegram Admin Bot: [@salesmanager228_bot](https://t.me/salesmanager228_bot). Публичный runnable access path: Docker Compose ниже и [`LAUNCH_GUIDE.md`](LAUNCH_GUIDE.md). Актуальный handover/access статус: [`docs/customer-handover.md`](docs/customer-handover.md).
 - **Документация:** [hosted docs site](https://aye-basota.github.io/AI-sales-manager/)
 - **Handover / статус передачи проекта:** [`docs/customer-handover.md`](docs/customer-handover.md)
 - **Как контрибьютить:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
@@ -446,7 +446,7 @@ CSV из поиска можно сразу сохранить как конта
 pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-**Текущий полный прогон:** `695 passed, 3 warnings`.
+**Текущий полный прогон:** `974 passed, 3 warnings` (Week 6 local audit).
 
 Ключевые модули с высоким покрытием:
 - `app/core/state_machine.py` — 100%
@@ -500,11 +500,10 @@ docker compose exec -T api python scripts/admin_ux_lab.py
 
 Ниже перечислены нюансы, выявленные при аудите. Они **не блокируют** запуск, но стоит иметь их в виду.
 
-### P1.1: Inbound flood → бан аккаунта
+### ✅ P1.1: Inbound flood → бан аккаунта
 
 - **Риск:** Если лид напишет 10 сообщений подряд, аккаунт ответит на все, превысит daily limit и уйдет в cooldown.
-- **Реальность:** В B2B outreach люди редко пишут 10 сообщений подряд. Обычно 1–2. Это крайний случай.
-- **Решение:** Добавить `if account.daily_messages_sent >= limit: skip` в `inbound_listener.py` — 5 строк.
+- **Статус:** Исправлено в Week 6. Inbound auto-replies now respect seller-account daily and 30-second rate limits and update account counters after sending.
 
 ### P1.2: Race condition → double reply
 
@@ -531,7 +530,7 @@ docker compose exec -T api python scripts/admin_ux_lab.py
 
 ## Roadmap
 
-- [ ] Inbound rate limit & daily limit guard
+- [x] Inbound rate limit & daily limit guard
 - [ ] Redis distributed lock для `conversation_id`
 - [ ] Ручной takeover диалога оператором (`is_paused_by_operator`)
 - [ ] Funnel-аналитика по стадиям

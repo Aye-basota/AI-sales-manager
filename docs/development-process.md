@@ -193,15 +193,18 @@ All team members use the same `requirements.txt` for dependency pinning. No envi
 
 ## CI Process
 
-The team currently runs all automated checks locally. GitHub Actions CI is planned for Sprint 4.
+The team uses GitHub Actions on pull requests and on pushes to `main`.
 
-| Check | Command | When Run |
+| Check | Command / workflow | When Run |
 |---|---|---|
-| Unit and integration tests | `python -m pytest` | Before every PR |
-| Type checking | `mypy .` | Before every PR |
-| Linting | `ruff check .` | Before every PR |
+| Tests and coverage | `pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=75` in `.github/workflows/ci.yml` | PRs and `main` |
+| Security static analysis | `bandit -r app/ -ll --format txt` in `.github/workflows/ci.yml` | PRs and `main` |
+| Dependency audit | `pip-audit --requirement requirements.txt --desc` in `.github/workflows/ci.yml` | PRs and `main` |
+| Lint | `flake8 app/ --max-line-length=120 --extend-ignore=E203,W503` in `.github/workflows/ci.yml` | PRs and `main` |
+| Link check | Lychee in `.github/workflows/links.yml` | PRs and `main` |
+| Hosted docs deploy | MkDocs in `.github/workflows/docs.yml` | Pushes to `main` that touch `docs/**` or `mkdocs.yml` |
 
-Once GitHub Actions is configured (Sprint 4), these checks will run automatically on every PR and on every push to `main`. Branch protection rules will require CI to pass before merge.
+The latest protected-default-branch CI status must be checked before assignment submission. If a run is red due to a real repository issue, it must be fixed through a PR rather than ignored.
 
 ---
 
@@ -211,7 +214,7 @@ A PBI may only be merged to `main` when:
 
 - All acceptance criteria are satisfied and confirmed in the PR description.
 - At least one team member has reviewed and approved the PR.
-- All local tests pass (`pytest`, `mypy`, `ruff`).
+- Relevant local checks pass before opening the PR, and the GitHub Actions CI jobs pass before merge.
 - `CHANGELOG.md` is updated for any user-visible change.
 - `docs/` files are updated if the change affects architecture, process, or user-facing behavior.
 - No secrets or PII appear in the commit.
@@ -228,14 +231,14 @@ See [`docs/definition-of-done.md`](definition-of-done.md) for the full DoD check
 4. Create a GitHub Release with a SemVer tag (`vX.Y.Z`) pointing to the merge commit on `main`.
 5. The release description links: Sprint milestone, public Week N report, demo video, and run instructions.
 
-See [`CHANGELOG.md`](../CHANGELOG.md) for the release history.
+See [`CHANGELOG.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/CHANGELOG.md) for the release history.
 
 ---
 
 ## Links
 
-- [Root README.md](../README.md)
+- [Root README.md](https://github.com/Aye-basota/AI-sales-manager/blob/main/README.md)
 - [Definition of Done](definition-of-done.md)
 - [Roadmap](roadmap.md)
 - [Architecture](architecture/README.md)
-- [Week 5 Report](../reports/week5/README.md)
+- [Week 5 Report](https://github.com/Aye-basota/AI-sales-manager/blob/main/reports/week5/README.md)

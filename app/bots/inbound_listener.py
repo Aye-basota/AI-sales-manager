@@ -294,7 +294,8 @@ def _meeting_time_is_confirmed(lead_text: str) -> bool:
     )
     has_acceptance = bool(
         re.search(
-            r"\b(?:да|ок|окей|подходит|удобно|согласен|согласна|договорились|подтверждаю|yes|ok|okay|works|confirmed|confirm)\b",
+            r"\b(?:да|ок|окей|подходит|удобно|согласен|согласна|договорились|подтверждаю|"
+            r"yes|ok|okay|works|confirmed|confirm)\b",
             lower,
         )
     )
