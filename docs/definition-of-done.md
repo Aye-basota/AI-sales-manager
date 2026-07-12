@@ -63,15 +63,16 @@ This Definition of Done applies to all Sprint work from Assignment 4 onward.
 - [ ] Format follows Keep a Changelog: `### Added`, `### Fixed`, `### Changed`, `### Removed`
 - [ ] Internal refactors, test additions, and documentation-only changes do not require a changelog entry
 
-### 9. Release and Deployment Evidence (for `MVP v2` increments)
+### 9. Release and Deployment Evidence (for Assignment 6 increments)
 - [ ] The change is merged into the protected default branch (`main`) through an issue-linked PR/MR
-- [ ] A SemVer release (`v0.3.0`) is created for the `MVP v2` increment and links to:
-  - Sprint 3 milestone
+- [ ] A SemVer release is created for each required submitted increment and links to:
+  - Relevant Sprint milestone
   - Deployment or run instructions
-  - Public sanitized demo video
-  - Week 5 public report (`reports/week5/README.md`)
+  - Relevant public report (`reports/week6/README.md` for the Week 6 trial release; `reports/week7/README.md` for final `MVP v3`)
+  - Customer handover guidance where required
+  - Public sanitized demo video where the assignment requires it
 - [ ] The current product increment remains deployed and accessible to the customer and TA until grading is complete
-- [ ] The Week 5 public report is updated with relevant links, screenshots, and status
+- [ ] The relevant weekly public report is updated with links, screenshots, access status, release status, and known limitations
 
 ---
 

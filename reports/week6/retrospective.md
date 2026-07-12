@@ -1,9 +1,9 @@
 # Sprint 4 Retrospective (Assignment 6 — Week 6)
 
-**Sprint:** Sprint 4 — Trial Release Readiness and Production Stabilization  
-**Dates:** 2026-07-06 – 2026-07-12  
-**Sprint Goal:** Enable a production-ready AI Sales Manager experience for the Week 6 trial release by delivering end-to-end lead management capabilities, including campaign execution, AI-driven conversations, analytics, and operational stability.  
-**Facilitator:** Scrum Master  
+**Sprint:** Sprint 4 — Trial Release Readiness and Production Stabilization
+**Dates:** 2026-07-06 – 2026-07-12
+**Sprint Goal:** Enable a production-ready AI Sales Manager experience for the Week 6 trial release by delivering end-to-end lead management capabilities, including campaign execution, AI-driven conversations, analytics, and operational stability.
+**Facilitator:** Scrum Master
 **Participants:** Development Team, Product Owner (customer representative)
 
 ---
