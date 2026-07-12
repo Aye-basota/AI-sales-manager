@@ -3,11 +3,11 @@
 ## Overview
 
 The project uses **pytest** for all automated testing. Tests are organized by module in `tests/`.
-The test suite contains **459 tests** with approximately **81% line coverage** across the application.
+As of the latest QA audit, the suite contains **708 tests**. Application code coverage is approximately **82%** for `app/`; coverage is **81%** when manual utility scripts in `scripts/` are included.
 
 Run the full suite:
 ```bash
-pytest tests/ -v --cov=app --cov-report=term-missing
+pytest tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=75
 ```
 
 ---
@@ -73,23 +73,21 @@ Integration tests verify interactions between components using `AsyncMock` for e
 
 | Module | Coverage | Threshold | Status |
 |---|---|---|---|
-| `app/core/state_machine.py` | ~100% | ≥ 30% | ✅ |
-| `app/api/analytics.py` | ~100% | ≥ 30% | ✅ |
-| `app/api/conversations.py` | ~100% | ≥ 30% | ✅ |
-| `app/api/health.py` | ~100% | ≥ 30% | ✅ |
-| `app/llm/engine.py` | ~94% | ≥ 30% | ✅ |
-| `app/llm/guardrails.py` | ~90% | ≥ 30% | ✅ |
-| `app/services/notification_service.py` | ~94% | ≥ 30% | ✅ |
-| `app/core/scheduler.py` | ~80% | ≥ 30% | ✅ |
-| `app/bots/inbound_listener.py` | ~79% | ≥ 30% | ✅ |
-| `app/services/conversation_service.py` | ~86% | ≥ 30% | ✅ |
-| `app/core/humanizer.py` | ~92% | ≥ 30% | ✅ |
-| `app/core/funnel.py` | ~88% | ≥ 30% | ✅ |
-| `app/services/funnel_parser.py` | ~88% | ≥ 30% | ✅ |
-| `app/logging_config.py` | ~100% | ≥ 30% | ✅ |
-| **Global** | **~81%** | — | ✅ |
+| `app/api/campaigns.py` | ~100% | Covered by API tests | ✅ |
+| `app/api/contacts.py` | ~97% | Covered by API and discovery tests | ✅ |
+| `app/core/account_manager.py` | ~100% | Covered by unit and DB-helper tests | ✅ |
+| `app/db/redis.py` | ~100% | Covered by cache lifecycle tests | ✅ |
+| `app/services/conversation_service.py` | ~100% | Covered by DB, cache, and fact tests | ✅ |
+| `app/services/contact_import.py` | ~98% | Covered by CSV/Excel parsing tests | ✅ |
+| `app/services/funnel_parser.py` | ~98% | Covered by direct parser and API tests | ✅ |
+| `app/services/lead_discovery.py` | ~95% | Covered with mocked adapters/clients | ✅ |
+| `app/services/lead_validation.py` | ~92% | Covered with mocked Pyrogram clients | ✅ |
+| `app/services/tgstat_lead_search.py` | ~91% | Covered with mocked TGStat and Telegram clients | ✅ |
+| `app/bots/admin_bot.py` | ~64% | Large Telegram UI surface remains the biggest gap | ⚠️ |
+| `app/core/scheduler.py` | ~80% | Remaining misses are mostly rare failure/recovery branches | ⚠️ |
+| **Global `app/`** | **~82%** | CI gate: ≥ 75% | ✅ |
 
-All critical modules exceed the 30% minimum line coverage threshold.
+The CI coverage gate is intentionally below the current `app/` coverage so routine refactors have a small buffer, but high enough to catch major untested additions. Manual scripts under `scripts/` are audited separately because several require live credentials, local files, or operator interaction.
 
 ---
 
@@ -163,7 +161,7 @@ The LLM engine (`app/llm/engine.py`) cannot be tested against real API calls in 
 
 ```bash
 # Full suite with coverage
-pytest tests/ -v --cov=app --cov-report=term-missing
+pytest tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=75
 
 # Only unit tests (fast)
 pytest tests/test_core_state_machine.py tests/test_llm_guardrails.py tests/test_core_humanizer.py tests/test_llm_engine.py -v

@@ -35,3 +35,7 @@ def test_empty_daily_message_limit_uses_default():
     settings = Settings(daily_message_limit="")
 
     assert settings.daily_message_limit == 50
+
+
+def test_unknown_bool_string_is_left_for_pydantic_validation():
+    assert Settings.parse_bool_flag("maybe") == "maybe"

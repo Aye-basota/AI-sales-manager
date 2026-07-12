@@ -6,7 +6,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock
 
 from app.models.contact import Contact
-from app.services.contact_import import upsert_contacts
+from app.services.contact_import import contacts_in_record_order, upsert_contacts
 
 
 def _build_mock_session_with_results(results):
@@ -43,6 +43,21 @@ async def test_upsert_creates_new_contacts(mock_db):
     assert len(updated) == 0
     assert created[0].source == "csv_import"
     assert created[0].last_source == "csv_import"
+
+
+def test_contacts_in_record_order_preserves_source_file_order():
+    alice = Contact(id=uuid4(), telegram_username="alice")
+    bob = Contact(id=uuid4(), telegram_user_id=222)
+    carol = Contact(id=uuid4(), phone="+333")
+    records = [
+        {"telegram_username": "alice"},
+        {"telegram_user_id": "222"},
+        {"phone": "+333"},
+    ]
+
+    ordered = contacts_in_record_order(records, [carol, alice, bob])
+
+    assert ordered == [alice, bob, carol]
 
 
 @pytest.mark.asyncio
@@ -131,7 +146,47 @@ async def test_upsert_updates_by_telegram_user_id():
 
 
 @pytest.mark.asyncio
-async def test_upsert_preserves_tgstat_source_context_on_create(mock_db):
+async def test_csv_upsert_can_refresh_stale_invalid_contact():
+    existing = Contact(
+        id=uuid4(),
+        telegram_user_id=1081458735,
+        telegram_username=None,
+        first_name="Old",
+        company_name="Old Company",
+        status="invalid_peer",
+        is_valid="invalid",
+        source="csv_import",
+        last_source="csv_import",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    session = _build_mock_session_with_results([existing])
+
+    records = [
+        {
+            "telegram_user_id": 1081458735,
+            "telegram_username": "Flkxjxjd",
+            "first_name": "Марсель",
+            "company_name": "Event Business",
+            "position": "CPO",
+            "status": "new",
+            "is_valid": "unknown",
+        }
+    ]
+
+    created, updated = await upsert_contacts(session, records, source="csv_import")
+
+    assert len(created) == 0
+    assert len(updated) == 1
+    assert updated[0].telegram_username == "Flkxjxjd"
+    assert updated[0].first_name == "Марсель"
+    assert updated[0].company_name == "Event Business"
+    assert updated[0].status == "new"
+    assert updated[0].is_valid == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_upsert_preserves_telegram_search_source_context_on_create(mock_db):
     records = [
         {
             "telegram_user_id": 123456,
@@ -143,12 +198,12 @@ async def test_upsert_preserves_tgstat_source_context_on_create(mock_db):
         }
     ]
 
-    created, updated = await upsert_contacts(mock_db, records, source="tgstat")
+    created, updated = await upsert_contacts(mock_db, records, source="telegram_search")
 
     assert len(created) == 1
     assert len(updated) == 0
-    assert created[0].source == "tgstat"
-    assert created[0].last_source == "tgstat"
+    assert created[0].source == "telegram_search"
+    assert created[0].last_source == "telegram_search"
     assert created[0].source_url == "https://t.me/group/10"
     assert created[0].source_summary == "Asked for CRM"
 

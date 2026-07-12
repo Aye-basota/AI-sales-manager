@@ -120,6 +120,57 @@ def parse_excel(file_bytes: bytes) -> list[dict[str, Any]]:
     return _process_dataframe(df)
 
 
+def contacts_in_record_order(
+    records: list[dict[str, Any]],
+    contacts: list[Contact],
+) -> list[Contact]:
+    """Return upserted contacts in the same order as their source records."""
+    by_telegram_user_id: dict[int, Contact] = {}
+    by_username: dict[str, Contact] = {}
+    by_phone: dict[str, Contact] = {}
+    for contact in contacts:
+        if contact.telegram_user_id:
+            by_telegram_user_id[int(contact.telegram_user_id)] = contact
+        if contact.telegram_username:
+            by_username[contact.telegram_username.lower()] = contact
+        if contact.phone:
+            by_phone[contact.phone] = contact
+
+    ordered: list[Contact] = []
+    seen: set[Any] = set()
+    for record in records:
+        contact: Contact | None = None
+        telegram_user_id = record.get("telegram_user_id")
+        username = record.get("telegram_username")
+        phone = record.get("phone")
+
+        if telegram_user_id:
+            try:
+                contact = by_telegram_user_id.get(int(telegram_user_id))
+            except (TypeError, ValueError):
+                contact = None
+        if not contact and username:
+            contact = by_username.get(username.lower())
+        if not contact and phone:
+            contact = by_phone.get(phone)
+        if not contact:
+            continue
+
+        identity = contact.id or id(contact)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        ordered.append(contact)
+
+    for contact in contacts:
+        identity = contact.id or id(contact)
+        if identity not in seen:
+            seen.add(identity)
+            ordered.append(contact)
+
+    return ordered
+
+
 async def upsert_contacts(
     db: AsyncSession,
     records: list[dict[str, Any]],
@@ -206,9 +257,28 @@ async def upsert_contacts(
             existing = existing_by_phone.get(phone)
 
         if existing:
-            # Update only empty fields (don't overwrite existing data with blanks)
+            authoritative_csv_fields = {
+                "telegram_username",
+                "phone",
+                "first_name",
+                "last_name",
+                "company_name",
+                "position",
+                "city",
+                "industry",
+                "source_url",
+                "source_summary",
+                "source_message_text",
+                "source_message_date",
+                "icp_score",
+                "status",
+            }
             for key, value in record.items():
-                if value and not getattr(existing, key, None):
+                if not value:
+                    continue
+                if source == "csv_import" and key in authoritative_csv_fields:
+                    setattr(existing, key, value)
+                elif not getattr(existing, key, None):
                     setattr(existing, key, value)
             existing.last_source = source
             if "is_valid" in record:

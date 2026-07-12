@@ -1,9 +1,16 @@
 from dataclasses import dataclass
+from unittest.mock import AsyncMock
 
+import pytest
+
+from tests.conftest import MockResult
 from app.core.account_manager import (
     select_account,
     mark_message_sent,
     reset_daily_counters,
+    mark_account_cooldown,
+    mark_account_ready,
+    select_account_with_db,
 )
 
 
@@ -84,3 +91,34 @@ class TestResetDailyCounters:
 
     def test_empty_list_does_nothing(self):
         reset_daily_counters([])
+
+
+class TestDatabaseAccountManager:
+    @pytest.mark.asyncio
+    async def test_select_account_with_db_returns_scalar_result(self):
+        account = FakeAccount(status="ready", daily_messages_sent=1)
+        session = AsyncMock()
+        session.execute.return_value = MockResult([account])
+
+        result = await select_account_with_db(session, daily_limit=10)
+
+        assert result is account
+        session.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_mark_account_cooldown_executes_update(self):
+        session = AsyncMock()
+        await mark_account_cooldown("account-1", session, wait_seconds=60)
+
+        session.execute.assert_awaited_once()
+        statement = session.execute.call_args.args[0]
+        assert "UPDATE telegram_accounts" in str(statement)
+
+    @pytest.mark.asyncio
+    async def test_mark_account_ready_executes_update(self):
+        session = AsyncMock()
+        await mark_account_ready("account-1", session)
+
+        session.execute.assert_awaited_once()
+        statement = session.execute.call_args.args[0]
+        assert "UPDATE telegram_accounts" in str(statement)

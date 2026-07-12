@@ -36,3 +36,4 @@ class CampaignContact(Base):
     reply_received_at = Column(DateTime(timezone=True))
     last_message_at = Column(DateTime(timezone=True))
     message_count = Column(Integer, default=0)
+    queue_position = Column(Integer, default=0)

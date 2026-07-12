@@ -29,8 +29,6 @@ class Settings(BaseSettings):
     telegram_api_id: int = 0
     telegram_api_hash: str = ""
     daily_message_limit: int = 50
-    tgstat_token: str = ""
-    tgstat_base_url: str = "https://api.tgstat.ru"
     debug: bool = True
     sql_echo: bool = False
 

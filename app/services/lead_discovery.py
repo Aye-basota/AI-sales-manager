@@ -2,7 +2,9 @@
 
 import logging
 import os
+import inspect
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import Any, List
 
@@ -178,12 +180,16 @@ class TelegramPublicSearch:
             return []
 
         try:
-            # Pyrogram search_global returns chats/messages; we attempt to
-            # extract user references from the result set.
-            search_results = await client.search_global(q=query, limit=limit)
+            # Pyrogram search_global is an async generator in real MTProto
+            # clients, while tests and older wrappers may return a list or
+            # coroutine. Normalize all supported shapes.
+            try:
+                search_results = client.search_global(query=query, limit=limit)
+            except TypeError:
+                search_results = client.search_global(q=query, limit=limit)
             usernames_seen: set[str] = set()
 
-            for item in search_results:
+            async for item in _iter_search_items(search_results):
                 user: User | None = None
                 if hasattr(item, "from_user") and item.from_user:
                     user = item.from_user
@@ -224,6 +230,22 @@ class TelegramPublicSearch:
                     )
 
         return results
+
+
+async def _iter_search_items(result: Any) -> AsyncIterator[Any]:
+    if inspect.isawaitable(result):
+        result = await result
+    if result is None:
+        return
+    if hasattr(result, "__aiter__"):
+        async for item in result:
+            yield item
+        return
+    if isinstance(result, Iterable) and not isinstance(result, (str, bytes, dict)):
+        for item in result:
+            yield item
+        return
+    yield result
 
 
 class ChannelMembersParser:

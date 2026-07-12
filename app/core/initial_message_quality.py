@@ -4,11 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.llm.context import extract_offer_summary
+
 
 BAD_INITIAL_MESSAGE_MARKERS = (
     "как у вас в",
     "it-компаниям, как у вас",
     "в вашем стеке",
+    "работаешь в it",
+    "работаете в it",
+    "работаешь в айти",
+    "работаете в айти",
+    "наверное, знаешь",
+    "наверное, знаете",
+    "знакомы с ",
+    "знаком с вашей",
+    "знаком с вашим",
+    "знаю вашу компан",
+    "уважаю ваш подход",
+    "уважаю вашу",
+    "видел ваш профиль",
+    "видела ваш профиль",
     "безопасно и прозрачно выводить",
     "легально и прозрачно выводить",
     "выводить криптовалют",
@@ -32,6 +48,8 @@ def build_initial_message_retry_prompt(previous_text: str) -> str:
         "- не используй фразы про вывод криптовалюты в фиат;\n"
         "- не используй 'как у вас в ...' и 'в вашем стеке';\n"
         "- не делай вид, что точно знаешь процессы клиента;\n"
+        "- не делай вид, что знаком с компанией, профилем или подходом клиента;\n"
+        "- не выдумывай отрасль, должность, опыт или личный контекст клиента;\n"
         "- начни спокойно, как живой человек;\n"
         "- задай один простой вопрос.\n\n"
         f"Предыдущий вариант:\n{previous_text}"
@@ -39,16 +57,10 @@ def build_initial_message_retry_prompt(previous_text: str) -> str:
 
 
 def _offer_context(script: Any | None = None) -> str:
-    if not script:
-        return "помогаем с вашей задачей без лишней ручной рутины"
-    for attr in ("role_prompt", "goal", "target_audience"):
-        value = getattr(script, attr, None)
-        if value:
-            text = " ".join(str(value).split())
-            if len(text) > 180:
-                text = text[:179].rstrip() + "…"
-            return text
-    return "помогаем с вашей задачей без лишней ручной рутины"
+    return extract_offer_summary(script, max_chars=180).replace(
+        "помогаем решить задачу",
+        "помогаем с вашей задачей",
+    )
 
 
 def build_safe_initial_fallback(

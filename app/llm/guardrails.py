@@ -4,6 +4,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from app.llm.context import looks_like_prompt_leak
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,6 +134,47 @@ def check_no_banned_sales_phrases(text: str) -> bool:
     return not any(phrase in lower_text for phrase in banned)
 
 
+def check_no_unverified_personalization(text: str) -> bool:
+    """Block fake familiarity or unsupported assumptions about a lead."""
+    lower_text = text.lower()
+    patterns = (
+        r"\bработа(?:ешь|ете)\s+в\s+(?:it|айти)\b",
+        r"\bнаверное,\s+(?:знаешь|знаете|понимаешь|понимаете)\b",
+        r"\bзнаком(?:ы|а|)\s+с\s+[^.?!]+[,—-]\s*уважа",
+        r"\bзнаком\s+с\s+(?:вашей|вашим|вашими|твоей|твоим)\b",
+        r"\bзнаю\s+(?:вашу|твою)\s+компан",
+        r"\bуважаю\s+(?:ваш|твой|вашу|твою)\b",
+        r"\bвидел(?:а)?\s+(?:ваш|твой)\s+профиль\b",
+        r"\bсмотрел(?:а)?\s+(?:ваш|твой)\s+(?:сайт|профиль|канал)\b",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_prompt_leakage(text: str) -> bool:
+    """Block responses that expose internal prompts, roles, or rules."""
+    if looks_like_prompt_leak(text):
+        return False
+
+    lower_text = text.lower()
+    patterns = (
+        r"\b(?:system|developer|assistant|user)\s*:",
+        r'"role"\s*:\s*"(?:system|developer|assistant|user)"',
+        r"\b(?:system|developer)\s+(?:message|prompt|instructions?)\b",
+        r"(?:мои|служебные|системные)\s+инструкц",
+        r"(?:не могу|не буду)\s+(?:раскрыть|показать|вывести)\s+.*(?:промпт|инструкц)",
+        r"(?:раскрыть|показать|вывести)\s+.*(?:промпт|инструкц)",
+        r"правил[ао]\s+генерац",
+        r"критерий\s+успеха\s*:",
+        r"цель\s+диалога\s*:",
+        r"цель\s+переписки\s*:",
+        r"разрешенн\w*\s+следующ\w*\s+шаг\s*:",
+        r"тональность\s*:",
+        r"коротко\s+по\s+сути\s*:\s*(?:пригласить|назначить|получить|довести|предложить)\b",
+        r"пригласить\s+и\s+назнач(?:ить|ит)\s+демонстрац",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
 def check_no_unsupported_product_claims(text: str) -> bool:
     """Block factual product claims that must not be invented by the model."""
     lower_text = text.lower()
@@ -154,6 +197,8 @@ def check_no_unsupported_product_claims(text: str) -> bool:
         r"недавно\s+делал\w*",
         r"для\s+похож\w+\s+(?:места|компании|проекта|формата)",
         r"у\s+нас\s+есть\s+готов\w+\s+(?:дизайн|макет|концепц)",
+        r"с\s+соблюдением\s+сроков",
+        r"без\s+лишних\s+согласован",
     )
     return not any(re.search(pattern, lower_text) for pattern in patterns)
 
@@ -169,6 +214,34 @@ def check_no_unsupported_creative_work(text: str) -> bool:
         r"использовал\w*[^.?!]*(?:цвет|шрифт|паттерн|график|иллюстрац)",
         r"стаканчик\s+должен\s+быть",
         r"сразу\s+понятно[^.?!]*(?:дизайн|стаканчик|макет|концепц)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_out_of_scope_seller_claims(text: str) -> bool:
+    """Block invented assortment/product consulting outside the manager's role."""
+    lower_text = text.lower()
+    patterns = (
+        r"\b(?:у\s+нас\s+есть|есть)\b[^.?!]*(?:ассортимент|линейк\w*|каталог|sku|модел\w*)",
+        r"\b(?:у\s+нас\s+есть|есть)\b[^.?!]*(?:матов\w*|глянцев\w*|крафт\w*|двухслойн\w*|тр[её]хслойн\w*)",
+        r"\b(?:у\s+нас\s+есть|есть)\b[^.?!]*(?:объ[её]м\w*|размер\w*|цвет\w*|материал\w*|крышк\w*)",
+        r"\b(?:подбер[её]м|подберу|предлож(?:у|им)|посовет(?:ую|уем))\b[^.?!]*(?:ассортимент|товар|вариант|модель|материал|объ[её]м|цвет|крышк)",
+        r"\b(?:можем|готовы)\b[^.?!]*(?:подобрать|предложить|посоветовать)\b[^.?!]*(?:товар|вариант|модель|материал|объ[её]м|цвет)",
+        r"\b(?:лучше\s+взять|вам\s+подойд[её]т|я\s+бы\s+советовал)\b[^.?!]*(?:мл|литр|материал|цвет|модель|вариант)",
+        r"\b(?:покажу|пришлю|отправлю)\b[^.?!]*(?:ассортимент|каталог|линейк\w*|варианты\s+товар)",
+        r"\d+\s*(?:[–-]\s*\d+\s*)?(?:мл|литр\w*)",
+        r"\b(?:стандартн\w+|вариант\w+)\b[^.?!]*(?:логотип|печать|ивент|мероприяти|офисн\w+\s+потреблен)",
+    )
+    return not any(re.search(pattern, lower_text) for pattern in patterns)
+
+
+def check_no_unverified_pricing(text: str) -> bool:
+    """Block exact prices unless pricing is handled by a dedicated verified source."""
+    lower_text = text.lower()
+    patterns = (
+        r"\d[\d\s.,]*(?:₽|руб\.?|р\.|доллар\w*|usd|\$|€|eur|евро)",
+        r"(?:стоит|цена|ценник|прайс|бюджет|от|около|примерно)\s+\d[\d\s.,]*",
+        r"\d[\d\s.,]*\s*(?:за|/)\s*(?:штук\w*|стакан\w*|контакт\w*|лид\w*|месяц\w*)",
     )
     return not any(re.search(pattern, lower_text) for pattern in patterns)
 
@@ -226,10 +299,18 @@ def evaluate_guardrails(text: str, last_messages: list[str]) -> GuardrailsResult
         violations.append("too_many_questions")
     if not check_no_banned_sales_phrases(text):
         violations.append("banned_sales_phrase")
+    if not check_no_unverified_personalization(text):
+        violations.append("unverified_personalization")
+    if not check_no_prompt_leakage(text):
+        violations.append("prompt_leakage")
     if not check_no_unsupported_product_claims(text):
         violations.append("unsupported_product_claim")
     if not check_no_unsupported_creative_work(text):
         violations.append("unsupported_creative_work")
+    if not check_no_out_of_scope_seller_claims(text):
+        violations.append("out_of_scope_seller_claim")
+    if not check_no_unverified_pricing(text):
+        violations.append("unverified_pricing")
     if not check_no_unsupported_actions(text):
         violations.append("unsupported_action")
     if not check_no_cjk_arabic(text):

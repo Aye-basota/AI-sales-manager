@@ -230,7 +230,7 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
     # Mock Pyrogram message
     pyro_message = MagicMock()
     pyro_message.from_user = MagicMock(id=target_contact.telegram_user_id)
-    pyro_message.text = "Yes, I want to book a meeting"
+    pyro_message.text = "Yes, tomorrow at 11:00 works for me"
 
     with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
         MockSession.return_value.__aenter__ = AsyncMock(return_value=inbound_db)

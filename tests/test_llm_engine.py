@@ -3,7 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.llm.engine import DEFAULT_MODELS, FALLBACK_TEXT, LLMEngine, OPENROUTER_BASE_URL
+from app.llm.engine import (
+    DEFAULT_MODELS,
+    FALLBACK_TEXT,
+    LLMEngine,
+    OPENROUTER_BASE_URL,
+    _is_retryable_error,
+    _provider_from_base_url,
+)
 
 
 @pytest.fixture
@@ -45,6 +52,16 @@ async def test_generate_success(engine):
     assert result["tokens_used"] == 21
 
 
+def test_provider_resolution_and_retryable_error_helpers():
+    assert _provider_from_base_url(None) == "openrouter"
+    assert _provider_from_base_url("https://dashscope-intl.aliyuncs.com") == "dashscope"
+    assert _provider_from_base_url("https://example.com") == "openrouter"
+    assert LLMEngine(api_key="key", provider="DASHSCOPE").provider == "dashscope"
+    assert _is_retryable_error(httpx.ConnectError("down")) is True
+    assert _is_retryable_error(httpx.TimeoutException("slow")) is True
+    assert _is_retryable_error(RuntimeError("bad")) is False
+
+
 @pytest.mark.asyncio
 async def test_generate_uses_default_model(engine):
     mock_response = MagicMock()
@@ -64,6 +81,26 @@ async def test_generate_uses_default_model(engine):
     payload = kwargs["json"]
     assert payload["model"] == DEFAULT_MODELS[0]
     assert result["text"] == "Default model reply"
+
+
+@pytest.mark.asyncio
+async def test_generate_includes_max_tokens_and_openrouter_headers(engine):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "Reply"}}],
+        "usage": {},
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_response
+
+    with patch("app.llm.engine.httpx.AsyncClient", return_value=mock_client) as client_cls:
+        await engine.generate([{"role": "user", "content": "Hi"}], max_tokens=77)
+
+    assert mock_client.post.call_args.kwargs["json"]["max_tokens"] == 77
+    headers = client_cls.call_args.kwargs["headers"]
+    assert "HTTP-Referer" in headers
+    assert "X-Title" in headers
 
 
 @pytest.mark.asyncio

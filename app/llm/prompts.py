@@ -8,6 +8,12 @@ from app.core.funnel import (
     get_max_length_for_stage,
     is_call_to_action_allowed,
 )
+from app.llm.context import (
+    build_verified_context_block,
+    extract_offer_summary,
+    sanitize_context_text,
+    script_display_name,
+)
 
 DEFAULT_INTENT_LABELS = [
     "meeting_intent",
@@ -55,32 +61,40 @@ def _format_template(template: str, **kwargs: Any) -> str:
 def build_system_prompt(
     script: Any,
     conversation_stage: str = "hook",
-    company_name: str = "Neural Lead",
+    company_name: str | None = None,
 ) -> str:
     """Build a dynamic system prompt based on the script, funnel stage, and prompt config."""
     cfg = _prompt_config()
-    role = script.role_prompt or "Ты менеджер по продажам."
-    script_name = getattr(script, "name", None)
-    if script_name:
-        role = f"Название бизнеса/оффера: {script_name}\nОписание: {role}"
-    audience = script.target_audience or ""
-    goal = script.goal or "Довести до созвона."
-    criteria = script.success_criteria or "Клиент согласился на демо или назвал удобное время."
-    tone = script.tone or "professional"
+    role = f"Оффер: {extract_offer_summary(script)}"
+    audience = sanitize_context_text(getattr(script, "target_audience", "") or "")
+    goal = (
+        sanitize_context_text(getattr(script, "goal", "") or "")
+        or "Довести до следующего уместного шага."
+    )
+    criteria = (
+        sanitize_context_text(getattr(script, "success_criteria", "") or "")
+        or "Клиент явно согласился на следующий шаг или задал предметный вопрос."
+    )
+    tone = sanitize_context_text(getattr(script, "tone", "") or "") or "professional"
     language = getattr(script, "language", None) or "ru"
     emoji_policy = getattr(script, "emoji_policy", None) or "forbidden"
 
     audience_line = f"\nЦелевая аудитория: {audience}" if audience else ""
+    verified_context = build_verified_context_block(script)
 
     stage_cfg = get_stage_config(script, conversation_stage)
-    stage_goal = stage_cfg.get("goal", goal)
+    stage_goal = sanitize_context_text(stage_cfg.get("goal", "") or goal)
     stage_instructions = stage_cfg.get(
         "instructions",
         "Напиши короткое, естественное сообщение.",
     )
+    stage_instructions = sanitize_context_text(stage_instructions, max_chars=700)
     max_length = get_max_length_for_stage(script, conversation_stage)
     cta_allowed = is_call_to_action_allowed(script, conversation_stage)
-    cta_text = getattr(script, "call_to_action", None) or "15-минутный созвон"
+    cta_text = (
+        sanitize_context_text(getattr(script, "call_to_action", None) or "")
+        or "15-минутный созвон"
+    )
 
     cta_rule = (
         f"Призыв к действию: если интерес уже есть, можешь мягко предложить {cta_text}. "
@@ -94,9 +108,10 @@ def build_system_prompt(
     template = cfg.get("system_prompt_template", "")
     return _format_template(
         template,
-        company_name=company_name,
+        company_name=script_display_name(script, company_name),
         role=role,
         audience_line=audience_line,
+        verified_context=verified_context,
         goal=goal,
         criteria=criteria,
         tone=tone,
@@ -116,7 +131,12 @@ def _build_facts_block(lead_facts: dict[str, Any]) -> str:
         return "(нет данных)"
     lines = []
     for key, value in lead_facts.items():
-        lines.append(f"- {key}: {value}")
+        safe_key = sanitize_context_text(str(key), max_chars=80)
+        safe_value = sanitize_context_text(value, max_chars=220)
+        if safe_key and safe_value:
+            lines.append(f"- {safe_key}: {safe_value}")
+    if not lines:
+        return "(нет данных)"
     return "\n".join(lines)
 
 
@@ -124,10 +144,15 @@ def _build_history_block(conversation_history: list[dict[str, Any]]) -> str:
     if not conversation_history:
         return "(пусто)"
     lines = []
-    for msg in conversation_history:
+    for msg in conversation_history[-10:]:
         role = msg.get("role", "")
-        content = msg.get("content", "")
-        lines.append(f"{role}: {content}")
+        content = sanitize_context_text(msg.get("content", ""), max_chars=600)
+        if not content:
+            continue
+        label = "Менеджер" if role in ("agent", "assistant", "outbound") else "Клиент"
+        lines.append(f"{label}: {content}")
+    if not lines:
+        return "(пусто)"
     return "\n".join(lines)
 
 
@@ -156,8 +181,8 @@ def build_user_prompt(
         template,
         history_block=history_block,
         facts_block=facts_block,
-        last_agent_message=last_agent_message,
-        lead_message=lead_message,
+        last_agent_message=sanitize_context_text(last_agent_message, max_chars=600),
+        lead_message=sanitize_context_text(lead_message, max_chars=600),
     )
 
 
@@ -173,6 +198,7 @@ def build_initial_user_prompt(
         "instructions",
         "Напиши короткое первое сообщение для потенциального клиента.",
     )
+    stage_instructions = sanitize_context_text(stage_instructions, max_chars=700)
     max_length = get_max_length_for_stage(script, conversation_stage)
 
     facts: dict[str, Any] = {}
@@ -205,10 +231,15 @@ def build_reply_user_prompt(
     """Build the user prompt for replying to a lead message."""
     cfg = _prompt_config()
     stage_cfg = get_stage_config(script, conversation_stage)
-    stage_goal = stage_cfg.get("goal", "Дать короткий, естественный ответ клиенту.")
+    stage_goal = sanitize_context_text(
+        stage_cfg.get("goal", "") or "Дать короткий, естественный ответ клиенту."
+    )
     max_length = get_max_length_for_stage(script, conversation_stage)
     cta_allowed = is_call_to_action_allowed(script, conversation_stage)
-    cta_text = getattr(script, "call_to_action", None) or "15-минутный созвон"
+    cta_text = (
+        sanitize_context_text(getattr(script, "call_to_action", None) or "")
+        or "15-минутный созвон"
+    )
 
     cta_note = (
         f"На этом этапе можно предложить {cta_text}."
@@ -228,8 +259,8 @@ def build_reply_user_prompt(
         cta_note=cta_note,
         history_block=history_block,
         facts_block=facts_block,
-        last_agent_message=last_agent_message,
-        lead_message=lead_message,
+        last_agent_message=sanitize_context_text(last_agent_message, max_chars=600),
+        lead_message=sanitize_context_text(lead_message, max_chars=600),
     )
 
 
@@ -247,9 +278,13 @@ def build_follow_up_user_prompt(
         "instructions",
         "Напиши короткое напоминание клиенту.",
     )
+    stage_instructions = sanitize_context_text(stage_instructions, max_chars=700)
     max_length = get_max_length_for_stage(script, conversation_stage)
     cta_allowed = is_call_to_action_allowed(script, conversation_stage)
-    cta_text = getattr(script, "call_to_action", None) or "15-минутный созвон"
+    cta_text = (
+        sanitize_context_text(getattr(script, "call_to_action", None) or "")
+        or "15-минутный созвон"
+    )
 
     cta_note = (
         f"На этом этапе можно предложить {cta_text}."
@@ -269,7 +304,7 @@ def build_follow_up_user_prompt(
         stage_instructions=stage_instructions,
         history_block=history_block,
         facts_block=facts_block,
-        last_agent_message=last_agent_message,
+        last_agent_message=sanitize_context_text(last_agent_message, max_chars=600),
     )
 
 

@@ -239,9 +239,9 @@ class SellerClient:
             return await coro_factory()
 
     async def send_message(
-        self, user_id: int, text: str, typing_delay_ms: int = 0
+        self, user_id: int | str, text: str, typing_delay_ms: int = 0
     ) -> dict[str, Any]:
-        """Send *text* to *user_id*.
+        """Send *text* to a Telegram user id or public username.
 
         Shows the typing indicator during the typing delay, then returns a
         message dict. Raises :class:`pyrogram.errors.FloodWait` or
@@ -295,7 +295,7 @@ class SellerClient:
             "SellerClient not initialized: missing api_id/api_hash or invalid session"
         )
 
-    async def set_typing(self, user_id: int) -> None:
+    async def set_typing(self, user_id: int | str) -> None:
         """Notify that the account is typing in a chat."""
         if self._client is not None:
 

@@ -63,7 +63,7 @@ async def test_classify_intent_with_punctuation():
 async def test_classify_intent_substring_match():
     engine = MagicMock()
     engine.generate_with_fallback = AsyncMock(
-        return_value={"text": "Похоже, это objection к цене"}
+        return_value={"text": "Похоже, это maybe_objection_case к цене"}
     )
 
     result = await classify_intent("Слишком дорого", engine)

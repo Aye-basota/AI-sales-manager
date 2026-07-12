@@ -468,6 +468,23 @@ SCRIPT_FIELD_LABELS_EN = {
     "working_hours": "Working hours",
     "timezone": "Timezone",
 }
+SCRIPT_STRATEGY_CALLBACK_CODES = {
+    "n": "nurture",
+    "q": "quick_call",
+    "c": "consultative",
+    "l": "qualification",
+}
+SCRIPT_STRATEGY_CALLBACK_KEYS = {
+    value: key for key, value in SCRIPT_STRATEGY_CALLBACK_CODES.items()
+}
+HISTORY_ORIGIN_CALLBACK_CODES = {
+    "m": "message",
+    "h": "hotleads",
+    "c": "conversations",
+}
+HISTORY_ORIGIN_CALLBACK_KEYS = {
+    value: key for key, value in HISTORY_ORIGIN_CALLBACK_CODES.items()
+}
 
 CAMPAIGN_STATUS_LABELS = {
     LANG_RU: {
@@ -514,6 +531,22 @@ def _campaign_status_label(status: str | None, lang: str = LANG_RU) -> str:
 
 def _strategy_from_script(script: Script) -> str:
     return infer_sales_strategy_from_funnel(getattr(script, "sales_funnel", None))
+
+
+def _script_strategy_callback_data(strategy_key: str, script_id: UUID) -> str:
+    code = SCRIPT_STRATEGY_CALLBACK_KEYS.get(strategy_key, strategy_key)
+    return f"ss:{code}:{script_id}"
+
+
+def _parse_script_strategy_callback(data: str) -> tuple[str, UUID]:
+    if data.startswith("ss:"):
+        _, strategy_code, script_id_raw = data.split(":", 2)
+        strategy_key = SCRIPT_STRATEGY_CALLBACK_CODES[strategy_code]
+        return strategy_key, UUID(script_id_raw)
+
+    _, strategy_raw, script_id_raw = data.split(":", 2)
+    strategy_key = normalize_sales_strategy(strategy_raw)
+    return strategy_key, UUID(script_id_raw)
 
 
 def _format_script_summary(
@@ -645,6 +678,30 @@ def _launch_timing_notice(script: Script | None, lang: str = LANG_RU) -> str:
     return (
         "\n\nВажно: сейчас вне рабочих часов этого бизнеса. "
         f"Сообщения уйдут в окно {window}."
+    )
+
+
+def _launch_queue_notice(total_contacts: int, lang: str = LANG_RU) -> str:
+    if lang == LANG_EN:
+        return (
+            "\n\nSending order:\n"
+            "1. Contacts are processed in upload order.\n"
+            "2. The first pass starts right away, then the scheduler checks the queue every 5 minutes.\n"
+            "3. One seller account sends no more than 1 message per 30 seconds."
+        )
+    last_two = total_contacts % 100
+    last_one = total_contacts % 10
+    if last_one == 1 and last_two != 11:
+        contact_word = "контакт"
+    elif 2 <= last_one <= 4 and not 12 <= last_two <= 14:
+        contact_word = "контакта"
+    else:
+        contact_word = "контактов"
+    return (
+        "\n\nКак пойдет отправка:\n"
+        f"1. В очереди {total_contacts} {contact_word}; порядок такой же, как в файле.\n"
+        "2. Первый проход запускается сразу, дальше очередь проверяется каждые 5 минут.\n"
+        "3. Один Telegram-аккаунт отправляет не чаще 1 сообщения в 30 секунд."
     )
 
 
@@ -935,7 +992,7 @@ def _hotlead_overview_keyboard(rows: List, lang: str = LANG_RU) -> types.InlineK
 def _hotlead_detail_keyboard(conv_id: UUID, lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
     if lang == LANG_EN:
         rows = [
-            [types.InlineKeyboardButton(text="📜 Open conversation", callback_data=f"history:{conv_id}")],
+            [types.InlineKeyboardButton(text="📜 Open conversation", callback_data=f"history:{conv_id}:hotleads")],
             [
                 types.InlineKeyboardButton(text="✅ Mark qualified", callback_data=f"qualify:{conv_id}"),
                 types.InlineKeyboardButton(text="🚫 Not a fit", callback_data=f"reject:{conv_id}"),
@@ -944,7 +1001,7 @@ def _hotlead_detail_keyboard(conv_id: UUID, lang: str = LANG_RU) -> types.Inline
         ]
     else:
         rows = [
-            [types.InlineKeyboardButton(text="📜 Открыть диалог", callback_data=f"history:{conv_id}")],
+            [types.InlineKeyboardButton(text="📜 Открыть диалог", callback_data=f"history:{conv_id}:hotleads")],
             [
                 types.InlineKeyboardButton(text="✅ Готов к работе", callback_data=f"qualify:{conv_id}"),
                 types.InlineKeyboardButton(text="🚫 Не целевой", callback_data=f"reject:{conv_id}"),
@@ -1253,7 +1310,7 @@ def _existing_strategy_keyboard(script_id: UUID, lang: str = LANG_RU) -> types.I
             [
                 types.InlineKeyboardButton(
                     text=label,
-                    callback_data=f"script_strategy:{key}:{script_id}",
+                    callback_data=_script_strategy_callback_data(key, script_id),
                 )
             ]
         )
@@ -1870,14 +1927,15 @@ async def process_script_edit_value(message: types.Message, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("script_strategy:"))
+@router.callback_query(
+    lambda c: c.data
+    and (c.data.startswith("script_strategy:") or c.data.startswith("ss:"))
+)
 async def handle_script_strategy_update(callback: types.CallbackQuery):
     lang = _admin_lang(callback)
     try:
-        _, strategy_raw, script_id_raw = callback.data.split(":", 2)
-        strategy_key = normalize_sales_strategy(strategy_raw)
-        script_id = UUID(script_id_raw)
-    except (ValueError, IndexError):
+        strategy_key, script_id = _parse_script_strategy_callback(callback.data)
+    except (KeyError, ValueError, IndexError):
         await callback.answer("❌ Invalid ID" if lang == LANG_EN else "❌ Неверный ID")
         return
 
@@ -2072,6 +2130,7 @@ async def handle_camp_resume(callback: types.CallbackQuery):
 async def handle_camp_start(callback: types.CallbackQuery):
     lang = _admin_lang(callback)
     camp_id_str = callback.data.split(":", 1)[1]
+    started_total_contacts: int | None = None
     try:
         camp_id = UUID(camp_id_str)
     except ValueError:
@@ -2092,6 +2151,7 @@ async def handle_camp_start(callback: types.CallbackQuery):
             campaign.started_at = datetime.now(timezone.utc)
             await session.commit()
             await callback.answer("▶️ Started" if lang == LANG_EN else "▶️ Запущено")
+            started_total_contacts = campaign.total_contacts or 0
             from app.core.scheduler import process_campaigns
 
             _schedule_process_campaign(campaign.id, process_campaigns)
@@ -2102,8 +2162,11 @@ async def handle_camp_start(callback: types.CallbackQuery):
                 else "❌ Запуск уже начат или не найден"
             )
     await _send_or_edit_campaigns(callback.message)
-    notice = _launch_timing_notice(script, lang)
-    if notice and callback.message:
+    if started_total_contacts and callback.message:
+        notice = _launch_queue_notice(
+            started_total_contacts,
+            lang,
+        ) + _launch_timing_notice(script, lang)
         await callback.message.answer(notice.strip())
 
 
@@ -2474,7 +2537,10 @@ async def handle_dialog(callback: types.CallbackQuery):
         lines.append(f"{sender} {msg.content}")
 
     text = "\n\n".join(lines)
-    await callback.message.answer(text)
+    await callback.message.answer(
+        text,
+        reply_markup=_history_collapse_keyboard(conv_id, lang),
+    )
     await callback.answer()
 
 
@@ -2492,6 +2558,52 @@ def _format_history_messages(messages: List[Message], limit: int = 20) -> str:
             ts_str = "--:--"
         lines.append(f"{ts_str} {sender}\n{msg.content}")
     return "\n\n".join(lines)
+
+
+def _parse_history_callback_data(data: str, prefix: str) -> tuple[UUID, str]:
+    parts = data.split(":")
+    expected_prefixes = {prefix}
+    if prefix == "history_collapse":
+        expected_prefixes.add("hc")
+    if len(parts) < 2 or parts[0] not in expected_prefixes:
+        raise ValueError("invalid history callback")
+    origin = parts[2] if len(parts) > 2 else "message"
+    if parts[0] == "hc":
+        origin = HISTORY_ORIGIN_CALLBACK_CODES.get(origin, origin)
+    return UUID(parts[1]), origin
+
+
+def _history_collapse_keyboard(
+    conv_id: UUID,
+    lang: str = LANG_RU,
+    origin: str = "message",
+) -> types.InlineKeyboardMarkup:
+    text = "▾ Collapse conversation" if lang == LANG_EN else "▾ Свернуть диалог"
+    origin_code = HISTORY_ORIGIN_CALLBACK_KEYS.get(origin, "m")
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"hc:{conv_id}:{origin_code}",
+                )
+            ]
+        ]
+    )
+
+
+def _history_open_keyboard(conv_id: UUID, lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
+    text = "📜 Open conversation" if lang == LANG_EN else "📜 Открыть диалог"
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"history:{conv_id}",
+                )
+            ]
+        ]
+    )
 
 
 def _split_long_text(text: str, max_len: int = 3800) -> list[str]:
@@ -2518,9 +2630,8 @@ def _split_long_text(text: str, max_len: int = 3800) -> list[str]:
 @router.callback_query(lambda c: c.data and c.data.startswith("history:"))
 async def handle_history(callback: types.CallbackQuery):
     lang = _admin_lang(callback)
-    conv_id_str = callback.data.split(":", 1)[1]
     try:
-        conv_id = UUID(conv_id_str)
+        conv_id, origin = _parse_history_callback_data(callback.data, "history")
     except ValueError:
         await callback.answer("❌ Invalid conversation ID" if lang == LANG_EN else "❌ Неверный ID диалога")
         return
@@ -2544,8 +2655,33 @@ async def handle_history(callback: types.CallbackQuery):
         return
 
     text = _format_history_messages(messages)
-    for chunk in _split_long_text(text):
-        await callback.message.answer(chunk)
+    chunks = _split_long_text(text)
+    for idx, chunk in enumerate(chunks):
+        await callback.message.answer(
+            chunk,
+            reply_markup=_history_collapse_keyboard(conv_id, lang, origin)
+            if idx == len(chunks) - 1
+            else None,
+        )
+    await callback.answer()
+
+
+@router.callback_query(
+    lambda c: c.data
+    and (c.data.startswith("history_collapse:") or c.data.startswith("hc:"))
+)
+async def handle_history_collapse(callback: types.CallbackQuery):
+    lang = _admin_lang(callback)
+    try:
+        _parse_history_callback_data(callback.data, "history_collapse")
+    except ValueError:
+        await callback.answer("❌ Invalid conversation ID" if lang == LANG_EN else "❌ Неверный ID диалога")
+        return
+
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest as exc:
+        logger.debug("Could not delete history message while collapsing: %s", exc)
     await callback.answer()
 
 
@@ -2644,8 +2780,14 @@ async def _send_conversation_history(message: types.Message, conversation_id: UU
         return
 
     text = _format_history_messages(messages)
-    for chunk in _split_long_text(text):
-        await message.answer(chunk)
+    chunks = _split_long_text(text)
+    for idx, chunk in enumerate(chunks):
+        await message.answer(
+            chunk,
+            reply_markup=_history_collapse_keyboard(conversation_id, lang, "conversations")
+            if idx == len(chunks) - 1
+            else None,
+        )
 
 
 async def _send_recent_conversations(message: types.Message, lang: str = LANG_RU):
@@ -2683,7 +2825,7 @@ async def _send_recent_conversations(message: types.Message, lang: str = LANG_RU
             [
                 types.InlineKeyboardButton(
                     text=f"📜 {'Open' if lang == LANG_EN else 'Открыть'} {idx}",
-                    callback_data=f"history:{conversation.id}",
+                    callback_data=f"history:{conversation.id}:conversations",
                 )
             ]
         )
@@ -3123,6 +3265,8 @@ async def process_script_work_start(message: types.Message, state: FSMContext):
             )
         else:
             start_str = message.text.strip()
+            h1, m1 = map(int, start_str.split(":"))
+            dt_time(h1, m1)
             await state.update_data(_start_tmp=start_str)
             await state.set_state(ScriptCreateFSM.working_hours_end)
             await message.answer(
@@ -3547,32 +3691,108 @@ async def _show_campaign_script_picker(
 # ---------------------------------------------------------------------------
 
 
-def _preview_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
+def _preview_keyboard(
+    lang: str = LANG_RU,
+    records_count: int = 1,
+    *,
+    showing_all: bool = False,
+) -> types.InlineKeyboardMarkup:
     if lang == LANG_EN:
         launch_text = "✅ Launch"
         regenerate_text = "🔄 Regenerate"
         change_text = "✏️ Choose another business"
+        show_all_text = f"👁 Show all {records_count}"
+        show_first_text = "👁 Show first only"
     else:
         launch_text = "✅ Запустить"
         regenerate_text = "🔄 Перегенерировать"
         change_text = "✏️ Выбрать другой бизнес"
-    return types.InlineKeyboardMarkup(
-        inline_keyboard=[
+        show_all_text = f"👁 Показать все {records_count}"
+        show_first_text = "👁 Только первое"
+
+    rows = [
+        [
+            types.InlineKeyboardButton(
+                text=launch_text, callback_data="preview:launch"
+            ),
+            types.InlineKeyboardButton(
+                text=regenerate_text, callback_data="preview:regenerate"
+            ),
+        ],
+    ]
+    if records_count > 1:
+        rows.append(
             [
                 types.InlineKeyboardButton(
-                    text=launch_text, callback_data="preview:launch"
-                ),
-                types.InlineKeyboardButton(
-                    text=regenerate_text, callback_data="preview:regenerate"
-                ),
-            ],
-            [
-                types.InlineKeyboardButton(
-                    text=change_text, callback_data="preview:change_script"
+                    text=show_first_text if showing_all else show_all_text,
+                    callback_data="preview:show_first"
+                    if showing_all
+                    else "preview:show_all",
                 )
             ],
+        )
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text=change_text, callback_data="preview:change_script"
+            )
         ]
     )
+    return types.InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _format_preview_text(
+    preview_text: str,
+    records_count: int,
+    lang: str = LANG_RU,
+) -> str:
+    if records_count <= 1:
+        return (
+            f"First-message preview:\n\n{preview_text}"
+            if lang == LANG_EN
+            else f"Предпросмотр первого сообщения:\n\n{preview_text}"
+        )
+    if lang == LANG_EN:
+        return (
+            f"First-message preview (1 of {records_count}):\n\n"
+            f"{preview_text}\n\n"
+            f"Only the first contact is shown. You can show all {records_count} generated messages before launch."
+        )
+    return (
+        f"Предпросмотр первого сообщения (1 из {records_count}):\n\n"
+        f"{preview_text}\n\n"
+        f"Показан первый контакт. Перед запуском можно вывести все {records_count} сгенерированных сообщений."
+    )
+
+
+def _preview_record_label(record: dict, idx: int, lang: str = LANG_RU) -> str:
+    name = " ".join(
+        str(record.get(field) or "").strip()
+        for field in ("first_name", "last_name")
+        if str(record.get(field) or "").strip()
+    )
+    company = str(record.get("company_name") or "").strip()
+    position = str(record.get("position") or "").strip()
+    parts = [part for part in (name, position, company) if part]
+    if not parts:
+        return f"Contact {idx}" if lang == LANG_EN else f"Контакт {idx}"
+    return " · ".join(parts)
+
+
+def _format_all_preview_text(
+    previews: list[tuple[dict, str]],
+    lang: str = LANG_RU,
+) -> str:
+    title = (
+        f"Generated first messages ({len(previews)}):"
+        if lang == LANG_EN
+        else f"Сгенерированные первые сообщения ({len(previews)}):"
+    )
+    blocks = [title]
+    for idx, (record, preview_text) in enumerate(previews, 1):
+        label = _preview_record_label(record, idx, lang)
+        blocks.append(f"{idx}. {_html(label)}\n{_html(preview_text)}")
+    return "\n\n".join(blocks)
 
 
 async def _generate_preview_message(script: Script, record: dict) -> str:
@@ -3660,13 +3880,9 @@ async def process_campaign_script(callback: types.CallbackQuery, state: FSMConte
     await state.update_data(preview_text=preview_text)
     await state.set_state(CampaignCreateFSM.preview)
 
-    text = (
-        f"First-message preview:\n\n{preview_text}"
-        if lang == LANG_EN
-        else f"Предпросмотр первого сообщения:\n\n{preview_text}"
-    )
+    text = _format_preview_text(preview_text, len(records), lang)
     await _send_or_edit_callback_message(
-        callback, text, reply_markup=_preview_keyboard(lang)
+        callback, text, reply_markup=_preview_keyboard(lang, len(records))
     )
     await callback.answer()
 
@@ -3693,19 +3909,87 @@ async def handle_preview_regenerate(callback: types.CallbackQuery, state: FSMCon
 
     preview_text = await _generate_preview_message(script, records[0])
     await state.update_data(preview_text=preview_text)
-    text = (
-        f"First-message preview:\n\n{preview_text}"
-        if lang == LANG_EN
-        else f"Предпросмотр первого сообщения:\n\n{preview_text}"
-    )
+    text = _format_preview_text(preview_text, len(records), lang)
     try:
-        await callback.message.edit_text(text, reply_markup=_preview_keyboard(lang))
+        await callback.message.edit_text(
+            text,
+            reply_markup=_preview_keyboard(lang, len(records)),
+        )
     except TelegramBadRequest as exc:
         if not _is_message_not_modified(exc):
             raise
         await callback.answer("No changes" if lang == LANG_EN else "Без изменений")
         return
     await callback.answer("🔄 Updated" if lang == LANG_EN else "🔄 Обновлено")
+
+
+@router.callback_query(lambda c: c.data == "preview:show_all")
+async def handle_preview_show_all(callback: types.CallbackQuery, state: FSMContext):
+    lang = _admin_lang(callback)
+    data = await state.get_data()
+    script_id = data.get("script_id")
+    records = data.get("records", [])
+    if not script_id or not records:
+        await callback.answer("❌ Session expired" if lang == LANG_EN else "❌ Сессия устарела")
+        await state.clear()
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+
+    if not script:
+        await callback.answer("❌ Business not found" if lang == LANG_EN else "❌ Бизнес не найден")
+        await state.clear()
+        return
+
+    await callback.answer("Generating..." if lang == LANG_EN else "Генерирую...")
+    previews: list[tuple[dict, str]] = []
+    for record in records:
+        previews.append((record, await _generate_preview_message(script, record)))
+
+    await state.update_data(preview_messages=[text for _, text in previews])
+    chunks = _split_long_text(_format_all_preview_text(previews, lang))
+    keyboard = _preview_keyboard(lang, len(records), showing_all=True)
+    if len(chunks) == 1:
+        try:
+            await callback.message.edit_text(
+                chunks[0],
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        except TelegramBadRequest as exc:
+            if not _is_message_not_modified(exc):
+                raise
+    else:
+        for chunk in chunks[:-1]:
+            await callback.message.answer(chunk, parse_mode="HTML")
+        await callback.message.answer(chunks[-1], reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(lambda c: c.data == "preview:show_first")
+async def handle_preview_show_first(callback: types.CallbackQuery, state: FSMContext):
+    lang = _admin_lang(callback)
+    data = await state.get_data()
+    records = data.get("records", [])
+    preview_text = data.get("preview_text")
+    if not preview_text or not records:
+        await callback.answer("❌ Session expired" if lang == LANG_EN else "❌ Сессия устарела")
+        await state.clear()
+        return
+
+    text = _format_preview_text(preview_text, len(records), lang)
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=_preview_keyboard(lang, len(records)),
+        )
+    except TelegramBadRequest as exc:
+        if not _is_message_not_modified(exc):
+            raise
+        await callback.answer("No changes" if lang == LANG_EN else "Без изменений")
+        return
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data == "preview:change_script")
@@ -3828,17 +4112,18 @@ async def campaign_start_later(callback: types.CallbackQuery, state: FSMContext)
         await session.commit()
         await session.refresh(campaign)
 
-        from app.services.contact_import import upsert_contacts
+        from app.services.contact_import import contacts_in_record_order, upsert_contacts
 
         created, updated = await upsert_contacts(session, records, source="csv_import")
-        contacts = created + updated
+        contacts = contacts_in_record_order(records, created + updated)
 
-        for contact in contacts:
+        for queue_position, contact in enumerate(contacts, start=1):
             cc = CampaignContact(
                 campaign_id=campaign.id,
                 contact_id=contact.id,
                 status="pending",
                 message_count=0,
+                queue_position=queue_position,
             )
             session.add(cc)
 
@@ -3883,17 +4168,18 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
         await session.commit()
         await session.refresh(campaign)
 
-        from app.services.contact_import import upsert_contacts
+        from app.services.contact_import import contacts_in_record_order, upsert_contacts
 
         created, updated = await upsert_contacts(session, records, source="csv_import")
-        contacts = created + updated
+        contacts = contacts_in_record_order(records, created + updated)
 
-        for contact in contacts:
+        for queue_position, contact in enumerate(contacts, start=1):
             cc = CampaignContact(
                 campaign_id=campaign.id,
                 contact_id=contact.id,
                 status="pending",
                 message_count=0,
+                queue_position=queue_position,
             )
             session.add(cc)
 
@@ -3902,7 +4188,8 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
 
     await state.clear()
     await callback.answer("✅ Launch started!" if lang == LANG_EN else "✅ Запуск начат!")
-    notice = _launch_timing_notice(script, lang)
+    notice = _launch_queue_notice(campaign.total_contacts or 0, lang)
+    notice += _launch_timing_notice(script, lang)
     await callback.message.answer(
         (
             f"Launch <b>{_html(campaign.name)}</b> started with {campaign.total_contacts} contacts."
@@ -3948,16 +4235,16 @@ async def cmd_discover(message: types.Message, state: FSMContext):
     await state.set_state(DiscoverFSM.business_description)
     if lang == LANG_EN:
         text = (
-            "Lead search via TGStat.\n\n"
-            "I will build search queries from your business and ICP, find public Telegram chats/posts, "
-            "resolve visible authors through the connected seller account, and return a CSV for Upload.\n\n"
+            "Lead search through Telegram public messages.\n\n"
+            "I will build search queries from your business and ICP, search public Telegram messages "
+            "through the connected seller account, collect visible authors, and return a CSV for Upload.\n\n"
             "Step 1: describe your business or offer. What do you sell and why is it useful?"
         )
     else:
         text = (
-            "Поиск лидов через TGStat.\n\n"
-            "Я соберу поисковые запросы из описания бизнеса и ЦА, найду публичные Telegram-чаты/сообщения, "
-            "через подключенный аккаунт продавца получу видимых авторов и верну CSV для Upload.\n\n"
+            "Поиск лидов через публичные сообщения Telegram.\n\n"
+            "Я соберу поисковые запросы из описания бизнеса и ЦА, найду публичные сообщения "
+            "через подключенный аккаунт продавца, соберу видимых авторов и верну CSV для Upload.\n\n"
             "Шаг 1: опишите ваш бизнес или оффер. Что продаете и почему это полезно?"
         )
     await message.answer(text, reply_markup=_main_menu_keyboard(lang))
@@ -4019,29 +4306,29 @@ async def _send_discovery_csv(
 ) -> None:
     csv_bytes = _discovery_csv_bytes(records)
     caption = (
-        f"TGStat lead search result: {len(records)} contacts. This CSV can be uploaded with Contacts & launch."
+        f"Telegram lead search result: {len(records)} contacts. This CSV can be uploaded with Contacts & launch."
         if lang == LANG_EN
-        else f"Результат поиска TGStat: {len(records)} контактов. Этот CSV можно загрузить через «Контакты и запуск»."
+        else f"Результат поиска Telegram: {len(records)} контактов. Этот CSV можно загрузить через «Контакты и запуск»."
     )
     bot = _get_bot()
     await bot.send_document(
         chat_id=message.chat.id,
-        document=types.BufferedInputFile(csv_bytes, filename="tgstat_leads.csv"),
+        document=types.BufferedInputFile(csv_bytes, filename="telegram_leads.csv"),
         caption=caption,
     )
 
 
-def _tgstat_missing_text(lang: str = LANG_RU) -> str:
+def _telegram_search_missing_text(lang: str = LANG_RU) -> str:
     if lang == LANG_EN:
         return (
-            "TGStat search is not connected yet.\n\n"
-            "Add TGSTAT_TOKEN to .env and restart the api container. "
-            "The seller Telegram account is already used only for resolving visible authors from public messages."
+            "Telegram lead search needs a connected seller account.\n\n"
+            "Add TELEGRAM_API_ID, TELEGRAM_API_HASH, and at least one ready/active seller account "
+            "with a session string. No paid directory API token is required."
         )
     return (
-        "TGStat-поиск пока не подключен.\n\n"
-        "Добавьте TGSTAT_TOKEN в .env и перезапустите api-контейнер. "
-        "Аккаунт продавца используется только для получения видимых авторов публичных сообщений."
+        "Для поиска лидов нужен подключенный аккаунт продавца.\n\n"
+        "Нужны TELEGRAM_API_ID, TELEGRAM_API_HASH и хотя бы один ready/active аккаунт "
+        "с session string. Токен внешнего платного каталога больше не нужен."
     )
 
 
@@ -4251,13 +4538,10 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
 
     await state.update_data(limit=limit)
     data = await state.get_data()
-    from app.services.tgstat_lead_search import TGStatLeadSearch, TgstatLeadSearchCriteria
-
-    searcher = TGStatLeadSearch()
-    if not searcher.configured:
-        await message.answer(_tgstat_missing_text(lang), reply_markup=_main_menu_keyboard(lang))
-        await state.clear()
-        return
+    from app.services.telegram_global_lead_search import (
+        TelegramGlobalLeadSearch,
+        TelegramGlobalSearchCriteria,
+    )
 
     telegram_client, seller_client, error_code = await _start_discovery_seller_client("telegram_search")
     if error_code:
@@ -4265,7 +4549,7 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
-    criteria = TgstatLeadSearchCriteria(
+    criteria = TelegramGlobalSearchCriteria(
         business_description=data.get("business_description", ""),
         audience_description=data.get("audience_description", ""),
         country=data.get("country", ""),
@@ -4276,15 +4560,16 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
 
     await message.answer(
         (
-            "⏳ Searching TGStat chats/posts, then resolving visible message authors through Telegram. "
+            "⏳ Searching public Telegram messages via MTProto and collecting visible authors. "
             "This can take a minute."
             if lang == LANG_EN
-            else "⏳ Ищу чаты/сообщения в TGStat, затем получаю видимых авторов через Telegram. "
+            else "⏳ Ищу публичные сообщения Telegram через MTProto и собираю видимых авторов. "
             "Это может занять около минуты."
         )
     )
 
     try:
+        searcher = TelegramGlobalLeadSearch()
         search_result = await searcher.run(criteria, telegram_client=telegram_client)
     except Exception as exc:
         logger.exception("Discover failed")
@@ -4303,7 +4588,7 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
     await state.update_data(
         discovered=results,
         records=results,
-        source="tgstat",
+        source="telegram_search",
         discovery_queries=search_result.queries,
         discovery_groups=search_result.groups,
         discovery_errors=search_result.errors,
@@ -4327,9 +4612,9 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
         text = (
             f"Done. CSV sent.\n\n"
             f"Contacts: {len(results)}\n"
-            f"TGStat queries: {', '.join(search_result.queries[:8])}\n"
-            f"Relevant groups: {len(search_result.groups)}\n"
-            f"Posts checked: {search_result.posts_checked}\n\n"
+            f"Search queries: {', '.join(search_result.queries[:8])}\n"
+            f"Public chats found: {len(search_result.groups)}\n"
+            f"Messages checked: {search_result.posts_checked}\n\n"
             f"First {min(len(results), 5)}:\n{preview_text}\n\n"
             f"You can upload the CSV manually or save these contacts now."
         )
@@ -4341,8 +4626,8 @@ async def process_discover_limit(message: types.Message, state: FSMContext):
         text = (
             f"Готово. CSV отправлен.\n\n"
             f"Контактов: {len(results)}\n"
-            f"Запросы TGStat: {', '.join(search_result.queries[:8])}\n"
-            f"Релевантных групп: {len(search_result.groups)}\n"
+            f"Поисковые запросы: {', '.join(search_result.queries[:8])}\n"
+            f"Найдено публичных чатов: {len(search_result.groups)}\n"
             f"Проверено сообщений: {search_result.posts_checked}\n\n"
             f"Первые {min(len(results), 5)}:\n{preview_text}\n\n"
             f"Можно загрузить CSV вручную или сразу сохранить контакты."
@@ -4572,7 +4857,8 @@ async def handle_startcamp(callback: types.CallbackQuery, state: FSMContext):
         )
     else:
         await callback.answer("✅ Launch started!" if lang == LANG_EN else "✅ Запуск начат!")
-        notice = _launch_timing_notice(script, lang)
+        notice = _launch_queue_notice(campaign.total_contacts or 0, lang)
+        notice += _launch_timing_notice(script, lang)
         await callback.message.answer(
             (
                 f"Launch <b>{_html(campaign.name)}</b> started."

@@ -102,6 +102,26 @@ class TestNotificationService:
         assert "📅 Meeting Booked\n" in call_kwargs["text"]
         assert call_kwargs["reply_markup"] is not None
 
+    async def test_send_meeting_booked_alert_without_chat_id_logs_warning(
+        self, dummy_contact, dummy_conversation, caplog
+    ):
+        service = NotificationService(chat_id="")
+        with caplog.at_level("WARNING"):
+            await service.send_meeting_booked_alert(dummy_contact, dummy_conversation)
+        assert "ADMIN_NOTIFICATION_CHAT_ID is not set" in caplog.text
+
+    async def test_send_meeting_booked_alert_without_bot_token_logs_warning(
+        self, dummy_contact, dummy_conversation, caplog
+    ):
+        service = NotificationService(chat_id="12345")
+        with caplog.at_level("WARNING"):
+            with patch("app.services.notification_service.settings") as mock_settings:
+                mock_settings.admin_bot_token = ""
+                await service.send_meeting_booked_alert(
+                    dummy_contact, dummy_conversation
+                )
+        assert "ADMIN_BOT_TOKEN is not set" in caplog.text
+
     async def test_send_hot_lead_alert_handles_exception(
         self, dummy_contact, dummy_conversation, caplog
     ):

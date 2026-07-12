@@ -86,12 +86,14 @@ async def add_contacts_to_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     created = []
-    for contact_id in payload.contact_ids:
+    base_position = campaign.total_contacts or 0
+    for offset, contact_id in enumerate(payload.contact_ids, start=1):
         cc = CampaignContact(
             campaign_id=campaign_id,
             contact_id=contact_id,
             status="pending",
             message_count=0,
+            queue_position=base_position + offset,
         )
         db.add(cc)
         created.append(cc)
@@ -155,6 +157,7 @@ async def list_campaign_contacts(campaign_id: UUID, db: AsyncSession = Depends(g
         select(Contact, CampaignContact)
         .join(CampaignContact, Contact.id == CampaignContact.contact_id)
         .where(CampaignContact.campaign_id == campaign_id)
+        .order_by(CampaignContact.queue_position.asc().nullsfirst())
     )
     rows = result.all()
     return [
@@ -179,6 +182,7 @@ async def list_campaign_contacts(campaign_id: UUID, db: AsyncSession = Depends(g
             reply_received_at=row[1].reply_received_at,
             last_message_at=row[1].last_message_at,
             message_count=row[1].message_count,
+            queue_position=row[1].queue_position or 0,
         )
         for row in rows
     ]
