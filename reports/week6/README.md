@@ -166,9 +166,9 @@ Full session transcript: [`sprint-review-transcript.md`](sprint-review-transcrip
 
 ## 12. Team Reflection
 
-- [`reflection.md`](reflection.md) — **placeholder, not yet written by the team.**
-- [`retrospective.md`](retrospective.md) — **placeholder, not yet written by the team.**
-- [`llm-report.md`](llm-report.md) — **partially complete**; one team member's Claude Code usage is disclosed, the rest of the team still needs to add theirs.
+- [`reflection.md`](reflection.md) — Week 6 reflection (Assignment 6 Part 12): trial release, customer meeting, transition blockers, Sprint 3 vs Sprint 4 analysis.
+- [`retrospective.md`](retrospective.md) — Sprint 4 retrospective (Assignment 6 Part 11): what went well, gaps, comparison to Sprint 3 action points, Sprint 5 action points.
+- [`llm-report.md`](llm-report.md) — LLM / AI usage disclosure (Assignment 6 Part 12).
 
 ---
 
@@ -223,7 +223,6 @@ This report intentionally surfaces gaps rather than papering over them. Before t
 4. **Complete the customer-facing documentation review with the customer** — see [§5](#5-customer-facing-documentation).
 5. **Collect written customer confirmation** of the Week 6 status, per Part 8.
 6. **Decide on transcript handling**: [`sprint-review-transcript.md`](sprint-review-transcript.md) is a raw, unsanitized machine transcription (informal team banter, real first names, imperfect translation) rather than a cleaned English transcript. Confirm this is what the team intends to publish in the public repository, or replace it with a sanitized version / move it to the private Moodle-only submission channel instead, per the shared transcript publication rules.
-7. **Fill in `reflection.md`, `retrospective.md`, and the rest of `llm-report.md`** — see [§12](#12-team-reflection).
-8. **Capture and embed screenshots** — see [§15](#15-screenshots).
-9. **Close or update the 11 Sprint 4 milestone issues** on GitHub to reflect delivered work — see [§2](#2-backlog-and-sprint-planning).
-10. **Add the lead-discovery feature and bot-hardening work to `CHANGELOG.md`** if not already covered by `[0.4.0]` — see [§3](#3-delivered-product-changes).
+7. **Capture and embed screenshots** — see [§15](#15-screenshots).
+8. **Close or update the 11 Sprint 4 milestone issues** on GitHub to reflect delivered work — see [§2](#2-backlog-and-sprint-planning).
+9. **Add the lead-discovery feature and bot-hardening work to `CHANGELOG.md`** if not already covered by `[0.4.0]` — see [§3](#3-delivered-product-changes).
