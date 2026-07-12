@@ -1,46 +1,38 @@
-# Sprint Review Summary — Week 5 (Sprint 3, MVP v2)
+# Sprint 4 Review Summary — Week 6
 
-**Date:** 2026-07-05
-**Participants:** Development team, Mark (customer / stakeholder)
-**Format:** Combined recorded session (customer-executed UAT + Sprint Review discussion). Moodle-only timecodes mark where each segment occurs; see the private Moodle submission.
+**Sprint Goal:** Deliver a production-ready experience for the Week 6 trial — reliable campaign execution, AI-driven conversations, analytics, and operational stability.
 
-## Sprint Goal Reviewed
+**Format:** Live product walkthrough + customer Q&A with Mark, July 12, 2026.
 
-Deliver MVP v2 by (1) deploying the application to a production VPS for reliable 24/7 availability, and (2) improving the AI assistant's conversational quality through enhanced prompts, a more natural dialogue flow, and an optimized lead-nurturing process.
+## What was reviewed
 
-## Delivered Increment Discussed
+The team demonstrated the current product end-to-end: business/campaign management, funnel configuration, a live conversation with the AI (including typing-delay and anti-spam behavior), and a new lead-discovery feature that finds prospects via Telegram group parsing and exports them in a campaign-ready format. The product was demoed running on the production VPS, confirmed independent of any team member's local machine.
 
-* **Production deployment:** The application is now hosted on a production VPS, independent of any developer's local machine, with associated infrastructure/monitoring configuration (TECH-11, TECH-12).
-* **Conversational quality:** Reworked system prompts (TECH-13, US-017) and a new multi-stage conversation flow (US-018) that guide users toward booking/purchase through clarifying questions and consultative responses, instead of returning flat answers.
+## UAT / customer-trial results
 
-## UAT Results
+Two maintained UAT scenarios are current (`docs/user-acceptance-tests.md`, Sprint 3 / MVP v2, last executed 2026-07-05 with Mark):
 
-Both new UAT scenarios for MVP v2, plus the existing regression scenario, were executed live with the customer:
+| Scenario | Result |
+|---|---|
+| UAT-1: Verify 24/7 Production Availability via VPS Deployment | ✅ Pass — Mark confirmed the bot responded correctly with both the local dev machine and Docker fully shut down |
+| UAT-2: Verify Natural Conversational Flow and Structured Lead Nurturing | ✅ Pass — assistant handled a pricing question with clarifying questions instead of a flat answer, and stayed on-topic after an off-topic message |
 
-|Scenario|Result|
-|-|-|
-|Regression: standard Q\&A + off-topic handling|✅ Pass|
-|New: 24/7 availability via VPS (verified with local dev environment fully shut down)|✅ Pass|
-|New: natural conversational flow / lead nurturing|✅ Pass|
+No new maintained UAT scenarios exist yet for the Sprint 4 features shown live on July 12 (lead-discovery via group parsing, campaign analytics dashboard, manual dialog takeover). UAT-3 (lead discovery) and UAT-4 (analytics dashboard) have been added to `docs/user-acceptance-tests.md` for Sprint 5. Lead-discovery is logged as **Needs Improvement** rather than Pass, since Mark explicitly flagged its quality as a gap during live testing.
 
-No scenarios failed. See `docs/user-acceptance-tests.md` for full acceptance criteria and execution details.
+## Customer feedback → resulting issues
 
-## Addressed Customer Feedback
+| Feedback | Resulting action |
+|---|---|
+| Lead-search/parsing quality needs improvement | New issue: improve lead-discovery/parsing result quality |
+| Wants minimal-setup campaign start | New issue: reduce manual configuration to start a campaign |
+| Bot occasionally breaks character | New issue: improve overall prompt/response quality, evaluate alternate LLM via existing routing API |
+| Bot doesn't always merge rapid multi-message replies | New issue: merge chunked inbound messages more reliably |
 
-Feedback from a prior session regarding response reliability and bot availability outside working hours has been addressed through the VPS deployment; the customer confirmed this directly during the session.
+## Follow-up for Sprint 5
 
-## Architecture / Workflow Changes Discussed
+The four items above have been created as GitHub issues and assigned to the Sprint 5 milestone.
 
-* Migration from local, developer-machine-hosted execution to a dedicated production VPS.
-* Infrastructure and monitoring configuration to support production operation (see TECH-12; ADR updates in `docs/architecture/adr/`).
-* Prompt/dialogue architecture updated to support multi-stage, nurturing-oriented conversation flow rather than single-turn Q\&A.
+## Handover status as of Week 6
 
-## Remaining Gaps, Risks, and Follow-up
-
-* **New feedback / gap identified:** The admin panel does not currently allow returning to a previous step (e.g., after confirming a campaign launch) to edit or correct data. This creates friction for the customer when managing campaigns and contact uploads.
-* **Follow-up action:** A new backlog item will be created to address admin panel navigation/edit flow, targeted for Sprint 4.
-
-## Product Backlog Updates
-
-\- \[US-019: Improve Admin Panel Navigation — Allow Editing After Campaign Launch Step](https://github.com/Aye-basota/AI-sales-manager/issues/68) (#68), created directly from customer feedback in this session.
-
+- **Handover level reached: Ready for independent use.** The product runs on the production VPS, independent of any team member's local machine, and trial access has been shared directly with Mark. He has not yet used it independently or deployed it on his own side — that remains the Week 7 target.
+- **Customer-confirmation status:** Positive verbal feedback received (off-record, same day) — Mark is satisfied overall, with two priorities: better prompt/response quality and stronger lead search. Written confirmation is still pending and will be collected before the Week 7 submission, as required evidence for Part 8.
