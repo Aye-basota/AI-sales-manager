@@ -10,7 +10,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.exc import NoInspectionAvailable
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,13 +38,25 @@ try:
         _tmp_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_tmp_loop)
 
-    from pyrogram.errors import FloodWait, PeerFlood, PeerIdInvalid
+    from pyrogram.errors import (
+        FloodWait,
+        PeerFlood,
+        PeerIdInvalid,
+        UserIsBlocked,
+        UsernameInvalid,
+        UsernameNotOccupied,
+        YouBlockedUser,
+    )
 
     _PYROGRAM_ERRORS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     FloodWait = Exception
     PeerFlood = Exception
     PeerIdInvalid = Exception
+    UserIsBlocked = Exception
+    UsernameInvalid = Exception
+    UsernameNotOccupied = Exception
+    YouBlockedUser = Exception
     _PYROGRAM_ERRORS_AVAILABLE = False
 
 
@@ -75,6 +87,111 @@ class ContactPeerInvalidError(Exception):
         super().__init__(
             f"Account {account_id} cannot message Telegram peer {telegram_user_id}"
         )
+
+
+def _contact_chat_id(contact) -> int | str:
+    """Prefer a public username because raw Telegram ids need prior peer access."""
+    username = (getattr(contact, "telegram_username", None) or "").strip()
+    if username:
+        return username.lstrip("@")
+    return int(contact.telegram_user_id)
+
+
+def _contact_chat_candidates(contact) -> list[int | str]:
+    """Return Telegram chat ids to try, preferring username then raw user id."""
+    candidates: list[int | str] = []
+    username = (getattr(contact, "telegram_username", None) or "").strip()
+    if username:
+        candidates.append(username.lstrip("@"))
+
+    telegram_user_id = getattr(contact, "telegram_user_id", None)
+    if telegram_user_id:
+        try:
+            numeric_id = int(telegram_user_id)
+        except (TypeError, ValueError):
+            numeric_id = None
+        if numeric_id is not None and numeric_id not in candidates:
+            candidates.append(numeric_id)
+    return candidates
+
+
+def _invalid_peer_errors() -> tuple[type[BaseException], ...]:
+    """Return peer-resolution errors that mean the contact cannot be messaged."""
+    return tuple(
+        cls
+        for cls in (
+            PeerIdInvalid,
+            UsernameInvalid,
+            UsernameNotOccupied,
+            UserIsBlocked,
+            YouBlockedUser,
+        )
+        if isinstance(cls, type) and issubclass(cls, BaseException)
+    )
+
+
+def _contact_has_chat_id(contact) -> bool:
+    """Return True when a contact has any Telegram address we can try."""
+    username = (getattr(contact, "telegram_username", None) or "").strip()
+    return bool(username or getattr(contact, "telegram_user_id", None))
+
+
+async def _send_chunks_to_contact(
+    client,
+    contact,
+    chunks: list[str],
+    chunk_delays: list[int],
+) -> None:
+    """Send chunks, retrying raw Telegram id when a stored username is stale."""
+    from app.core.humanizer import chunk_pause_seconds
+
+    last_invalid_exc: BaseException | None = None
+    for candidate in _contact_chat_candidates(contact):
+        try:
+            for idx, chunk in enumerate(chunks):
+                if idx > 0:
+                    await asyncio.sleep(chunk_pause_seconds())
+                await client.send_message(
+                    user_id=candidate,
+                    text=chunk,
+                    typing_delay_ms=chunk_delays[idx],
+                )
+            return
+        except _invalid_peer_errors() as exc:
+            last_invalid_exc = exc
+            logger.warning(
+                "Telegram peer %s for contact %s is invalid, trying next candidate: %s",
+                candidate,
+                getattr(contact, "id", None),
+                exc,
+            )
+            continue
+
+    raise ContactPeerInvalidError(
+        getattr(client, "account_id", None),
+        contact.id,
+        getattr(contact, "telegram_user_id", None),
+    ) from last_invalid_exc
+
+
+def _campaign_contact_queue_key(campaign_contact) -> tuple:
+    def datetime_key(value: datetime | None) -> tuple[bool, float]:
+        if value is None:
+            return (False, 0.0)
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return (True, value.timestamp())
+
+    queue_position = getattr(campaign_contact, "queue_position", None)
+    status = getattr(campaign_contact, "status", None)
+    return (
+        status != "pending",
+        queue_position is None,
+        queue_position or 0,
+        datetime_key(getattr(campaign_contact, "initial_sent_at", None)),
+        datetime_key(getattr(campaign_contact, "last_message_at", None)),
+        str(getattr(campaign_contact, "contact_id", "")),
+    )
 
 
 def _is_eligible_account(account, now: datetime) -> bool:
@@ -297,10 +414,22 @@ async def process_campaigns(db_session: AsyncSession) -> None:
 
         cc_result = await db_session.execute(
             select(CampaignContact)
+            .join(Contact, Contact.id == CampaignContact.contact_id)
             .where(CampaignContact.campaign_id == campaign_id)
             .where(CampaignContact.status.in_(["pending", "initial_sent"]))
+            .order_by(
+                case((CampaignContact.status == "pending", 0), else_=1),
+                CampaignContact.queue_position.asc().nullsfirst(),
+                CampaignContact.initial_sent_at.asc().nullsfirst(),
+                CampaignContact.last_message_at.asc().nullsfirst(),
+                Contact.created_at.asc().nullsfirst(),
+                Contact.id.asc(),
+            )
         )
-        campaign_contacts = cc_result.scalars().all()
+        campaign_contacts = sorted(
+            cc_result.scalars().all(),
+            key=_campaign_contact_queue_key,
+        )
 
         ready_contacts = next_contact_to_process(campaign_contacts, script, now)
 
@@ -316,8 +445,11 @@ async def process_campaigns(db_session: AsyncSession) -> None:
             if not contact:
                 continue
 
-            if not contact.telegram_user_id:
-                logger.debug("Skipping contact %s (no telegram_user_id)", contact.id)
+            if not _contact_has_chat_id(contact):
+                logger.info(
+                    "Skipping contact %s: no telegram_user_id or telegram_username",
+                    contact.id,
+                )
                 continue
 
             if contact.is_valid == "invalid" or contact.status == "invalid_peer":
@@ -387,8 +519,9 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     last_at = last_at.replace(tzinfo=timezone.utc)
                 elapsed = (now - last_at).total_seconds()
                 if elapsed < 30:
-                    logger.debug(
-                        "Account %s rate limited (%.1f s since last msg)",
+                    logger.info(
+                        "Deferring contact %s: account %s is rate limited (%.1f s since last msg)",
+                        contact.id,
                         account.id,
                         elapsed,
                     )
@@ -614,7 +747,6 @@ async def send_initial_message(
         int(base_typing_delay * len(chunk) / max(len(text), 1)) for chunk in chunks
     ]
 
-    from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
 
     settings = get_settings()
@@ -631,14 +763,7 @@ async def send_initial_message(
         # "typing..." while the agent is supposedly thinking.
         if thinking_delay > 0:
             await asyncio.sleep(thinking_delay / 1000.0)
-        for idx, chunk in enumerate(chunks):
-            if idx > 0:
-                await asyncio.sleep(chunk_pause_seconds())
-            await client.send_message(
-                user_id=int(contact.telegram_user_id),
-                text=chunk,
-                typing_delay_ms=chunk_delays[idx],
-            )
+        await _send_chunks_to_contact(client, contact, chunks, chunk_delays)
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
         logger.warning("FloodWait on account %s for %ss", account.id, wait_seconds)
@@ -646,9 +771,9 @@ async def send_initial_message(
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
         raise AccountPeerFloodError(account.id) from exc
-    except PeerIdInvalid as exc:
+    except _invalid_peer_errors() as exc:
         logger.warning(
-            "PeerIdInvalid for contact %s via account %s",
+            "Invalid Telegram peer for contact %s via account %s",
             contact.id,
             account.id,
         )
@@ -785,7 +910,6 @@ async def send_follow_up_message(
         int(base_typing_delay * len(chunk) / max(len(text), 1)) for chunk in chunks
     ]
 
-    from app.core.humanizer import chunk_pause_seconds
     from app.bots.seller_client import SellerClient
 
     settings = get_settings()
@@ -800,14 +924,7 @@ async def send_follow_up_message(
         await client.start()
         if thinking_delay > 0:
             await asyncio.sleep(thinking_delay / 1000.0)
-        for idx, chunk in enumerate(chunks):
-            if idx > 0:
-                await asyncio.sleep(chunk_pause_seconds())
-            await client.send_message(
-                user_id=int(contact.telegram_user_id),
-                text=chunk,
-                typing_delay_ms=chunk_delays[idx],
-            )
+        await _send_chunks_to_contact(client, contact, chunks, chunk_delays)
     except FloodWait as exc:
         wait_seconds = getattr(exc, "value", 60)
         logger.warning("FloodWait on account %s for %ss", account.id, wait_seconds)
@@ -815,9 +932,9 @@ async def send_follow_up_message(
     except PeerFlood as exc:
         logger.warning("PeerFlood on account %s", account.id)
         raise AccountPeerFloodError(account.id) from exc
-    except PeerIdInvalid as exc:
+    except _invalid_peer_errors() as exc:
         logger.warning(
-            "PeerIdInvalid for contact %s via account %s",
+            "Invalid Telegram peer for contact %s via account %s",
             contact.id,
             account.id,
         )

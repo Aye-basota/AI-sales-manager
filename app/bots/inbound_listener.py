@@ -37,6 +37,7 @@ from app.bots.seller_client import SellerClient
 from app.llm.engine import LLMEngine
 from app.llm.intent_classifier import classify_intent
 from app.llm.prompts import build_system_prompt, build_reply_user_prompt
+from app.llm.context import extract_offer_summary
 from app.core.humanizer import (
     calculate_typing_delay,
     calculate_thinking_delay,
@@ -55,6 +56,13 @@ from app.services.conversation_service import (
 logger = logging.getLogger(__name__)
 
 _inbound_clients: dict[str, SellerClient] = {}
+INBOUND_BATCH_DELAY_SECONDS = 4.0
+DORMANT_REPLY_MEDIUM_GAP_SECONDS = 30 * 60
+DORMANT_REPLY_MEDIUM_DELAY_SECONDS = 2 * 60
+DORMANT_REPLY_LONG_GAP_SECONDS = 2 * 60 * 60
+DORMANT_REPLY_LONG_DELAY_SECONDS = 7 * 60
+_pending_inbound_batches: dict[tuple[str, int], list[Any]] = {}
+_pending_inbound_tasks: dict[tuple[str, int], asyncio.Task] = {}
 
 FALLBACK_TEXT = (
     "Извините, я не до конца понял контекст. Сформулирую проще: мы помогаем "
@@ -98,6 +106,30 @@ PAUSE_PATTERNS = (
     r"давайте\s+(?:позже|потом)",
     r"может\s+потом",
     r"через\s+пару\s+месяц",
+)
+HESITATION_PATTERNS = (
+    r"даже\s+не\s+знаю",
+    r"\bсомневаюсь\b",
+    r"\bне\s+уверен(?:а)?\b",
+    r"\bнадо\s+подумать\b",
+    r"\bподумаю\b",
+)
+RECONSIDER_POSITIVE_PATTERNS = (
+    r"\bв\s*принципе\s+можно\b",
+    r"\bвпринципе\s+можно\b",
+    r"\bможно\s+попробовать\b",
+    r"\bдавайте\s+попробуем\b",
+)
+SCHEDULING_PATTERNS = (
+    r"\b(?:сегодня|завтра|послезавтра)\b",
+    r"\b(?:понедельник|вторник|сред[ау]|четверг|пятниц[ау]|суббот[ау]|воскресень[ея])\b",
+    r"\b\d{1,2}[:.]\d{2}\b",
+    r"\b(?:до|после)\s+\d{1,2}(?:[:.]\d{2})?\b",
+    r"\b(?:утро|день|вечер|обед[а-я]*)\b",
+    r"\b(?:свободн\w*|занят\w*|слот\w*|окно|возможност\w*)\b",
+    r"\bкогда\b",
+    r"\bво\s+сколько\b",
+    r"\b(?:подойти|прийти|заехать)\b",
 )
 PRICING_PATTERNS = (
     r"\bцен(?:а|у|ы|е|ой)?\b",
@@ -168,11 +200,55 @@ CONTEXT_CONFUSION_PATTERNS = (
     r"что\s+ещ[её]\s+за\s+сценар",
     r"о\s+ч[её]м\s+вы",
     r"вы\s+о\s+ч[её]м",
-    r"не\s+понимаю",
+    r"не\s+понял[а]?,?\s+о\s+ч[её]м",
+)
+PROMPT_REQUEST_PATTERNS = (
+    r"system\s+prompt",
+    r"developer\s+message",
+    r"ignore\s+previous\s+instructions",
+    r"промпт",
+    r"инструкц",
+    r"забудь\s+.*инструкц",
+    r"игнорируй\s+.*инструкц",
 )
 ENGLISH_REQUEST_PATTERNS = (
     r"\benglish\b",
     r"explain\s+in\s+english",
+)
+OFFTOPIC_OR_TROLL_PATTERNS = (
+    r"пузырьков\w*\s+сортиров",
+    r"bubble\s+sort",
+    r"leetcode",
+    r"напиши\s+(?:код|функц|скрипт|алгоритм)",
+    r"сгенерируй\s+(?:код|функц|скрипт)",
+    r"\bpython\b",
+    r"\bjavascript\b",
+    r"\bsql\b",
+)
+TECH_SUPPORT_PATTERNS = (
+    r"\bfatal\b",
+    r"remaining\s+connection\s+slots",
+    r"\b500\b",
+    r"продакш",
+    r"\bбаг\w*\b",
+    r"сервис\s+.*пада",
+    r"подключени\w*\s+к\s+баз",
+    r"куда\s+копать",
+    r"перезапуск\w*\s+.*работ",
+)
+CANCEL_VISIT_PATTERNS = (
+    r"\bне\s+при[йи]ду\b",
+    r"\bне\s+смогу\s+(?:прийти|подойти|заехать)\b",
+    r"\bне\s+получится\s+(?:прийти|подойти|заехать)\b",
+    r"\bотменяю\b",
+)
+HARD_NEGATIVE_PATTERNS = (
+    r"\bне\s*интересно\b",
+    r"\bнеактуально\b",
+    r"\bне\s+надо\b",
+    r"\bотстаньте\b",
+    r"\bне\s+пишите\b",
+    *CANCEL_VISIT_PATTERNS,
 )
 
 
@@ -199,43 +275,83 @@ def _sentiment_from_intent(intent: str) -> str:
     return "neutral"
 
 
-def _terminal_response(intent: str) -> str:
+def _terminal_response(intent: str, lead_text: str = "") -> str:
     if intent == "negative":
-        return "Понял, извините за беспокойство. Больше не буду писать."
+        if _matches_any(CANCEL_VISIT_PATTERNS, lead_text.lower()):
+            return "Понял, спасибо, что предупредили. Тогда не закладываю это время."
+        return "Понял, похоже неактуально. Извините за беспокойство, больше не буду писать."
     if intent == "meeting_intent":
         return "Отлично, договорились. Спасибо, дальше продолжим уже по созвону."
     return ""
 
 
+def _meeting_time_is_confirmed(lead_text: str) -> bool:
+    """Return True only when the lead appears to accept a concrete meeting time."""
+    lower = lead_text.lower()
+    has_exact_time = bool(
+        re.search(r"\b\d{1,2}[:.]\d{2}\b", lower)
+        or re.search(r"\bв\s+\d{1,2}\b", lower)
+    )
+    has_acceptance = bool(
+        re.search(
+            r"\b(?:да|ок|окей|подходит|удобно|согласен|согласна|договорились|подтверждаю|yes|ok|okay|works|confirmed|confirm)\b",
+            lower,
+        )
+    )
+    asks_availability = bool(
+        re.search(
+            r"\?|нет\s+возможност|можно|получится|свободн|занят|занято|available|possible|free|busy",
+            lower,
+        )
+    )
+    return has_exact_time and has_acceptance and not asks_availability
+
+
 def _script_offer_context(script: Script | None) -> str:
-    if not script:
+    offer = extract_offer_summary(script, max_chars=180)
+    if offer == "помогаем решить задачу без лишней ручной рутины":
         return "помогаем решить эту задачу аккуратно и без лишней ручной рутины"
-    default = "помогаем B2B-командам аккуратно начинать первые диалоги без лишней ручной рутины"
-    for attr in ("role_prompt", "goal", "target_audience"):
-        value = getattr(script, attr, None)
-        if value:
-            text = " ".join(str(value).split())
-            lowered = text.lower()
-            if attr == "role_prompt" and any(
-                marker in lowered
-                for marker in (
-                    "ты ",
-                    "пиши ",
-                    "не называй",
-                    "бот",
-                    "ии",
-                    "sales manager",
-                )
-            ):
-                continue
-            if any(marker in lowered for marker in ("созвон", "встреч", "договориться")):
-                continue
-            if attr == "target_audience" and "b2b founders" in lowered:
-                return default
-            if len(text) > 180:
-                text = text[:179].rstrip() + "…"
-            return text
-    return default
+    first_sentence = re.split(r"(?<=[.!?])\s+", offer.strip())[0].strip()
+    first_sentence = first_sentence.rstrip(".")
+    first_sentence = re.sub(r"(?i)^предоставляем\s+", "", first_sentence).strip()
+    first_sentence = re.sub(r"(?i)^занимаемся\s+", "", first_sentence).strip()
+    return first_sentence or offer
+
+
+def _looks_like_short_hesitation(lead_text: str) -> bool:
+    """Return True for short uncertainty messages, not full objections."""
+    lower = lead_text.lower().strip()
+    if not _matches_any(HESITATION_PATTERNS, lower):
+        return False
+    word_count = len(re.findall(r"[0-9a-zа-яё]+", lower))
+    return word_count <= 5
+
+
+def _dormant_reply_delay_seconds(
+    previous_activity_at: datetime | None,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Return an extra delay before replying after a stale conversation."""
+    if previous_activity_at is None:
+        return 0
+    if previous_activity_at.tzinfo is None:
+        previous_activity_at = previous_activity_at.replace(tzinfo=timezone.utc)
+    else:
+        previous_activity_at = previous_activity_at.astimezone(timezone.utc)
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    else:
+        current = current.astimezone(timezone.utc)
+
+    gap_seconds = max((current - previous_activity_at).total_seconds(), 0)
+    if gap_seconds >= DORMANT_REPLY_LONG_GAP_SECONDS:
+        return DORMANT_REPLY_LONG_DELAY_SECONDS
+    if gap_seconds >= DORMANT_REPLY_MEDIUM_GAP_SECONDS:
+        return DORMANT_REPLY_MEDIUM_DELAY_SECONDS
+    return 0
 
 
 def _polish_inbound_response(text: str) -> str:
@@ -290,14 +406,10 @@ def _polish_inbound_response(text: str) -> str:
 
     sentences = re.split(r"(?<=[.!?])\s+", cleaned)
     kept: list[str] = []
-    question_seen = False
     for sentence in sentences:
         if not sentence:
             continue
         if "?" in sentence:
-            if question_seen:
-                continue
-            question_seen = True
             kept.append(sentence)
             break
         kept.append(sentence)
@@ -305,7 +417,39 @@ def _polish_inbound_response(text: str) -> str:
     return " ".join(kept).strip()
 
 
-def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
+def _extract_recent_time_window(
+    lead_text: str,
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    """Return the latest human-mentioned scheduling window, if present."""
+    history_lines = [
+        msg.get("content", "")
+        for msg in (history or [])[-8:]
+        if msg.get("role") == "lead" and msg.get("content")
+    ]
+    combined = "\n".join([*history_lines, lead_text])
+    weekday = (
+        r"сегодня|завтра|послезавтра|понедельник|вторник|сред[ау]|"
+        r"четверг|пятниц[ау]|суббот[ау]|воскресень[ея]"
+    )
+    patterns = (
+        rf"((?:{weekday})[^.\n!?]{{0,60}}(?:до|после|в)\s+\d{{1,2}}(?:[:.]\d{{2}})?)",
+        rf"((?:до|после|в)\s+\d{{1,2}}(?:[:.]\d{{2}})?[^.\n!?]{{0,60}}(?:{weekday}))",
+    )
+    matches: list[str] = []
+    for pattern in patterns:
+        matches.extend(re.findall(pattern, combined.lower()))
+    if not matches:
+        return ""
+    return re.sub(r"\s+", " ", matches[-1]).strip(" .")
+
+
+def _build_inbound_fallback_text(
+    lead_text: str,
+    script: Script,
+    *,
+    history: list[dict[str, str]] | None = None,
+) -> str:
     lower = lead_text.lower()
     offer = _script_offer_context(script)
 
@@ -340,24 +484,61 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
     if _matches_any(PAUSE_PATTERNS, lower):
         return "Понял, не отвлекаю. Тогда вернусь позже, хорошего дня."
 
+    if _looks_like_short_hesitation(lead_text):
+        return (
+            "Понимаю, не буду уговаривать. Можно спокойно не фиксировать время, "
+            "а если остались вопросы по месту, формату или условиям — отвечу коротко."
+        )
+
+    if _matches_any(RECONSIDER_POSITIVE_PATTERNS, lower):
+        return (
+            "Хорошо, давайте без спешки. Напишите, какое окно вам удобнее, "
+            "и я сверю следующий шаг."
+        )
+
     if _matches_any(CONTEXT_CONFUSION_PATTERNS, lower):
         return (
-            f"Извините, сбился формулировкой. Речь именно про это: {offer}. "
-            "Без внутренних терминов: могу коротко ответить по условиям, срокам или следующему шагу."
+            f"Я про {offer}. Если вопрос был не об этом, понял — не буду путать. "
+            "Если актуально, могу коротко подсказать условия или следующий шаг."
+        )
+
+    if _matches_any(TECH_SUPPORT_PATTERNS, lower):
+        return (
+            "Похоже, у вас сейчас рабочий аврал. По ошибке сервиса не буду притворяться "
+            "техподдержкой и разбирать продакшн в переписке. По визиту можем проще: "
+            "если успеваете, напишите удобное окно; если нет — спокойно перенесем."
+        )
+
+    if _matches_any(SCHEDULING_PATTERNS, lower):
+        window = _extract_recent_time_window(lead_text, history)
+        if window:
+            return (
+                f"Если ориентируемся на {window}, давайте считать это предварительным окном. "
+                "Точный слот лучше сверить, чтобы не обещать наугад."
+            )
+        return (
+            "По времени не хочу обещать слот наугад. Напишите, какое окно вам удобно, "
+            "и я сверю его как следующий шаг."
+        )
+
+    if _matches_any(PROMPT_REQUEST_PATTERNS, lower):
+        return (
+            "Служебные инструкции я не обсуждаю. По делу: "
+            f"{offer}. Если вопрос про условия, место или время, отвечу коротко."
         )
 
     if _matches_any(PRICING_PATTERNS, lower):
         offer_lower = offer.lower()
         if any(marker in offer_lower for marker in ("стакан", "cup", "кофе")):
             return (
-                "По цене не буду называть точную цифру без вводных: она зависит от тиража, "
-                "материала, объема стакана, печати и регулярности поставок. "
-                "Если дадите примерный недельный или месячный объем, можно посчитать ближе к делу."
+                "По стаканчикам цена сильно зависит от тиража, формата заказа и требований к качеству. "
+                "Чтобы не назвать неверную цифру, лучше сверить примерный объем и что важно по задаче — "
+                "после этого можно посчитать ближе к делу."
             )
         return (
-            "По цене не буду называть цифру без вводных: она зависит от объема, формата "
-            "работы и требований к качеству. Обычно сначала фиксируют вводные, а потом "
-            "уже считают оценку без гадания."
+            "По цене сориентирую честно: точной вилки в текущем контексте у меня нет, "
+            "и не хочу назвать неверную цифру. По базовой услуге лучше сверить прайс "
+            "или формат, а дальше уже можно спокойно посчитать."
         )
 
     if _matches_any(INTEGRATION_PATTERNS, lower):
@@ -375,8 +556,8 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
 
     if _matches_any(CONTACT_SOURCE_PATTERNS, lower):
         return (
-            "Я из Neural Lead. Написал по рабочему контакту из открытого контекста; "
-            "если неактуально, спокойно остановлюсь."
+            "Написал по рабочему контакту из открытого контекста. "
+            f"По сути обращения: {offer}. Если неактуально, спокойно остановлюсь."
         )
 
     if _matches_any(COMPETITOR_PATTERNS, lower):
@@ -390,20 +571,20 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
         return (
             "Я не могу прикрепить фото, файл или презентацию прямо здесь, поэтому не буду "
             f"делать вид, что отправил материалы. Могу описать словами: {offer}. "
-            "Дальше лучше сверить нужный формат, объем и сроки."
+            "Дальше лучше сверить нужный формат и вводные."
         )
 
     if _matches_any(CREATIVE_TERRITORY_PATTERNS, lower):
         return (
             "Я не знаю вашу концепцию заранее и не буду придумывать дизайн на ходу. "
-            "Могу зафиксировать вводные для специалиста: стиль, аудиторию, объемы и сроки. "
+            "Могу зафиксировать вводные для специалиста: стиль, аудиторию и ограничения по задаче. "
             "Если актуально, лучше коротко сверить это на созвоне."
         )
 
     if _matches_any(SHORT_POSITIVE_PATTERNS, lower):
         return (
-            f"Отлично. Коротко по сути: {offer}. Обычно начинаем с небольшого объема, "
-            "смотрим реакцию людей и быстро убираем формулировки, которые звучат давяще."
+            f"Отлично. Речь про {offer}. "
+            "Могу коротко рассказать условия и как удобнее выбрать время."
         )
 
     if _matches_any(ENGLISH_REQUEST_PATTERNS, lower):
@@ -419,8 +600,8 @@ def _build_inbound_fallback_text(lead_text: str, script: Script) -> str:
         )
 
     return (
-        "Похоже, я не до конца точно понял вопрос. Сформулирую проще: "
-        f"{offer}. Если актуально, могу коротко разложить следующий шаг."
+        f"Похоже, я не до конца точно понял вопрос. Я про {offer}. "
+        "Если актуально, могу коротко подсказать следующий шаг."
     )
 
 
@@ -429,12 +610,18 @@ def _needs_deterministic_fallback(lead_text: str) -> bool:
     lower = lead_text.lower()
     if lead_text.strip() and set(lead_text.strip()) <= PUNCTUATION_ONLY_CHARS:
         return True
+    if _looks_like_short_hesitation(lead_text):
+        return True
+    if _matches_any(TECH_SUPPORT_PATTERNS, lower):
+        return True
     return _matches_any(
         BOT_CHECK_PATTERNS
         + DELIVERY_RISK_PATTERNS
         + SECURITY_PATTERNS
         + WRONG_PERSON_PATTERNS
         + PAUSE_PATTERNS
+        + RECONSIDER_POSITIVE_PATTERNS
+        + SCHEDULING_PATTERNS
         + PRICING_PATTERNS
         + INTEGRATION_PATTERNS
         + CASE_PATTERNS
@@ -443,10 +630,26 @@ def _needs_deterministic_fallback(lead_text: str) -> bool:
         + MATERIALS_REQUEST_PATTERNS
         + CREATIVE_TERRITORY_PATTERNS
         + CONTEXT_CONFUSION_PATTERNS
+        + PROMPT_REQUEST_PATTERNS
         + SHORT_POSITIVE_PATTERNS
         + ENGLISH_REQUEST_PATTERNS,
         lower,
     )
+
+
+def _looks_like_offtopic_or_troll(lead_text: str) -> bool:
+    """Treat obvious non-sales jokes/tasks as a polite stop signal."""
+    return _matches_any(OFFTOPIC_OR_TROLL_PATTERNS, lead_text.lower())
+
+
+def _looks_like_technical_support_detour(lead_text: str) -> bool:
+    """Detect unrelated troubleshooting details inside a sales conversation."""
+    return _matches_any(TECH_SUPPORT_PATTERNS, lead_text.lower())
+
+
+def _looks_like_hard_negative(lead_text: str) -> bool:
+    """Detect explicit refusals that should not depend on LLM classification."""
+    return _matches_any(HARD_NEGATIVE_PATTERNS, lead_text.lower())
 
 
 async def start_inbound_listeners(db_session: AsyncSession | None = None) -> None:
@@ -525,12 +728,73 @@ async def _handle_inbound_message(
     client: SellerClient,
     message: Any,
 ) -> None:
-    """Process a single inbound message end-to-end."""
+    """Debounce quick consecutive inbound messages from the same lead."""
+    if not message.from_user:
+        return
+
+    telegram_user_id = int(message.from_user.id)
+    if not (message.text or ""):
+        logger.debug("Inbound message without text from %s", telegram_user_id)
+        return
+
+    key = (str(account.id), telegram_user_id)
+    _pending_inbound_batches.setdefault(key, []).append(message)
+
+    existing_task = _pending_inbound_tasks.get(key)
+    if existing_task and not existing_task.done():
+        await existing_task
+        return
+
+    async def _flush_batch() -> None:
+        while True:
+            before_count = len(_pending_inbound_batches.get(key, []))
+            await asyncio.sleep(INBOUND_BATCH_DELAY_SECONDS)
+            current_batch = _pending_inbound_batches.get(key, [])
+            if not current_batch:
+                if _pending_inbound_tasks.get(key) is asyncio.current_task():
+                    _pending_inbound_tasks.pop(key, None)
+                return
+            if len(current_batch) == before_count:
+                break
+
+        batch = _pending_inbound_batches.pop(key, [])
+        current_task = asyncio.current_task()
+        if _pending_inbound_tasks.get(key) is current_task:
+            _pending_inbound_tasks.pop(key, None)
+        if not batch:
+            return
+
+        latest_message = batch[-1]
+        combined_text = "\n".join(
+            (item.text or "").strip()
+            for item in batch
+            if (item.text or "").strip()
+        )
+        await _process_inbound_message(
+            account,
+            client,
+            latest_message,
+            combined_text=combined_text,
+        )
+
+    task = asyncio.create_task(_flush_batch())
+    _pending_inbound_tasks[key] = task
+    await task
+
+
+async def _process_inbound_message(
+    account: TelegramAccount,
+    client: SellerClient,
+    message: Any,
+    *,
+    combined_text: str | None = None,
+) -> None:
+    """Process a single debounced inbound message batch end-to-end."""
     if not message.from_user:
         return
 
     telegram_user_id = message.from_user.id
-    text = message.text or ""
+    text = combined_text if combined_text is not None else message.text or ""
     if not text:
         logger.debug("Inbound message without text from %s", telegram_user_id)
         return
@@ -612,6 +876,8 @@ async def _handle_inbound_message(
                 logger.warning("No campaign for conversation %s", conversation.id)
                 return
 
+            previous_activity_at = getattr(conversation, "last_message_at", None)
+
             # 4. Save inbound message
             await add_message(db, conversation.id, "inbound", text, message_type="text")
 
@@ -642,6 +908,14 @@ async def _handle_inbound_message(
 
             # 5. Mark message as read after a short human-like delay
             user_id = int(contact.telegram_user_id)
+            dormant_delay = _dormant_reply_delay_seconds(previous_activity_at)
+            if dormant_delay > 0:
+                logger.info(
+                    "Delaying reply to conversation %s by %ss after stale activity",
+                    conversation.id,
+                    dormant_delay,
+                )
+                await asyncio.sleep(dormant_delay)
             await asyncio.sleep(random.uniform(2.0, 5.0))  # nosec B311
             await client.read_history(user_id)
 
@@ -675,28 +949,58 @@ async def _handle_inbound_message(
 
             # 8. Classify intent
             engine = LLMEngine()
-            intent = await classify_intent(text, engine)
-            event = _event_from_intent(intent)
+            if _looks_like_technical_support_detour(text):
+                intent = "question"
+            elif _looks_like_offtopic_or_troll(text) or _looks_like_hard_negative(text):
+                intent = "negative"
+            else:
+                intent = await classify_intent(text, engine)
+            meeting_confirmed = intent == "meeting_intent" and _meeting_time_is_confirmed(
+                text
+            )
+            effective_intent = (
+                intent if intent != "meeting_intent" or meeting_confirmed else "positive"
+            )
+            event = _event_from_intent(effective_intent)
             previous_state = conversation.current_state or "cold"
-            new_state = transition(previous_state, event)
+            reopen_closed = previous_state == "closed" and effective_intent in (
+                "positive",
+                "question",
+                "informational",
+                "meeting_intent",
+            )
+            transition_state = "warm" if reopen_closed else previous_state
+            new_state = transition(transition_state, event)
 
             # 8.5 Update funnel stage based on intent
             conversation.conversation_stage = next_stage(
                 script,
                 getattr(conversation, "conversation_stage", None) or "hook",
-                intent,
+                intent if intent == "meeting_intent" else effective_intent,
             )
             conversation.current_state = new_state
-            conversation.sentiment = _sentiment_from_intent(intent)
+            conversation.sentiment = _sentiment_from_intent(effective_intent)
             current_facts = dict(conversation.facts_extracted or {})
             current_facts["last_intent"] = intent
+            current_facts["last_effective_intent"] = effective_intent
             conversation.facts_extracted = current_facts
 
-            if campaign_contact and intent == "meeting_intent":
+            if campaign_contact and meeting_confirmed:
                 campaign_contact.status = "meeting_booked"
                 campaign.meeting_booked_count = (campaign.meeting_booked_count or 0) + 1
+            elif campaign_contact and reopen_closed and new_state != "closed":
+                campaign_contact.status = "replied"
+                if campaign_contact.reply_received_at is None:
+                    campaign_contact.reply_received_at = datetime.now(timezone.utc)
+                    campaign.replied_count = (campaign.replied_count or 0) + 1
+            elif campaign_contact and (intent == "negative" or new_state == "closed"):
+                campaign_contact.status = "closed"
 
-            if is_terminal(previous_state):
+            allow_meeting_followup = previous_state == "meeting_booked" and (
+                _matches_any(SCHEDULING_PATTERNS, text.lower())
+                or intent in ("question", "informational", "meeting_intent", "positive")
+            )
+            if is_terminal(previous_state) and not (allow_meeting_followup or reopen_closed):
                 await db.commit()
                 logger.info(
                     "Conversation %s already terminal (%s), skipping automated reply",
@@ -705,7 +1009,10 @@ async def _handle_inbound_message(
                 )
                 return
 
-            terminal_text = _terminal_response(intent)
+            terminal_text = _terminal_response(
+                intent if meeting_confirmed else effective_intent,
+                text,
+            )
             if terminal_text:
                 response_text = terminal_text
                 chunks = split_message_into_chunks(response_text, max_chunks=2)
@@ -729,13 +1036,13 @@ async def _handle_inbound_message(
                     llm_model="terminal",
                     tokens_used=0,
                     typing_delay_ms=base_typing_delay + thinking_delay,
-                    intent_classification=intent,
+                    intent_classification=effective_intent,
                 )
                 db_account.daily_messages_sent = current_daily + len(chunks)
                 db_account.last_message_at = datetime.now(timezone.utc)
                 await db.commit()
 
-                if intent == "meeting_intent":
+                if meeting_confirmed:
                     notif = NotificationService()
                     await notif.send_hot_lead_alert(
                         contact, conversation, last_message_text=text
@@ -807,7 +1114,7 @@ async def _handle_inbound_message(
 
             if _needs_deterministic_fallback(text):
                 response = {
-                    "text": _build_inbound_fallback_text(text, script),
+                    "text": _build_inbound_fallback_text(text, script, history=history),
                     "model": "fallback",
                     "tokens_used": 0,
                 }
@@ -827,7 +1134,7 @@ async def _handle_inbound_message(
 
             # If guardrails blocked even the retry, use fallback text
             if not response_text or response.get("model") == "fallback":
-                response_text = _build_inbound_fallback_text(text, script)
+                response_text = _build_inbound_fallback_text(text, script, history=history)
             response_text = _polish_inbound_response(response_text)
 
             # 11. Humanizer delays and chunking
@@ -880,7 +1187,7 @@ async def _handle_inbound_message(
                 "hot",
                 "meeting_booked",
             )
-            if intent == "meeting_intent" or became_hot:
+            if meeting_confirmed or became_hot:
                 notif = NotificationService()
                 await notif.send_hot_lead_alert(
                     contact, conversation, last_message_text=text

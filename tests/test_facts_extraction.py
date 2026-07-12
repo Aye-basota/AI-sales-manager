@@ -14,6 +14,13 @@ async def test_extract_facts_returns_empty_on_empty_text():
 
 
 @pytest.mark.asyncio
+async def test_extract_facts_returns_empty_when_llm_engine_unavailable():
+    with patch("app.services.conversation_service.LLMEngine", None):
+        result = await extract_facts_from_message("Some message")
+    assert result == {}
+
+
+@pytest.mark.asyncio
 async def test_extract_facts_parses_json_response():
     mock_response = {
         "text": '{"company": "Acme", "role": "CEO", "pain": "low conversions", "budget": "50k$"}',
@@ -67,6 +74,26 @@ async def test_extract_facts_ignores_empty_values():
     assert "company" in result
     assert "role" not in result
     assert "pain" not in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "llm_text",
+    [
+        "",
+        "not json",
+        '["not", "an", "object"]',
+    ],
+)
+async def test_extract_facts_returns_empty_on_unusable_llm_output(llm_text):
+    mock_response = {"text": llm_text}
+    with patch("app.services.conversation_service.LLMEngine") as MockEngine:
+        engine_inst = MockEngine.return_value
+        engine_inst.generate_with_fallback = AsyncMock(return_value=mock_response)
+
+        result = await extract_facts_from_message("Some message")
+
+    assert result == {}
 
 
 @pytest.mark.asyncio

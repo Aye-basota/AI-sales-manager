@@ -69,6 +69,7 @@ def test_delete_campaign_not_found(client, mock_db):
 
 
 def test_add_contacts_to_campaign(client, mock_db, sample_campaign, sample_contact):
+    sample_campaign.total_contacts = 5
     mock_db.execute.return_value = MockResult([sample_campaign])
     payload = {"contact_ids": [str(sample_contact.id), str(uuid4())]}
     response = client.post(f"/campaigns/{sample_campaign.id}/contacts", json=payload)
@@ -78,6 +79,9 @@ def test_add_contacts_to_campaign(client, mock_db, sample_campaign, sample_conta
     assert data[0]["status"] == "pending"
     assert data[0]["campaign_id"] == str(sample_campaign.id)
     assert mock_db.add.call_count == 2
+    added = [call.args[0] for call in mock_db.add.call_args_list]
+    assert [cc.queue_position for cc in added] == [6, 7]
+    assert sample_campaign.total_contacts == 7
     mock_db.commit.assert_awaited_once()
     assert mock_db.refresh.await_count == 2
 
@@ -144,6 +148,7 @@ def test_list_campaign_contacts(client, mock_db, sample_campaign, sample_contact
         contact_id=sample_contact.id,
         status="pending",
         message_count=0,
+        queue_position=1,
     )
     mock_db.execute.side_effect = [
         MockResult([sample_campaign]),
@@ -156,6 +161,7 @@ def test_list_campaign_contacts(client, mock_db, sample_campaign, sample_contact
     assert data[0]["contact_id"] == str(sample_contact.id)
     assert data[0]["first_name"] == sample_contact.first_name
     assert data[0]["status"] == "pending"
+    assert data[0]["queue_position"] == 1
 
 
 def test_list_campaign_contacts_not_found(client, mock_db):
@@ -173,3 +179,78 @@ def test_list_campaign_contacts_empty(client, mock_db, sample_campaign):
     assert response.status_code == 200
     data = response.json()
     assert data == []
+
+
+def test_remove_contact_from_campaign(client, mock_db, sample_campaign, sample_contact):
+    sample_campaign.total_contacts = 1
+    campaign_contact = CampaignContact(
+        id=uuid4(),
+        campaign_id=sample_campaign.id,
+        contact_id=sample_contact.id,
+        status="pending",
+        message_count=0,
+    )
+    mock_db.execute.side_effect = [
+        MockResult([sample_campaign]),
+        MockResult([campaign_contact]),
+    ]
+
+    response = client.delete(
+        f"/campaigns/{sample_campaign.id}/contacts/{sample_contact.id}"
+    )
+
+    assert response.status_code == 204
+    mock_db.delete.assert_awaited_once_with(campaign_contact)
+    mock_db.commit.assert_awaited_once()
+    assert sample_campaign.total_contacts == 0
+
+
+def test_remove_contact_from_campaign_keeps_total_contacts_non_negative(
+    client, mock_db, sample_campaign, sample_contact
+):
+    sample_campaign.total_contacts = 0
+    campaign_contact = CampaignContact(
+        id=uuid4(),
+        campaign_id=sample_campaign.id,
+        contact_id=sample_contact.id,
+        status="pending",
+        message_count=0,
+    )
+    mock_db.execute.side_effect = [
+        MockResult([sample_campaign]),
+        MockResult([campaign_contact]),
+    ]
+
+    response = client.delete(
+        f"/campaigns/{sample_campaign.id}/contacts/{sample_contact.id}"
+    )
+
+    assert response.status_code == 204
+    assert sample_campaign.total_contacts == 0
+
+
+def test_remove_contact_from_campaign_missing_campaign(client, mock_db, sample_contact):
+    mock_db.execute.return_value = MockResult([])
+
+    response = client.delete(f"/campaigns/{uuid4()}/contacts/{sample_contact.id}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Campaign not found"
+    mock_db.delete.assert_not_awaited()
+
+
+def test_remove_contact_from_campaign_missing_link(
+    client, mock_db, sample_campaign, sample_contact
+):
+    mock_db.execute.side_effect = [
+        MockResult([sample_campaign]),
+        MockResult([]),
+    ]
+
+    response = client.delete(
+        f"/campaigns/{sample_campaign.id}/contacts/{sample_contact.id}"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Contact not found in campaign"
+    mock_db.delete.assert_not_awaited()

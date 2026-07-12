@@ -2,12 +2,33 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 
 from app.llm.prompts import (
     build_initial_user_prompt,
     build_reply_user_prompt,
     build_system_prompt,
 )
+from app.config.prompts import get_prompt_config_version, load_prompt_config
+
+
+class TestPromptConfigVersion:
+    def test_returns_config_version_or_unknown(self):
+        assert get_prompt_config_version({"version": "v-test"}) == "v-test"
+        assert get_prompt_config_version({"prompts": {}}) == "unknown"
+
+    def test_load_prompt_config_errors_are_propagated(self, tmp_path):
+        load_prompt_config.cache_clear()
+        with pytest.raises(FileNotFoundError):
+            load_prompt_config(tmp_path / "missing.json")
+
+        bad_json = tmp_path / "bad.json"
+        bad_json.write_text("{bad", encoding="utf-8")
+        load_prompt_config.cache_clear()
+        with pytest.raises(Exception):
+            load_prompt_config(bad_json)
+        load_prompt_config.cache_clear()
 
 
 class TestBuildSystemPrompt:
@@ -100,3 +121,5 @@ class TestBuildReplyUserPrompt:
         assert "Не строй ответ по шаблону из трех блоков" in prompt
         assert "Не начинай каждый ответ одинаково" in prompt
         assert "Не придумывай цены" in prompt
+        assert "Не придумывай ассортимент" in prompt
+        assert "что лучше взять" in prompt

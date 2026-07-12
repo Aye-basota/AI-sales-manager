@@ -1,0 +1,3 @@
+first_name,last_name,company_name,position,city,industry,telegram_user_id,telegram_username,source,last_source,source_summary,is_valid,icp_score,status
+Даниил,,Газпромбанк,CTO,Москва,Корпоративные закупки и мероприятия,1264720451,volgadon_636,csv_import,csv_import,"CTO Газпромбанка. Ищет подрядчика для покупки стаканчиков для корпоративов.",unknown,95,new
+Марсель,,Event Business,CPO,Москва,Ивенты и корпоративные проекты,1081458735,Flkxjxjd,csv_import,csv_import,"CPO и владелец небольшого event-бизнеса. Ищет подрядчика на несколько проектов.",unknown,90,new

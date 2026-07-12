@@ -4,8 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.db import redis as redis_module
 from app.db.redis import (
     cache_conversation_context,
+    close_redis,
     get_cached_conversation_context,
     invalidate_conversation_cache,
 )
@@ -52,3 +54,14 @@ async def test_invalidate_conversation_cache():
     redis = AsyncMock()
     await invalidate_conversation_cache(redis, "conv-1")
     redis.delete.assert_awaited_once_with("conv:conv-1:context")
+
+
+@pytest.mark.asyncio
+async def test_close_redis_closes_existing_pool(monkeypatch):
+    redis = AsyncMock()
+    monkeypatch.setattr(redis_module, "_redis_pool", redis)
+
+    await close_redis()
+
+    redis.close.assert_awaited_once()
+    assert redis_module._redis_pool is None

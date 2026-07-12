@@ -85,7 +85,12 @@ def parse_funnel_text(content: str) -> list[dict[str, Any]]:
             _flush()
             stage_name = match.group(1).strip()
             # Remove a numeric prefix like "Stage 1: ..."
-            stage_name = re.sub(r"^Stage\s+\d+[:.\-]?\s*", "", stage_name, flags=re.IGNORECASE)
+            stage_name = re.sub(
+                r"^Stage\s+\d+\s*[:.\-]?\s*",
+                "",
+                stage_name,
+                flags=re.IGNORECASE,
+            )
             current = {
                 "stage": stage_name,
                 "goal": "",

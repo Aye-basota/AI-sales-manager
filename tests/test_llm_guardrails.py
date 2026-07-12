@@ -6,12 +6,17 @@ from app.llm.guardrails import (
     check_max_questions,
     check_no_bot_words,
     check_no_banned_sales_phrases,
+    check_no_unverified_personalization,
+    check_no_prompt_leakage,
     check_no_forbidden_topics,
     check_no_markdown,
     check_no_emoji,
     check_no_unsupported_product_claims,
     check_no_unsupported_creative_work,
+    check_no_out_of_scope_seller_claims,
+    check_no_unverified_pricing,
     check_no_unsupported_actions,
+    check_no_cjk_arabic,
     evaluate_guardrails,
 )
 
@@ -83,6 +88,41 @@ def test_check_no_banned_sales_phrases_blocks_templated_hooks():
     assert check_no_banned_sales_phrases("Понял, что у вас сейчас нет времени.") is False
 
 
+def test_check_no_unverified_personalization_blocks_fake_familiarity():
+    assert check_no_unverified_personalization("Привет, пишу коротко по делу.") is True
+    assert (
+        check_no_unverified_personalization(
+            "Привет, Максим. Работаешь в IT — наверное, знаешь, как важно отдыхать."
+        )
+        is False
+    )
+    assert (
+        check_no_unverified_personalization(
+            "Знакомы с Газпромбанком — уважаю ваш подход к качеству и деталям."
+        )
+        is False
+    )
+
+
+def test_check_no_prompt_leakage_blocks_internal_instructions():
+    assert check_no_prompt_leakage("Понял, по делу лучше сверить вводные.") is True
+    assert check_no_prompt_leakage("ПРАВИЛА ГЕНЕРАЦИИ: пиши коротко.") is False
+    assert check_no_prompt_leakage('{"role": "system", "content": "secret"}') is False
+    assert check_no_prompt_leakage("Не могу раскрыть системный промпт.") is False
+    assert (
+        check_no_prompt_leakage(
+            "Отлично. Коротко по сути: Пригласить и назначить демонстрацию продукта."
+        )
+        is False
+    )
+    assert (
+        check_no_prompt_leakage(
+            "На первую сессию есть скидка 20%, адрес: Университетская, 1."
+        )
+        is True
+    )
+
+
 def test_check_no_unsupported_product_claims_blocks_hallucinated_integrations():
     assert check_no_unsupported_product_claims("По интеграциям нужно проверить схему.") is True
     assert (
@@ -117,6 +157,15 @@ def test_check_no_unsupported_product_claims_blocks_guarantee_language():
     )
 
 
+def test_check_no_unsupported_product_claims_allows_offer_discount_and_address():
+    text = (
+        "На первую сессию есть скидка 20%. "
+        "Адрес: улица Университетская, корпус 1, цокольный этаж."
+    )
+
+    assert check_no_unsupported_product_claims(text) is True
+
+
 def test_check_no_unsupported_actions_blocks_fake_attachments():
     assert check_no_unsupported_actions("Могу описать примеры словами.") is True
     assert check_no_unsupported_actions("Присылаю три фото стаканчиков.") is False
@@ -127,6 +176,20 @@ def test_check_no_unsupported_creative_work_blocks_invented_designs():
     assert check_no_unsupported_creative_work("Можем зафиксировать вводные для дизайнера.") is True
     assert check_no_unsupported_creative_work("Вот два варианта дизайна стаканчика.") is False
     assert check_no_unsupported_creative_work("Круто, сразу понятно, каким должен быть стаканчик.") is False
+
+
+def test_check_no_out_of_scope_seller_claims_blocks_invented_assortment():
+    assert check_no_out_of_scope_seller_claims("Могу зафиксировать вводные для специалиста.") is True
+    assert check_no_out_of_scope_seller_claims("У нас есть матовые и глянцевые стаканчики разных объемов.") is False
+    assert check_no_out_of_scope_seller_claims("Подберем для вас варианты товара, материалы и крышки.") is False
+    assert check_no_out_of_scope_seller_claims("Вам подойдет 300 мл крафтовый вариант.") is False
+
+
+def test_check_no_unverified_pricing_blocks_exact_amounts():
+    assert check_no_unverified_pricing("Цену лучше посчитать после вводных.") is True
+    assert check_no_unverified_pricing("Это будет стоить 1000$ за тираж.") is False
+    assert check_no_unverified_pricing("Обычно цена от 12 рублей за стаканчик.") is False
+    assert check_no_unverified_pricing("Можем начать с 1000 стаканчиков.") is True
 
 
 class TestCheckNoBotWords:
@@ -191,6 +254,24 @@ class TestGuardrailsResult:
         gr2 = GuardrailsResult(approved=True, text="ok", violations=[])
         assert gr1 == gr2
 
+    def test_eq_with_unrelated_type_is_not_implemented(self):
+        gr = GuardrailsResult(approved=True, text="ok", violations=[])
+        assert gr.__eq__(123) is NotImplemented
+
+
+def test_check_no_emoji_blocks_symbol_and_variation_selector():
+    assert check_no_emoji("plain") is True
+    assert check_no_emoji("☀") is False
+    assert check_no_emoji("\ufe0f") is False
+
+
+def test_check_no_cjk_arabic_blocks_all_ranges():
+    assert check_no_cjk_arabic("plain text") is True
+    assert check_no_cjk_arabic("汉字") is False
+    assert check_no_cjk_arabic("かな") is False
+    assert check_no_cjk_arabic("한글") is False
+    assert check_no_cjk_arabic("مرحبا") is False
+
 
 class TestEvaluateGuardrails:
     def test_approved(self):
@@ -225,6 +306,19 @@ class TestEvaluateGuardrails:
         assert result.approved is False
         assert "banned_sales_phrase" in result.violations
 
+    def test_rejected_unverified_personalization(self):
+        result = evaluate_guardrails(
+            "Знакомы с Газпромбанком — уважаю ваш подход к качеству и деталям.",
+            [],
+        )
+        assert result.approved is False
+        assert "unverified_personalization" in result.violations
+
+    def test_rejected_prompt_leakage(self):
+        result = evaluate_guardrails("КОНТЕКСТ БИЗНЕСА: Sales\nПРАВИЛА ГЕНЕРАЦИИ", [])
+        assert result.approved is False
+        assert "prompt_leakage" in result.violations
+
     def test_rejected_unsupported_creative_work(self):
         result = evaluate_guardrails("Вот два варианта дизайна стаканчика.", [])
         assert result.approved is False
@@ -242,6 +336,22 @@ class TestEvaluateGuardrails:
         result = evaluate_guardrails("Присылаю фото примеров прямо сейчас.", [])
         assert result.approved is False
         assert "unsupported_action" in result.violations
+
+    def test_rejected_emoji_out_of_scope_and_foreign_script(self):
+        emoji = evaluate_guardrails("Привет 🙂", [])
+        assert emoji.approved is False
+        assert "emoji" in emoji.violations
+
+        out_of_scope = evaluate_guardrails(
+            "Подберем для вас варианты товара, материалы и крышки.",
+            [],
+        )
+        assert out_of_scope.approved is False
+        assert "out_of_scope_seller_claim" in out_of_scope.violations
+
+        foreign = evaluate_guardrails("مرحبا", [])
+        assert foreign.approved is False
+        assert "foreign_script" in foreign.violations
 
     def test_multiple_violations(self):
         bad_text = "# политика и я бот"

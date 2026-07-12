@@ -2,9 +2,11 @@ from unittest.mock import patch
 
 
 from app.core.humanizer import (
+    _split_paragraph_into_sentences,
     add_casual_markers,
     calculate_thinking_delay,
     calculate_typing_delay,
+    chunk_pause_seconds,
     contains_markdown,
     format_message,
     maybe_double_take,
@@ -50,6 +52,13 @@ class TestCalculateThinkingDelay:
     def test_custom_range(self):
         with patch("app.core.humanizer.random.randint", return_value=10):
             assert calculate_thinking_delay(min_sec=5, max_sec=20) == 10000
+
+
+class TestChunkPauseSeconds:
+    def test_uses_configured_float_range(self):
+        with patch("app.core.humanizer.random.uniform", return_value=3.5) as mock_uniform:
+            assert chunk_pause_seconds(min_sec=1.0, max_sec=4.0) == 3.5
+        mock_uniform.assert_called_once_with(1.0, 4.0)
 
 
 class TestMaybeSelfCorrect:
@@ -124,6 +133,23 @@ class TestAddCasualMarkers:
         with patch("app.core.humanizer.random.random", return_value=0.99):
             result = add_casual_markers(text, rate=0.15)
         assert result == text
+
+    def test_empty_sentence_branch_is_preserved(self):
+        with (
+            patch("app.core.humanizer.random.random", return_value=0.0),
+            patch("app.core.humanizer.random.randrange", return_value=1),
+            patch("app.core.humanizer.random.choice", return_value="кстати"),
+        ):
+            result = add_casual_markers("Hello. ", rate=1.0)
+
+        assert "кстати" in result.lower()
+
+    def test_split_returning_no_sentences_preserves_text(self):
+        with (
+            patch("app.core.humanizer.random.random", return_value=0.0),
+            patch("app.core.humanizer.re.split", return_value=[]),
+        ):
+            assert add_casual_markers("Hello.", rate=1.0) == "Hello."
 
 
 class TestMaybeDoubleTake:
@@ -206,6 +232,12 @@ class TestSplitMessageIntoChunks:
 
     def test_short_text_single_chunk(self):
         assert split_message_into_chunks("Hello there") == ["Hello there"]
+
+    def test_whitespace_text_returns_trimmed_empty_chunk(self):
+        assert split_message_into_chunks("   ") == [""]
+
+    def test_private_sentence_split_skips_empty_sentences(self):
+        assert _split_paragraph_into_sentences("   ", max_chars=10) == []
 
     def test_long_paragraph_split_by_sentences(self):
         text = "First sentence. " * 20
