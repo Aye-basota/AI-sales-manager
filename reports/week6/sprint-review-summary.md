@@ -1,8 +1,8 @@
 # Sprint 4 Review Summary — Week 6
 
-**Sprint Goal:** Deliver a production-ready trial experience for Week 6 — stable campaign execution, AI-driven conversations, analytics, and operational stability. [FILL IN: paste exact Sprint 4 Goal text from the milestone if it differs.]
+**Sprint Goal (from [`docs/roadmap.md`](../../docs/roadmap.md)):** Enable a production-ready AI Sales Manager experience for the Week 6 trial release by delivering end-to-end lead management capabilities, including campaign execution, AI-driven conversations, analytics, and operational stability. The sprint aims to ensure the platform is ready for transition into real-world usage through a reliable user experience and stable production environment.
 
-**Format:** Live product walkthrough + customer Q&A with Mark, July 12, 2026. Full notes: [`sprint-review-notes.md`](./sprint-review-notes.md).
+**Format:** Live product walkthrough + customer Q&A with Mark, July 12, 2026. Full transcript: [`sprint-review-transcript.md`](./sprint-review-transcript.md).
 
 ## What was reviewed
 The team demonstrated the current product end-to-end: business/campaign management, funnel configuration, a live conversation with the AI (including typing-delay and anti-spam behavior), and a new lead-discovery feature that finds prospects via Telegram group parsing and exports them in a campaign-ready format.
