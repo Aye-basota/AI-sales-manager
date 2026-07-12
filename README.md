@@ -6,7 +6,7 @@
 
 ## Для заказчика и ревьюера
 
-- **Доступ к продукту:** нет постоянного продакшн-хостинга — команда поднимает инстанс по запросу через Docker Compose и делится временной публичной ссылкой (localtunnel). Актуальный статус и инструкции: [`docs/customer-handover.md`](docs/customer-handover.md).
+- **Доступ к продукту:** с Sprint 4 (Week 6) продукт развёрнут на постоянном production VPS (не только по запросу через Docker Compose / localtunnel, как раньше). Публичный адрес VPS не публикуется в этом репозитории из соображений безопасности живого Telegram-аккаунта — доступ предоставляется напрямую заказчику и проверяющим через приватный канал сдачи задания. Актуальный статус и инструкции: [`docs/customer-handover.md`](docs/customer-handover.md).
 - **Документация:** [hosted docs site](https://aye-basota.github.io/AI-sales-manager/)
 - **Handover / статус передачи проекта:** [`docs/customer-handover.md`](docs/customer-handover.md)
 - **Как контрибьютить:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
