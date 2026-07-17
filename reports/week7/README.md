@@ -97,5 +97,5 @@ These files are required for the full Week 7 submission index, but their content
 
 | Contributor / scope | Evidence |
 |---|---|
-| Sprint 5 follow-up fixes, tests, release/handover prep | This PR against issue [#55](https://github.com/Aye-basota/AI-sales-manager/issues/55), with code/test/docs changes listed above |
+| Sprint 5 follow-up fixes, tests, release/handover prep | PR [#96](https://github.com/Aye-basota/AI-sales-manager/pull/96), closing prompt/response-quality follow-up [#92](https://github.com/Aye-basota/AI-sales-manager/issues/92), referencing lead-discovery follow-up [#90](https://github.com/Aye-basota/AI-sales-manager/issues/90), and preserving the Week 6 prompt-versioning trace to [#55](https://github.com/Aye-basota/AI-sales-manager/issues/55). |
 | Week 6 evidence baseline | [`reports/week6/README.md`](../week6/README.md) and PR [#95](https://github.com/Aye-basota/AI-sales-manager/pull/95) |
