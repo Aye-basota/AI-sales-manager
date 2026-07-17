@@ -79,6 +79,12 @@ This is the core **MVP v2 conversational path** (improved prompts, natural pacin
 
 The sequence follows one inbound message from Telegram delivery through persistence, intent-driven state update, LLM generation with guardrail retry, humanized send, and optional operator notification — involving Inbound Listener, Conversation Service, State Machine, LLM Engine, Guardrails, Humanizer, SellerClient, and Notification Service.
 
+### LLM Dialogue Context
+
+For replies and follow-ups, the LLM receives the system prompt, recent conversation turns as separate `user`/`assistant` chat messages, and one compact task prompt for the current response. This keeps the latest lead message visible as the active task while preserving dialogue order for the model. Initial campaign messages use only verified contact/script context; if an Admin Bot preview was approved for that queued contact, the scheduler sends that exact preview instead of making a second LLM call.
+
+The runtime logs include the LLM route, stage, intent, number of history messages, response source (`llm`, approved preview, deterministic fallback, or safety fallback), model, token count, final text length, and Telegram chunk count. These logs are the first place to inspect when diagnosing generic, off-context, or unexpectedly regenerated messages.
+
 ---
 
 ## Deployment Diagram (Deployment View)

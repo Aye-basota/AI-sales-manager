@@ -3,7 +3,7 @@
 ## Overview
 
 The project uses **pytest** for all automated testing. Tests are organized by module in `tests/`.
-As of the latest Week 6 QA audit, the suite contains **974 tests**. Application code coverage is approximately **98%** for `app/` in the local audit environment.
+As of the latest Week 7 Sprint 5 QA audit, the suite contains **991 tests**. Application code coverage is approximately **99%** for `app/` in the latest full local audit environment.
 
 Run the full suite:
 ```bash
@@ -37,6 +37,7 @@ Integration tests verify interactions between components using `AsyncMock` for e
 
 | File | Components covered |
 |---|---|
+| [`tests/test_core_follow_up_quality.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_follow_up_quality.py) | Follow-up quality gate ↔ safe fallback text |
 | [`tests/test_core_scheduler.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_core_scheduler.py) | Scheduler ↔ Account Manager ↔ LLM Engine ↔ DB |
 | [`tests/test_bots_inbound_listener.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_bots_inbound_listener.py) | Inbound Listener ↔ Conversation Service ↔ LLM Engine |
 | [`tests/test_bots_seller_client.py`](https://github.com/Aye-basota/AI-sales-manager/blob/main/tests/test_bots_seller_client.py) | SellerClient ↔ Pyrogram (mocked) |

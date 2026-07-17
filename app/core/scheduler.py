@@ -226,13 +226,14 @@ def should_send_to_contact(
     """Return True if a message may be sent to the contact now.
 
     *contact_status* is the campaign-contact status (e.g. ``pending``,
-    ``sent``, ``follow_up_sent``).
+    ``sent``, ``initial_sent``). ``follow_up_sent`` is intentionally not
+    considered ready again; it waits for the auto-close job instead.
     *last_sent_at* is the timestamp of the most recent outbound message.
     """
     if contact_status == "pending":
         return True
 
-    if contact_status in ("sent", "initial_sent", "follow_up_sent"):
+    if contact_status in ("sent", "initial_sent"):
         if last_sent_at is None:
             return True
         delay = timedelta(hours=follow_up_delay_hours)
@@ -285,6 +286,26 @@ class _HasScriptAttrs(Protocol):
     working_hours_start: time
     working_hours_end: time
     timezone: str
+
+
+FOLLOW_UP_ALLOWED_STATES = {"cold", "warm"}
+
+
+def _should_send_follow_up(campaign_contact, conversation) -> bool:
+    """Return True only for a single no-reply follow-up after the first message."""
+    if getattr(campaign_contact, "status", None) != "initial_sent":
+        return False
+    if getattr(campaign_contact, "reply_received_at", None) is not None:
+        return False
+    if getattr(campaign_contact, "follow_up_sent_at", None) is not None:
+        return False
+    if getattr(conversation, "was_escalated", False):
+        return False
+    if getattr(conversation, "operator_status", None):
+        return False
+
+    state = getattr(conversation, "current_state", None) or "cold"
+    return state in FOLLOW_UP_ALLOWED_STATES
 
 
 def next_contact_to_process(
@@ -465,12 +486,45 @@ async def process_campaigns(db_session: AsyncSession) -> None:
             )
             conversation = conv_result.scalar_one_or_none()
             if conversation is None:
+                if cc.status != "pending":
+                    logger.warning(
+                        "Skipping follow-up for contact %s: no conversation context",
+                        contact.id,
+                    )
+                    continue
                 conversation = Conversation(
                     contact_id=contact.id,
                     campaign_id=campaign_id,
                     current_state="cold",
                 )
                 db_session.add(conversation)
+            elif cc.status == "pending" and (
+                getattr(conversation, "last_message_at", None) is not None
+                or (conversation.current_state or "cold") != "cold"
+            ):
+                logger.info(
+                    "Skipping initial message for contact %s: conversation already started",
+                    contact.id,
+                )
+                cc.status = "replied"
+                if getattr(cc, "reply_received_at", None) is None:
+                    cc.reply_received_at = datetime.now(timezone.utc)
+                await db_session.commit()
+                continue
+            elif cc.status == "initial_sent" and not _should_send_follow_up(
+                cc, conversation
+            ):
+                logger.info(
+                    "Skipping follow-up for contact %s: status=%s, state=%s, "
+                    "reply_received=%s, follow_up_sent=%s, operator_status=%s",
+                    contact.id,
+                    cc.status,
+                    getattr(conversation, "current_state", None),
+                    getattr(cc, "reply_received_at", None) is not None,
+                    getattr(cc, "follow_up_sent_at", None) is not None,
+                    getattr(conversation, "operator_status", None),
+                )
+                continue
             elif conversation.current_state in ("hot", "meeting_booked", "closed"):
                 logger.debug(
                     "Skipping contact %s: conversation already in terminal state %s",
@@ -675,72 +729,112 @@ async def send_initial_message(
     from app.core.state_machine import transition
     from app.models.conversation import Message
 
-    from app.llm.engine import LLMEngine
-
-    engine = LLMEngine()
-
     conversation_stage = get_first_stage(script)
     conversation.conversation_stage = conversation_stage
 
-    system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
-    user_prompt = build_initial_user_prompt(
-        script, contact, conversation_stage=conversation_stage
-    )
-
-    max_tokens = None
-    if hasattr(script, "max_first_message_length") and script.max_first_message_length:
-        max_tokens = int(script.max_first_message_length * 1.5)
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    try:
-        response = await engine.generate_response_with_guardrails(
-            messages, [], max_tokens=max_tokens
+    raw_preview_text = getattr(campaign_contact, "preview_message", None)
+    preview_text = raw_preview_text.strip() if isinstance(raw_preview_text, str) else ""
+    if preview_text:
+        text = preview_text
+        response = {"text": text, "model": "preview", "tokens_used": 0}
+        response_source = "approved_preview"
+        logger.info(
+            "Initial message route conversation=%s contact=%s stage=%s source=%s",
+            conversation.id,
+            contact.id,
+            conversation_stage,
+            response_source,
         )
-    except Exception as exc:
-        logger.exception("LLM generation failed for initial message: %s", exc)
-        raise
+    else:
+        from app.llm.engine import LLMEngine
 
-    text = response.get("text", "")
-    if not text:
-        raise RuntimeError("LLM returned empty text")
-    if response.get("model") == "fallback":
-        text = build_safe_initial_fallback(contact, script)
-        response = {"text": text, "model": "fallback", "tokens_used": 0}
+        engine = LLMEngine()
 
-    if needs_initial_message_retry(text):
-        retry_messages = [
-            *messages,
-            {"role": "user", "content": build_initial_message_retry_prompt(text)},
+        system_prompt = build_system_prompt(script, conversation_stage=conversation_stage)
+        user_prompt = build_initial_user_prompt(
+            script, contact, conversation_stage=conversation_stage
+        )
+
+        max_tokens = None
+        if hasattr(script, "max_first_message_length") and script.max_first_message_length:
+            max_tokens = int(script.max_first_message_length * 1.5)
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
         ]
+        logger.info(
+            "Initial LLM route conversation=%s contact=%s stage=%s messages=%d max_tokens=%s",
+            conversation.id,
+            contact.id,
+            conversation_stage,
+            len(messages),
+            max_tokens,
+        )
+
         try:
-            retry_response = await engine.generate_response_with_guardrails(
-                retry_messages, [], max_tokens=max_tokens
+            response = await engine.generate_response_with_guardrails(
+                messages, [], max_tokens=max_tokens
             )
-            retry_text = retry_response.get("text", "")
-            if retry_text and not needs_initial_message_retry(retry_text):
-                response = retry_response
-                text = retry_text
-            else:
-                logger.warning(
-                    "Initial message quality gate used safe fallback for contact %s",
-                    contact.id,
-                )
-                text = build_safe_initial_fallback(contact, script)
-                response = {"text": text, "model": "fallback", "tokens_used": 0}
-        except Exception:
-            logger.exception("Initial message quality retry failed")
+        except Exception as exc:
+            logger.exception("LLM generation failed for initial message: %s", exc)
+            raise
+
+        text = response.get("text", "")
+        if not text:
+            raise RuntimeError("LLM returned empty text")
+        response_source = "llm"
+        if response.get("model") == "fallback":
             text = build_safe_initial_fallback(contact, script)
             response = {"text": text, "model": "fallback", "tokens_used": 0}
+            response_source = "guardrail_or_provider_fallback"
+
+        if needs_initial_message_retry(text):
+            response_source = "quality_retry"
+            retry_messages = [
+                *messages,
+                {"role": "user", "content": build_initial_message_retry_prompt(text)},
+            ]
+            try:
+                retry_response = await engine.generate_response_with_guardrails(
+                    retry_messages, [], max_tokens=max_tokens
+                )
+                retry_text = retry_response.get("text", "")
+                if retry_text and not needs_initial_message_retry(retry_text):
+                    response = retry_response
+                    text = retry_text
+                else:
+                    logger.warning(
+                        "Initial message quality gate used safe fallback for contact %s",
+                        contact.id,
+                    )
+                    text = build_safe_initial_fallback(contact, script)
+                    response = {"text": text, "model": "fallback", "tokens_used": 0}
+                    response_source = "quality_safe_fallback"
+            except Exception:
+                logger.exception("Initial message quality retry failed")
+                text = build_safe_initial_fallback(contact, script)
+                response = {"text": text, "model": "fallback", "tokens_used": 0}
+                response_source = "quality_safe_fallback"
 
     text = maybe_self_correct(text)
     text = add_casual_markers(text)
     text = maybe_double_take(text, getattr(contact, "city", None))
 
-    chunks = split_message_into_chunks(text)
+    chunks = split_message_into_chunks(text, burst_rate=0.14)
+    logger.info(
+        (
+            "Initial message prepared conversation=%s contact=%s source=%s "
+            "model=%s tokens=%s chars=%d chunks=%d"
+        ),
+        conversation.id,
+        contact.id,
+        response_source,
+        response.get("model"),
+        response.get("tokens_used"),
+        len(text),
+        len(chunks),
+    )
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
     chunk_delays = [
@@ -830,16 +924,22 @@ async def send_follow_up_message(
 ) -> None:
     """Generate, guardrail, humanise and send a follow-up outbound message."""
 
-    from app.llm.prompts import build_system_prompt, build_follow_up_user_prompt
+    from app.llm.prompts import (
+        build_chat_history_messages,
+        build_system_prompt,
+        build_follow_up_user_prompt,
+    )
     from app.core.humanizer import (
         calculate_typing_delay,
         calculate_thinking_delay,
-        maybe_self_correct,
-        add_casual_markers,
-        maybe_double_take,
         split_message_into_chunks,
     )
     from app.core.funnel import get_max_length_for_stage
+    from app.core.follow_up_quality import (
+        build_follow_up_retry_prompt,
+        build_safe_follow_up_fallback,
+        needs_follow_up_retry,
+    )
 
     from app.core.account_manager import mark_message_sent
     from app.core.state_machine import transition
@@ -869,6 +969,8 @@ async def send_follow_up_message(
             last_agent_msg = msg["content"]
             break
 
+    chat_history_messages = build_chat_history_messages(history, limit=8)
+
     user_prompt = build_follow_up_user_prompt(
         script=script,
         conversation_history=history,
@@ -882,8 +984,21 @@ async def send_follow_up_message(
 
     messages = [
         {"role": "system", "content": system_prompt},
+        *chat_history_messages,
         {"role": "user", "content": user_prompt},
     ]
+    logger.info(
+        (
+            "Follow-up LLM route conversation=%s contact=%s stage=%s "
+            "history_messages=%d facts=%d max_tokens=%s"
+        ),
+        conversation.id,
+        contact.id,
+        conversation_stage,
+        len(chat_history_messages),
+        len(context["facts"] or {}),
+        max_tokens,
+    )
 
     try:
         response = await engine.generate_response_with_guardrails(
@@ -899,11 +1014,62 @@ async def send_follow_up_message(
     if not text:
         raise RuntimeError("LLM returned empty text")
 
-    text = maybe_self_correct(text)
-    text = add_casual_markers(text)
-    text = maybe_double_take(text, getattr(contact, "city", None))
+    response_source = "llm"
+    if response.get("model") == "fallback":
+        text = build_safe_follow_up_fallback(contact, script)
+        response = {"text": text, "model": "fallback", "tokens_used": 0}
+        response_source = "guardrail_or_provider_fallback"
+    elif needs_follow_up_retry(text, last_agent_msg):
+        response_source = "quality_retry"
+        retry_messages = [
+            *messages,
+            {
+                "role": "user",
+                "content": build_follow_up_retry_prompt(text, last_agent_msg),
+            },
+        ]
+        try:
+            retry_response = await engine.generate_response_with_guardrails(
+                retry_messages,
+                [
+                    msg.content
+                    for msg in context["messages"]
+                    if msg.direction == "outbound"
+                ],
+                max_tokens=max_tokens,
+            )
+            retry_text = retry_response.get("text", "")
+            if retry_text and not needs_follow_up_retry(retry_text, last_agent_msg):
+                response = retry_response
+                text = retry_text
+            else:
+                logger.warning(
+                    "Follow-up quality gate used safe fallback for contact %s",
+                    contact.id,
+                )
+                text = build_safe_follow_up_fallback(contact, script)
+                response = {"text": text, "model": "fallback", "tokens_used": 0}
+                response_source = "quality_safe_fallback"
+        except Exception:
+            logger.exception("Follow-up quality retry failed")
+            text = build_safe_follow_up_fallback(contact, script)
+            response = {"text": text, "model": "fallback", "tokens_used": 0}
+            response_source = "quality_safe_fallback"
 
-    chunks = split_message_into_chunks(text)
+    chunks = split_message_into_chunks(text, burst_rate=0.18)
+    logger.info(
+        (
+            "Follow-up prepared conversation=%s contact=%s source=%s "
+            "model=%s tokens=%s chars=%d chunks=%d"
+        ),
+        conversation.id,
+        contact.id,
+        response_source,
+        response.get("model"),
+        response.get("tokens_used"),
+        len(text),
+        len(chunks),
+    )
     base_typing_delay = calculate_typing_delay(text)
     thinking_delay = calculate_thinking_delay()
     chunk_delays = [

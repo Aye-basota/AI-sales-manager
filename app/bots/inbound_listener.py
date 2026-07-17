@@ -36,7 +36,11 @@ from app.models.script import Script
 from app.bots.seller_client import SellerClient
 from app.llm.engine import LLMEngine
 from app.llm.intent_classifier import classify_intent
-from app.llm.prompts import build_system_prompt, build_reply_user_prompt
+from app.llm.prompts import (
+    build_chat_history_messages,
+    build_system_prompt,
+    build_reply_user_prompt,
+)
 from app.llm.context import extract_offer_summary
 from app.core.humanizer import (
     calculate_typing_delay,
@@ -114,6 +118,29 @@ HESITATION_PATTERNS = (
     r"\bнадо\s+подумать\b",
     r"\bподумаю\b",
 )
+SUSPICION_PATTERNS = (
+    r"подозрительн",
+    r"\bподозр",
+    r"\bскам\b",
+    r"\bразвод\b",
+    r"\bмутн",
+    r"звучит\s+странн",
+    r"странн\w*[^.\n!?]{0,80}обща",
+)
+MEETING_CONFUSION_PATTERNS = (
+    r"встреч\w*\?\s*с\s+кем",
+    r"встреч\w*\?[^.\n]{0,100}странн",
+    r"встреч\w*[^.\n!?]{0,80}(?:странн|с\s+кем|зачем|цен|прайс|стоим)",
+    r"(?:странн|зачем|с\s+кем)[^.\n!?]{0,80}встреч",
+    r"(?:узнать|уточнить|сверить)[^.\n!?]{0,80}(?:цен|прайс|стоим)[^.\n!?]{0,80}встреч",
+    r"повар\w*[^.\n!?]{0,80}ресторан",
+    r"ресторан\w*[^.\n!?]{0,80}повар",
+)
+PRICE_HANDOFF_PATTERNS = (
+    r"с\s+кем[^.\n!?]{0,80}(?:его\s+)?свер",
+    r"с\s+кем[^.\n!?]{0,80}(?:прайс|цен|стоим)",
+    r"кто[^.\n!?]{0,80}(?:прайс|цен|стоим)",
+)
 RECONSIDER_POSITIVE_PATTERNS = (
     r"\bв\s*принципе\s+можно\b",
     r"\bвпринципе\s+можно\b",
@@ -153,7 +180,7 @@ INTEGRATION_PATTERNS = (
 )
 CASE_PATTERNS = (
     r"кейс",
-    r"пример",
+    r"пример\w*[^.\n!?]{0,60}(?:работ|кейс|результат|проект)",
     r"результат",
 )
 CONTACT_SOURCE_PATTERNS = (
@@ -173,7 +200,7 @@ SHORT_POSITIVE_PATTERNS = (
 MATERIALS_REQUEST_PATTERNS = (
     r"пришл",
     r"материал",
-    r"пример",
+    r"пример\w*[^.\n!?]{0,60}(?:фото|работ|проект|каталог|презентац)",
     r"фото",
     r"картинк",
     r"каталог",
@@ -188,13 +215,6 @@ CREATIVE_TERRITORY_PATTERNS = (
     r"брендбук",
     r"логотип",
     r"визуал",
-    r"цвет",
-    r"шрифт",
-    r"стиль",
-    r"атмосфер",
-    r"аудитор",
-    r"ценност",
-    r"вариант",
 )
 CONTEXT_CONFUSION_PATTERNS = (
     r"что\s+ещ[её]\s+за\s+сценар",
@@ -503,6 +523,27 @@ def _build_inbound_fallback_text(
             "Если актуально, могу коротко подсказать условия или следующий шаг."
         )
 
+    if _matches_any(MEETING_CONFUSION_PATTERNS, lower):
+        return (
+            "Да, согласен, это прозвучало странно. Чтобы просто узнать цену, встреча не нужна. "
+            "Я имел в виду сверить актуальный прайс или формат услуги, а не звать вас на встречу; "
+            "точную сумму без прайса лучше не выдумывать."
+        )
+
+    if _matches_any(PRICE_HANDOFF_PATTERNS, lower):
+        return (
+            "Вы правы, я криво сформулировал. Не встреча нужна, а актуальный прайс. "
+            "Сверять стоит с человеком, у которого есть текущие цены; я в переписке могу "
+            "зафиксировать, какая услуга интересует, но не буду придумывать сумму."
+        )
+
+    if _matches_any(SUSPICION_PATTERNS, lower):
+        return (
+            "Да, понимаю, с холодного сообщения это может выглядеть подозрительно. "
+            f"Коротко: я про {offer}. Без давления: могу ответить на конкретный вопрос "
+            "по условиям, а если неактуально — остановлюсь."
+        )
+
     if _matches_any(TECH_SUPPORT_PATTERNS, lower):
         return (
             "Похоже, у вас сейчас рабочий аврал. По ошибке сервиса не буду притворяться "
@@ -537,9 +578,9 @@ def _build_inbound_fallback_text(
                 "после этого можно посчитать ближе к делу."
             )
         return (
-            "По цене сориентирую честно: точной вилки в текущем контексте у меня нет, "
-            "и не хочу назвать неверную цифру. По базовой услуге лучше сверить прайс "
-            "или формат, а дальше уже можно спокойно посчитать."
+            "По цене честно: актуального прайса в этой переписке у меня нет, поэтому "
+            "цифру придумывать не буду. Для нормального расчета нужно сверить конкретную "
+            "услугу или формат, а не назначать встречу ради цены."
         )
 
     if _matches_any(INTEGRATION_PATTERNS, lower):
@@ -579,13 +620,13 @@ def _build_inbound_fallback_text(
         return (
             "Я не знаю вашу концепцию заранее и не буду придумывать дизайн на ходу. "
             "Могу зафиксировать вводные для специалиста: стиль, аудиторию и ограничения по задаче. "
-            "Если актуально, лучше коротко сверить это на созвоне."
+            "Если актуально, лучше передать это человеку, который отвечает за такую конкретику."
         )
 
     if _matches_any(SHORT_POSITIVE_PATTERNS, lower):
         return (
             f"Отлично. Речь про {offer}. "
-            "Могу коротко рассказать условия и как удобнее выбрать время."
+            "Могу коротко рассказать формат и какие условия важно уточнить сначала."
         )
 
     if _matches_any(ENGLISH_REQUEST_PATTERNS, lower):
@@ -621,6 +662,9 @@ def _needs_deterministic_fallback(lead_text: str) -> bool:
         + SECURITY_PATTERNS
         + WRONG_PERSON_PATTERNS
         + PAUSE_PATTERNS
+        + SUSPICION_PATTERNS
+        + MEETING_CONFUSION_PATTERNS
+        + PRICE_HANDOFF_PATTERNS
         + RECONSIDER_POSITIVE_PATTERNS
         + SCHEDULING_PATTERNS
         + PRICING_PATTERNS
@@ -882,15 +926,9 @@ async def _process_inbound_message(
             # 4. Save inbound message
             await add_message(db, conversation.id, "inbound", text, message_type="text")
 
-            if campaign.status not in ("running",):
-                logger.info(
-                    "Campaign %s is not running (%s), skipping automated reply",
-                    campaign.id,
-                    campaign.status,
-                )
-                return
-
-            # 4.5 Update campaign contact status and analytics only for running campaigns
+            # 4.5 Mark the campaign contact as replied before any campaign-status
+            # gate. Otherwise a paused/draft campaign can later send an initial
+            # greeting into an already-started conversation.
             cc_result = await db.execute(
                 select(CampaignContact)
                 .where(CampaignContact.contact_id == contact.id)
@@ -902,10 +940,21 @@ async def _process_inbound_message(
                 "initial_sent",
                 "follow_up_sent",
             ):
+                reply_was_new = campaign_contact.reply_received_at is None
                 campaign_contact.status = "replied"
-                campaign_contact.reply_received_at = datetime.now(timezone.utc)
-                campaign.replied_count = (campaign.replied_count or 0) + 1
+                if reply_was_new:
+                    campaign_contact.reply_received_at = datetime.now(timezone.utc)
+                if campaign.status == "running" and reply_was_new:
+                    campaign.replied_count = (campaign.replied_count or 0) + 1
                 await db.commit()
+
+            if campaign.status not in ("running",):
+                logger.info(
+                    "Campaign %s is not running (%s), skipping automated reply",
+                    campaign.id,
+                    campaign.status,
+                )
+                return
 
             # 5. Mark message as read after a short human-like delay
             user_id = int(contact.telegram_user_id)
@@ -1085,6 +1134,18 @@ async def _process_inbound_message(
                     last_agent_msg = msg["content"]
                     break
 
+            history_for_chat = list(history)
+            if (
+                history_for_chat
+                and history_for_chat[-1]["role"] == "lead"
+                and history_for_chat[-1]["content"] == text
+            ):
+                history_for_chat = history_for_chat[:-1]
+            chat_history_messages = build_chat_history_messages(
+                history_for_chat,
+                limit=8,
+            )
+
             user_prompt = build_reply_user_prompt(
                 script=script,
                 conversation_history=history,
@@ -1096,6 +1157,7 @@ async def _process_inbound_message(
 
             messages = [
                 {"role": "system", "content": system_prompt},
+                *chat_history_messages,
                 {"role": "user", "content": user_prompt},
             ]
 
@@ -1113,12 +1175,29 @@ async def _process_inbound_message(
             max_length = get_max_length_for_stage(script, conversation_stage)
             max_tokens = int(max_length * 1.5) if max_length else None
 
-            if _needs_deterministic_fallback(text):
+            use_deterministic_fallback = _needs_deterministic_fallback(text)
+            logger.info(
+                (
+                    "Inbound reply route conversation=%s stage=%s intent=%s "
+                    "effective_intent=%s route=%s history_messages=%d facts=%d"
+                ),
+                conversation.id,
+                conversation_stage,
+                intent,
+                effective_intent,
+                "deterministic_fallback" if use_deterministic_fallback else "llm",
+                len(chat_history_messages),
+                len(context["facts"] or {}),
+            )
+
+            response_source = "llm"
+            if use_deterministic_fallback:
                 response = {
                     "text": _build_inbound_fallback_text(text, script, history=history),
                     "model": "fallback",
                     "tokens_used": 0,
                 }
+                response_source = "deterministic_fallback"
             else:
                 try:
                     response = await engine.generate_response_with_guardrails(
@@ -1135,11 +1214,25 @@ async def _process_inbound_message(
 
             # If guardrails blocked even the retry, use fallback text
             if not response_text or response.get("model") == "fallback":
+                if response_source == "llm":
+                    response_source = "guardrail_or_provider_fallback"
                 response_text = _build_inbound_fallback_text(text, script, history=history)
             response_text = _polish_inbound_response(response_text)
 
             # 11. Humanizer delays and chunking
-            chunks = split_message_into_chunks(response_text)
+            chunks = split_message_into_chunks(response_text, burst_rate=0.24)
+            logger.info(
+                (
+                    "Inbound reply prepared conversation=%s source=%s model=%s "
+                    "tokens=%s chars=%d chunks=%d"
+                ),
+                conversation.id,
+                response_source,
+                response.get("model"),
+                response.get("tokens_used"),
+                len(response_text),
+                len(chunks),
+            )
             base_typing_delay = calculate_typing_delay(response_text)
             thinking_delay = calculate_thinking_delay()
             chunk_delays = [

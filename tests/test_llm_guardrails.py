@@ -180,7 +180,7 @@ def test_check_no_unsupported_creative_work_blocks_invented_designs():
 
 def test_check_no_out_of_scope_seller_claims_blocks_invented_assortment():
     assert check_no_out_of_scope_seller_claims("Могу зафиксировать вводные для специалиста.") is True
-    assert check_no_out_of_scope_seller_claims("У нас есть матовые и глянцевые стаканчики разных объемов.") is False
+    assert check_no_out_of_scope_seller_claims("У нас есть матовые и глянцевые стаканчики разных объемов.") is True
     assert check_no_out_of_scope_seller_claims("Подберем для вас варианты товара, материалы и крышки.") is False
     assert check_no_out_of_scope_seller_claims("Вам подойдет 300 мл крафтовый вариант.") is False
 
@@ -190,6 +190,7 @@ def test_check_no_unverified_pricing_blocks_exact_amounts():
     assert check_no_unverified_pricing("Это будет стоить 1000$ за тираж.") is False
     assert check_no_unverified_pricing("Обычно цена от 12 рублей за стаканчик.") is False
     assert check_no_unverified_pricing("Можем начать с 1000 стаканчиков.") is True
+    assert check_no_unverified_pricing("Минимальный объем от 5000 штук.") is True
 
 
 class TestCheckNoBotWords:

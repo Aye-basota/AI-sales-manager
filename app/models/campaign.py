@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -37,3 +37,4 @@ class CampaignContact(Base):
     last_message_at = Column(DateTime(timezone=True))
     message_count = Column(Integer, default=0)
     queue_position = Column(Integer, default=0)
+    preview_message = Column(Text)

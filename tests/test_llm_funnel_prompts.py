@@ -45,7 +45,7 @@ class TestBuildSystemPrompt:
             sales_funnel=None,
         )
         prompt = build_system_prompt(script, conversation_stage="trust")
-        assert "ТЕКУЩИЙ ЭТАП ДИАЛОГА: trust" in prompt
+        assert "Этап: trust" in prompt
         assert "Запрещено предлагать созвон" in prompt
 
     def test_cta_stage_allows_cta(self):
@@ -79,7 +79,8 @@ class TestBuildInitialUserPrompt:
             industry=None,
         )
         prompt = build_initial_user_prompt(script, contact, "trust")
-        assert "ПЕРВОЕ сообщение" in prompt
+        assert "первое сообщение" in prompt
+        assert "Этап: trust" in prompt
         assert "Alice" in prompt
         assert "Acme" in prompt
         assert "CEO" in prompt
@@ -100,8 +101,9 @@ class TestBuildReplyUserPrompt:
             lead_message="Расскажите",
             conversation_stage="qualification",
         )
-        assert "Текущий этап диалога: qualification" in prompt
+        assert "Этап: qualification" in prompt
         assert "НЕЛЬЗЯ предлагать созвон" in prompt
+        assert "Последнее сообщение клиента" in prompt
 
     def test_reply_prompt_discourages_robotic_templates(self):
         script = MagicMock(
@@ -118,8 +120,9 @@ class TestBuildReplyUserPrompt:
             conversation_stage="engagement",
         )
 
-        assert "Не строй ответ по шаблону из трех блоков" in prompt
-        assert "Не начинай каждый ответ одинаково" in prompt
-        assert "Не придумывай цены" in prompt
-        assert "Не придумывай ассортимент" in prompt
-        assert "что лучше взять" in prompt
+        assert "Ответь коротко и прямо" in prompt
+        assert "Не повторяй предыдущую реплику" in prompt
+        assert "Не начинай с приветствия" in prompt
+        assert "клиент спрашивает цену" in prompt
+        assert "не хочешь придумывать" in prompt
+        assert "сверить конкретику" in prompt

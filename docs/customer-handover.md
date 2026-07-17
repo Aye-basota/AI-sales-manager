@@ -2,7 +2,11 @@
 
 This page describes the **current actual** handover state of AI Sales Manager. It is updated during Week 6 and Week 7 of Assignment 6 as the transition progresses — it does not describe an aspirational future state.
 
-**Status as of this update:** Sprint 4 (Week 6) trial-readiness review was conducted on 2026-07-12. The product has **not** yet been finally transitioned to the customer; Week 6 produced a trial / handover-candidate state and follow-up items for Week 7.
+**Status as of this update:** Sprint 5 (Week 7) follow-up maintenance has produced the final Assignment 6 `MVP v3` release candidate. The final public access arrangement for course evaluation is the Telegram Admin Bot at [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment, plus the reproducible Docker setup in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
+
+**Reached handover level:** `Ready for independent use`.
+
+**Customer-confirmation status:** `Not yet accepted` until the Week 7 written confirmation/request evidence is collected in the private submission channel. The stronger levels `Independently used by customer` and `Deployed or operated on customer side` are not claimed in the public repository because customer-side operation has not been publicly evidenced.
 
 ---
 
@@ -24,12 +28,12 @@ For step-by-step setup instructions, use [`LAUNCH_GUIDE.md`](https://github.com/
 |---|---|
 | **Source code repository** | Public on GitHub at [`Aye-basota/AI-sales-manager`](https://github.com/Aye-basota/AI-sales-manager), owned by the team. **Not yet transferred** to a customer-owned account or organization. The customer can read, clone, and fork it like any public visitor, but does not currently have write or admin access. |
 | **Hosted documentation site** | GitHub Pages at [aye-basota.github.io/AI-sales-manager](https://aye-basota.github.io/AI-sales-manager/), built from this repository. Public and readable by anyone; no separate account or transfer is needed to use it. |
-| **Running product instance** | Week 6 trial access was demonstrated through the Telegram Admin Bot / live bot instance: [@salesmanager228_bot](https://t.me/salesmanager228_bot). Nothing has been verified as deployed to infrastructure owned by the customer. |
+| **Running product instance** | Final `MVP v3` access for customer/TA evaluation is the Telegram Admin Bot / live bot instance: [@salesmanager228_bot](https://t.me/salesmanager228_bot). The team keeps this access artifact available until grading is complete. Nothing is claimed as deployed to infrastructure owned by the customer. |
 | **Telegram seller account** | The live Telegram account used to send messages belongs to whoever supplies the phone number during setup (currently a team-controlled test number). A production handover requires the customer to either supply their own seller phone number or explicitly authorize continued use of the team's number. |
 | **LLM provider account (OpenRouter / DashScope)** | Team-controlled test API keys are used during development. No customer-owned LLM API key has been provisioned yet. |
 | **Admin Telegram Bot** | Registered via BotFather under a team-controlled bot token. This is the main Week 6 product entry point for customer interaction. It has not yet been re-registered under a customer-controlled bot account. |
 
-**Summary:** as of the Week 6 trial-readiness review, the team still retains operational control of the repository, deployment, and external service accounts. The customer saw a live trial and asked to test the bot independently, but customer-side deployment or operation has not been publicly evidenced yet.
+**Summary:** for final `MVP v3`, the team still retains operational control of the GitHub repository, live bot deployment, and external service accounts. The transition level reached is therefore **Ready for independent use**, not customer-side operation. A customer can use the public bot access path and can reproduce the deployment from the repository, but ownership transfer of accounts/infrastructure has not been publicly evidenced.
 
 ---
 
@@ -55,11 +59,11 @@ None of the above are shared secrets between the team and the customer today —
 ## Deployment and Access
 
 - **Local / demo deployment:** `docker-compose up -d --build` followed by `docker-compose exec api alembic upgrade head`. Full walkthrough in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
-- **Week 6 trial entry point:** Telegram Admin Bot backed by a team-controlled live instance: [@salesmanager228_bot](https://t.me/salesmanager228_bot).
+- **Final MVP v3 entry point:** Telegram Admin Bot backed by a team-controlled live instance: [@salesmanager228_bot](https://t.me/salesmanager228_bot).
 - **Temporary public web/API access:** the team can expose a running API/site instance publicly using `docker-compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d`, which opens a [localtunnel](https://theboroer.github.io/localtunnel-www/) HTTPS URL. This URL is **ephemeral** and must be recorded separately for each trial if used.
-- **Persistent production hosting:** earlier Week 5 UAT evidence says the product was served independently of a developer's local machine. Week 6 does not add evidence that the product is deployed or operated on customer-owned infrastructure, so the final Week 7 handover must clarify whether the final access path is a VPS, a team-controlled bot instance, localtunnel, or a customer-controlled deployment.
+- **Persistent production hosting:** the final public handover level uses a team-operated bot/deployment for course evaluation and documented Docker-based self-hosting for reproduction. Customer-owned deployment is intentionally not claimed without private Week 7 evidence.
 - **Recovery:** there is currently no automated backup or restore procedure for the PostgreSQL data or Redis state. Recovery today means re-running `alembic upgrade head` against a fresh database and re-adding Telegram accounts and scripts; there is no documented disaster-recovery runbook yet.
-- **Verification after setup:** `GET /health` returns `status`, `db`, and `scheduler` — use it to confirm the API, database, and background scheduler all came up correctly. The latest local Week 6 audit ran `pytest tests/ -v --cov=app --cov-report=term-missing` with 974 tests passing.
+- **Verification after setup:** `GET /health` returns `status`, `db`, and `scheduler` — use it to confirm the API, database, and background scheduler all came up correctly. The latest Sprint 5 local audit ran the maintained CI test command with 991 tests passing and approximately 99% `app/` coverage.
 
 ---
 
@@ -90,22 +94,24 @@ None of the above are shared secrets between the team and the customer today —
 
 ## Transition Status
 
-Using the terminology defined for Assignment 6 Part 8, the team has **not yet reached a final handover-level classification**. Week 6 produced trial-readiness evidence only. As of this update:
+Using the terminology defined for Assignment 6 Part 8:
 
-- The product is **not yet** independently deployed or operated on the customer's own infrastructure or accounts.
-- The customer has asked to test independently, but public evidence of independent customer use has not yet been recorded.
-- Written customer confirmation of handover sufficiency has not yet been recorded in the repository; it belongs in the private Week 7 evidence when collected.
+- **Reached handover level:** `Ready for independent use`.
+- **Customer-confirmation status:** `Not yet accepted` until Week 7 written confirmation evidence is collected privately.
+- **Final product access artifact:** [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment.
+- **Repository and documentation access:** public GitHub repository plus hosted documentation site.
+- **Customer-side operation:** not claimed in the public evidence. The customer can reproduce the system using the Docker setup, but customer-owned infrastructure/account transfer has not been publicly evidenced.
 
-This section will be updated with the actual reached level (`Ready for independent use`, `Independently used by customer`, or `Deployed or operated on customer side`) and the customer-confirmation status (`Accepted`, `Accepted with follow-up items`, or `Not yet accepted`) once Week 7 confirmation evidence exists.
+This means the product is ready for evaluation and guided independent use, while the remaining transition blocker is evidence/approval rather than a hidden code deployment claim.
 
 ---
 
 ## Is the Current Documentation Sufficient?
 
-**Partially sufficient for Week 6 trial use; not yet sufficient for final independent operation.** The documentation set (`README.md`, `LAUNCH_GUIDE.md`, this page) is sufficient for a technically comfortable person to run the product locally end-to-end, but it assumes team support is available for:
+**Sufficient for the reached handover level (`Ready for independent use`).** The documentation set (`README.md`, `LAUNCH_GUIDE.md`, this page) is sufficient for a technically comfortable person to access the team-operated bot and reproduce the product locally end-to-end, but it still assumes team support is available for:
 
 - Provisioning a persistent hosting environment (none exists yet).
 - Generating and rotating the Telegram session string (`scripts/generate_session.py` requires an interactive SMS code step).
 - Diagnosing failures without a documented recovery runbook.
 
-These gaps are the concrete follow-up items expected to be resolved or explicitly accepted between the Week 6 trial and the Week 7 final transition.
+These limitations are acceptable for the currently claimed handover level, but they should be resolved or explicitly accepted before claiming customer-side deployment or operation.
