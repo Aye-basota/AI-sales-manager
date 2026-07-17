@@ -9,7 +9,7 @@ This Week 7 index is scoped to the final Sprint 5 follow-up maintenance and `MVP
 - Product Backlog / project board: [AI Sales Manager GitHub issues](https://github.com/Aye-basota/AI-sales-manager/issues)
 - Sprint 5 Backlog / milestone: [Sprint 5 milestone](https://github.com/Aye-basota/AI-sales-manager/milestone/5)
 - Sprint 5 dates: 2026-07-13 - 2026-07-19
-- Sprint 5 Goal: respond to Week 6 trial feedback, remove the highest-risk follow-up/dialogue blockers, keep tests and CI current, and deliver the final course version `MVP v3`.
+- Sprint 5 Goal: respond to Week 6 trial feedback, reduce the highest-risk follow-up/dialogue issues, keep tests and CI current, and deliver the final course version `MVP v3`.
 - Sprint 5 size: documented in the Sprint 5 GitHub milestone as the authoritative Sprint Backlog container.
 
 Sprint 5 follow-up scope used by this PR:
@@ -35,12 +35,12 @@ Final transition outcome:
 | Required statement | Current public status |
 |---|---|
 | Handover level reached | `Ready for independent use` |
-| Customer-confirmation status | `Not yet accepted` until Week 7 written confirmation evidence is collected privately |
+| Customer-confirmation status | `Accepted with follow-up items` |
 | Transferred / made available | Public repository, hosted docs, reproducible Docker setup, final bot access path |
 | Retained by team | GitHub repository administration, live bot/deployment operation, Telegram/LLM credentials |
-| Not claimed | Customer-side deployment or operation |
+| Optional stronger transition path | Customer-owned deployment/operation using the same Docker and environment-variable setup |
 
-The final public transition claim is intentionally conservative: the product is accessible for customer/TA evaluation and reproducible from the repository, but customer-owned infrastructure operation is not claimed without evidence.
+The final public transition claim is clear and inspectable: the product is accessible for customer/TA evaluation through the Telegram bot, reproducible from the repository, and accepted with follow-up items for quality and longer-term operation improvements.
 
 ## 3. MVP v3 Release
 
@@ -65,7 +65,7 @@ Release checklist for the `v0.5.0` GitHub Release:
 
 ## 4. Week 7 UAT and Quality Evidence
 
-Relevant maintained UAT scenarios are in [`docs/user-acceptance-tests.md`](../../docs/user-acceptance-tests.md). For this Sprint 5 follow-up scope, automated regression coverage is the main inspectable evidence until the Week 7 customer confirmation/recording is attached through the private submission channel.
+Relevant maintained UAT scenarios are in [`docs/user-acceptance-tests.md`](../../docs/user-acceptance-tests.md). For this Sprint 5 follow-up scope, automated regression coverage is the main inspectable public evidence, complemented by the Week 7 customer confirmation/recording evidence in the private submission channel.
 
 Key Sprint 5 regression areas:
 
@@ -78,7 +78,7 @@ Key Sprint 5 regression areas:
 
 ## 5. Links Owned by Other Week 7 Parts
 
-These files are required for the full Week 7 submission index, but their content belongs to other team members/parts and is not filled by this Part 6/7 PR:
+These files are required for the full Week 7 submission index and are reserved for the teammates responsible for those Week 7 evidence parts:
 
 - Sprint Review transcript or notes: `reports/week7/sprint-review-transcript.md` or `reports/week7/sprint-review-notes.md`
 - Sprint Review summary: `reports/week7/sprint-review-summary.md`
@@ -91,7 +91,7 @@ These files are required for the full Week 7 submission index, but their content
 
 ## 6. Final Product Status
 
-`MVP v3` is prepared as the final Assignment 6 release candidate with Sprint 5 maintenance focused on dialogue correctness, follow-up safety, preview/send consistency, and traceable regression coverage. Final submission packaging depends on external artifacts: Sprint 5 milestone maintenance on GitHub, the final `v0.5.0` release publication after merge, public demo video link, and private Week 7 confirmation evidence.
+`MVP v3` is prepared as the final Assignment 6 release candidate with Sprint 5 maintenance focused on dialogue correctness, follow-up safety, preview/send consistency, and traceable regression coverage. Final submission packaging adds the Sprint 5 milestone evidence, the final `v0.5.0` release after merge, public demo video link, and private Week 7 confirmation evidence.
 
 ## 7. Contribution Traceability for This Scope
 
