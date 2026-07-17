@@ -3,6 +3,7 @@ import importlib
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,6 +26,7 @@ from app.core.scheduler import (
     _contact_has_chat_id,
     _increment_processed_contacts,
     _is_eligible_account,
+    _should_send_follow_up,
     _get_sync_db_url,
     normalize_timezone,
 )
@@ -48,10 +50,10 @@ class TestShouldSendToContact:
         last_sent = now - timedelta(hours=23)
         assert should_send_to_contact("sent", last_sent, 24, now) is False
 
-    def test_follow_up_sent_ready_after_delay(self):
+    def test_follow_up_sent_waits_for_auto_close(self):
         now = datetime(2024, 1, 1, 12, 0, 0)
         last_sent = now - timedelta(hours=48)
-        assert should_send_to_contact("follow_up_sent", last_sent, 24, now) is True
+        assert should_send_to_contact("follow_up_sent", last_sent, 24, now) is False
 
     def test_sent_ready_when_no_last_sent(self):
         now = datetime.now()
@@ -113,6 +115,39 @@ class TestSchedulerHelpers:
         assert normalize_timezone("  ") == "Europe/Moscow"
         assert normalize_timezone("msk") == "Europe/Moscow"
         assert normalize_timezone("UTC") == "UTC"
+
+    def test_should_send_follow_up_requires_clean_no_reply_context(self):
+        cc = SimpleNamespace(
+            status="initial_sent",
+            reply_received_at=None,
+            follow_up_sent_at=None,
+        )
+        conversation = SimpleNamespace(
+            current_state="warm",
+            operator_status=None,
+            was_escalated=False,
+        )
+
+        assert _should_send_follow_up(cc, conversation) is True
+
+        cc.reply_received_at = datetime.now(timezone.utc)
+        assert _should_send_follow_up(cc, conversation) is False
+        cc.reply_received_at = None
+
+        cc.follow_up_sent_at = datetime.now(timezone.utc)
+        assert _should_send_follow_up(cc, conversation) is False
+        cc.follow_up_sent_at = None
+
+        conversation.current_state = "closed"
+        assert _should_send_follow_up(cc, conversation) is False
+        conversation.current_state = "warm"
+
+        conversation.operator_status = "qualified"
+        assert _should_send_follow_up(cc, conversation) is False
+        conversation.operator_status = None
+
+        conversation.was_escalated = True
+        assert _should_send_follow_up(cc, conversation) is False
 
 
 class TestIsWithinWorkingHours:
@@ -255,7 +290,7 @@ class TestNextContactToProcess:
         result = next_contact_to_process(contacts, FakeScript(), now)
         assert result == [contacts[0], contacts[2]]
 
-    def test_follow_up_sent_ready_after_delay(self):
+    def test_follow_up_sent_waits_for_auto_close(self):
         now = datetime(2024, 1, 1, 12, 0, 0)
         contacts = [
             FakeCampaignContact(
@@ -266,7 +301,7 @@ class TestNextContactToProcess:
             )
         ]
         result = next_contact_to_process(contacts, FakeScript(max_messages=3), now)
-        assert result == contacts
+        assert result == []
 
     def test_initial_sent_at_none_treated_as_ready(self):
         now = datetime(2024, 1, 1, 12, 0, 0)
@@ -505,6 +540,144 @@ class TestProcessCampaigns:
         ) as mock_send:
             await process_campaigns(mock_db)
             mock_send.assert_not_awaited()
+
+    async def test_pending_contact_with_started_conversation_is_not_greeted_again(
+        self, mock_db, sample_campaign, sample_script, sample_contact
+    ):
+        from app.models.campaign import CampaignContact
+        from app.models.conversation import Conversation
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+        sample_contact.telegram_user_id = 123456
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        conversation = Conversation(
+            id=uuid.uuid4(),
+            contact_id=sample_contact.id,
+            campaign_id=sample_campaign.id,
+            current_state="cold",
+            last_message_at=datetime.now(timezone.utc),
+        )
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([conversation]),
+        ]
+
+        with patch(
+            "app.core.scheduler.send_initial_message", new_callable=AsyncMock
+        ) as mock_send:
+            await process_campaigns(mock_db)
+
+        mock_send.assert_not_awaited()
+        assert cc.status == "replied"
+        assert cc.reply_received_at is not None
+
+    async def test_follow_up_without_conversation_context_is_skipped(
+        self, mock_db, sample_campaign, sample_script, sample_contact
+    ):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+        sample_contact.telegram_user_id = 123456
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="initial_sent",
+            message_count=1,
+            initial_sent_at=datetime.now(timezone.utc) - timedelta(hours=25),
+        )
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([]),
+        ]
+
+        with patch(
+            "app.core.scheduler.send_follow_up_message", new_callable=AsyncMock
+        ) as mock_send:
+            await process_campaigns(mock_db)
+
+        mock_send.assert_not_awaited()
+
+    async def test_follow_up_is_not_sent_after_reply_or_operator_touch(
+        self, mock_db, sample_campaign, sample_script, sample_contact
+    ):
+        from app.models.campaign import CampaignContact
+        from app.models.conversation import Conversation
+
+        sample_campaign.status = "running"
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+        sample_contact.telegram_user_id = 123456
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="initial_sent",
+            message_count=1,
+            initial_sent_at=datetime.now(timezone.utc) - timedelta(hours=25),
+            reply_received_at=datetime.now(timezone.utc),
+        )
+        conversation = Conversation(
+            id=uuid.uuid4(),
+            contact_id=sample_contact.id,
+            campaign_id=sample_campaign.id,
+            current_state="warm",
+            operator_status=None,
+        )
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([conversation]),
+        ]
+
+        with patch(
+            "app.core.scheduler.send_follow_up_message", new_callable=AsyncMock
+        ) as mock_send:
+            await process_campaigns(mock_db)
+
+        mock_send.assert_not_awaited()
+
+        cc.reply_received_at = None
+        conversation.operator_status = "qualified"
+        mock_db.execute.reset_mock()
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([conversation]),
+        ]
+
+        with patch(
+            "app.core.scheduler.send_follow_up_message", new_callable=AsyncMock
+        ) as mock_send:
+            await process_campaigns(mock_db)
+
+        mock_send.assert_not_awaited()
 
     async def test_contact_without_telegram_user_id_skipped(
         self, mock_db, sample_campaign, sample_script, sample_contact
@@ -1291,6 +1464,28 @@ class TestSendInitialMessage:
                 )
 
         assert client_inst.send_message.call_args.kwargs["user_id"] == "leaduser"
+
+    async def test_initial_message_uses_approved_preview_without_llm(self, mock_db):
+        cc, contact, conversation, script, account = _build_send_objects()
+        cc.preview_message = "Привет, John. Это одобренный предпросмотр."
+
+        with (
+            patch("app.llm.engine.LLMEngine") as MockEngine,
+            patch("app.core.humanizer.calculate_thinking_delay", return_value=0),
+            patch("app.core.humanizer.calculate_typing_delay", return_value=0),
+            patch("app.bots.seller_client.SellerClient") as MockClient,
+        ):
+            client_inst = MockClient.return_value
+            client_inst.start = AsyncMock()
+            client_inst.send_message = AsyncMock(return_value={"message_id": 1})
+            client_inst.stop = AsyncMock()
+
+            await send_initial_message(mock_db, cc, contact, conversation, script, account)
+
+        MockEngine.assert_not_called()
+        sent_text = client_inst.send_message.call_args.kwargs["text"]
+        assert sent_text == "Привет, John. Это одобренный предпросмотр."
+        assert cc.status == "initial_sent"
 
     async def test_stale_username_retries_telegram_user_id(self, mock_db, monkeypatch):
         class FakeUsernameInvalid(Exception):

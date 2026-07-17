@@ -599,6 +599,7 @@ async def test_handle_inbound_message_paused_campaign_does_not_update_analytics(
         MockResult([contact]),
         MockResult([conversation]),
         MockResult([campaign]),
+        MockResult([cc]),
     ]
 
     with patch("app.bots.inbound_listener.AsyncSessionLocal") as MockSession:
@@ -610,8 +611,9 @@ async def test_handle_inbound_message_paused_campaign_does_not_update_analytics(
 
     # No automated reply sent because campaign is not running.
     client.send_message.assert_not_awaited()
-    # Analytics must not be updated for paused campaigns.
-    assert cc.status == "initial_sent"
+    # Status is updated so the scheduler will not later send a stale follow-up,
+    # but analytics must not be updated for paused campaigns.
+    assert cc.status == "replied"
     assert campaign.replied_count == 0
 
 
@@ -1777,9 +1779,62 @@ def test_generic_pricing_fallback_is_soft_and_does_not_repeat_robotic_phrase():
     text = _build_inbound_fallback_text("А цену то скажи за базовые услуги", script)
     lowered = text.lower()
 
-    assert "по цене сориентирую честно" in lowered
-    assert "без вводных" not in lowered
-    assert "без гадания" not in lowered
+    assert "по цене честно" in lowered
+    assert "актуального прайса" in lowered
+    assert "встреч" in lowered
+    assert "ради цены" in lowered
+    assert "точной вилки в текущем контексте" not in lowered
+
+
+def test_price_handoff_question_does_not_schedule_meeting():
+    script = Script(
+        name="Элитный массаж",
+        role_prompt="Предоставляем услуги массажа.",
+        goal="Пригласить в салон",
+    )
+
+    text = _build_inbound_fallback_text("А с кем мне его сверить?", script)
+    lowered = text.lower()
+
+    assert "не встреча нужна" in lowered
+    assert "актуальный прайс" in lowered
+    assert "не буду придумывать" in lowered
+    assert "удобное время" not in lowered
+
+
+def test_meeting_confusion_repairs_previous_bad_cta():
+    script = Script(
+        name="Элитный массаж",
+        role_prompt="Предоставляем услуги массажа.",
+        goal="Пригласить в салон",
+    )
+
+    text = _build_inbound_fallback_text(
+        "Просто встреча с менеджером это странно чтобы узнать цену услуги",
+        script,
+    )
+    lowered = text.lower()
+
+    assert "согласен" in lowered
+    assert "встреча не нужна" in lowered
+    assert "узнать цену" in lowered
+    assert "точную сумму" in lowered
+
+
+def test_suspicion_fallback_answers_without_pushy_cta():
+    script = Script(
+        name="Элитный массаж",
+        role_prompt="Предоставляем услуги массажа.",
+        goal="Пригласить в салон",
+    )
+
+    text = _build_inbound_fallback_text("А что вы предлагаете, звучит подозрительно", script)
+    lowered = text.lower()
+
+    assert "выглядеть подозрительно" in lowered
+    assert "услуги массажа" in lowered
+    assert "условия" in lowered
+    assert "встреч" not in lowered
 
 
 def test_offtopic_troll_detection_matches_bubble_sort_request():
@@ -1863,7 +1918,7 @@ def test_materials_request_does_not_promise_fake_attachments():
         role_prompt="Делаем кастомные бумажные стаканчики для кофеен.",
         goal="Обсудить регулярные поставки",
     )
-    text = _build_inbound_fallback_text("Да, покажите примеры стаканчиков", script)
+    text = _build_inbound_fallback_text("Пришлите фото примеров стаканчиков", script)
 
     lowered = text.lower()
     assert "не могу прикрепить" in lowered or "не буду выдумывать" in lowered

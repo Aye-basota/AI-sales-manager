@@ -47,6 +47,7 @@ class CampaignContactResponse(BaseModel):
     last_message_at: Optional[datetime] = None
     message_count: Optional[int] = None
     queue_position: int = 0
+    preview_message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,5 +72,6 @@ class CampaignContactListItem(BaseModel):
     last_message_at: Optional[datetime] = None
     message_count: Optional[int] = None
     queue_position: int = 0
+    preview_message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -124,15 +124,70 @@ def _split_paragraph_into_sentences(paragraph: str, max_chars: int) -> list[str]
     return chunks
 
 
+def _sentence_units(text: str) -> list[str]:
+    """Return sentence-like units while keeping punctuation attached."""
+    return [
+        unit.strip()
+        for unit in re.findall(r"[^.!?]+[.!?]+|[^.!?]+$", text.strip())
+        if unit.strip()
+    ]
+
+
+def maybe_split_message_into_burst(
+    text: str,
+    *,
+    rate: float = 0.0,
+    min_chars: int = 90,
+    max_chunks: int = 2,
+) -> list[str]:
+    """Sometimes split one reply into a short human-like burst.
+
+    The split is conservative: only sentence boundaries are used, both sides
+    must carry useful text, and by default nothing changes. Callers opt in by
+    passing a non-zero *rate*.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return [] if text == "" else [cleaned]
+    if rate <= 0 or random.random() > rate:  # nosec B311
+        return [cleaned]
+    if max_chunks < 2 or len(cleaned) < min_chars:
+        return [cleaned]
+    if "\n\n" in cleaned:
+        return [cleaned]
+
+    sentences = _sentence_units(cleaned)
+    if len(sentences) < 2:
+        return [cleaned]
+
+    candidates: list[tuple[str, str]] = []
+    for idx in range(1, min(len(sentences), max_chunks + 1)):
+        first = " ".join(sentences[:idx]).strip()
+        second = " ".join(sentences[idx:]).strip()
+        if len(first) >= 28 and len(second) >= 24:
+            candidates.append((first, second))
+
+    if not candidates:
+        return [cleaned]
+
+    first, second = random.choice(candidates)  # nosec B311
+    return [first, second]
+
+
 def split_message_into_chunks(
     text: str,
     max_chars: int = 350,
     max_chunks: int = 4,
+    burst_rate: float = 0.0,
+    burst_min_chars: int = 180,
 ) -> list[str]:
     """Split *text* into human-sized chunks.
 
     Splits on blank lines first, then breaks long paragraphs by sentences so
-    that each chunk is small enough to feel like a natural message.
+    that each chunk is small enough to feel like a natural message. If
+    *burst_rate* is non-zero, a short one-paragraph reply may occasionally be
+    split into two consecutive messages at a sentence boundary once it reaches
+    *burst_min_chars*.
     """
     if not text:
         return []
@@ -169,6 +224,13 @@ def split_message_into_chunks(
         tail = "\n\n".join(chunks[max_chunks - 1:])
         if len(tail) <= max_chars * 3:
             return [*head, tail]
+
+    if len(chunks) == 1 and burst_rate > 0:
+        return maybe_split_message_into_burst(
+            chunks[0],
+            rate=burst_rate,
+            min_chars=burst_min_chars,
+        )
 
     return chunks
 

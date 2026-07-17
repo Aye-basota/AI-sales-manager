@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title="AI Sales Manager API", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="AI Sales Manager API", version="0.5.0", lifespan=lifespan)
 
 
 @app.exception_handler(RequestValidationError)

@@ -9,6 +9,7 @@ from app.core.humanizer import (
     chunk_pause_seconds,
     contains_markdown,
     format_message,
+    maybe_split_message_into_burst,
     maybe_double_take,
     maybe_self_correct,
     remove_markdown,
@@ -260,3 +261,31 @@ class TestSplitMessageIntoChunks:
         for idx in range(1, 8):
             assert f"Part {idx}" in joined
         assert len(chunks) == 3
+
+    def test_optional_burst_split_can_send_two_short_messages(self):
+        text = "По цене не буду придумывать цифру. Лучше сверить формат услуги и актуальный прайс."
+
+        with (
+            patch("app.core.humanizer.random.random", return_value=0.01),
+            patch("app.core.humanizer.random.choice", side_effect=lambda items: items[0]),
+        ):
+            chunks = split_message_into_chunks(
+                text,
+                burst_rate=1.0,
+                burst_min_chars=40,
+            )
+
+        assert chunks == [
+            "По цене не буду придумывать цифру.",
+            "Лучше сверить формат услуги и актуальный прайс.",
+        ]
+
+
+class TestMaybeSplitMessageIntoBurst:
+    def test_no_split_when_rate_zero(self):
+        text = "Первое предложение. Второе предложение."
+        assert maybe_split_message_into_burst(text, rate=0.0) == [text]
+
+    def test_short_text_stays_single_message(self):
+        with patch("app.core.humanizer.random.random", return_value=0.0):
+            assert maybe_split_message_into_burst("Ок, понял.", rate=1.0) == ["Ок, понял."]

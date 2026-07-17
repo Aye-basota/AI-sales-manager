@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-17
+
+Final Assignment 6 release candidate mapped to `MVP v3`.
+
+### Added
+- Human-like outbound message bursts can now split longer natural replies into short consecutive Telegram messages.
+- LLM route audit logs now record prompt route, history size, response source, model, token usage, and chunk count for outbound, follow-up, and inbound replies.
+
+### Changed
+- Lead reply prompts and deterministic fallbacks now answer pricing/basic-condition questions before any CTA and repair confusing previous replies instead of repeating them.
+- Follow-up prompts now explicitly model a single no-reply nudge with conversation history, last manager message, lead facts, and anti-repetition rules.
+- Lead replies and follow-ups now pass recent dialogue to the LLM as real `user`/`assistant` chat messages instead of flattening the whole history into one prompt.
+- Dialogue prompts are shorter and prioritize the latest lead message, verified context, and role consistency over long rule lists.
+- Approved preview messages from the Admin Bot are now reused for the actual first send instead of regenerating a different first message.
+
+### Fixed
+- Contacts who reply before or while a campaign is paused are marked as `replied`, preventing stale initial greetings or follow-ups from being sent later.
+- Follow-ups are now skipped after replies, previous follow-ups, operator intervention, escalations, terminal states, or missing conversation context.
+- Guardrails and deterministic fallbacks now allow verified product conditions such as minimum order volume while still blocking invented prices, files, catalogs, and product-consulting promises.
+
+### Release
+- Updated API metadata to identify the final Assignment 6 `MVP v3` release candidate as version `0.5.0`.
+
 ## [0.4.0] - 2026-07-08
 
 ### Changed

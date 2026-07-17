@@ -24,6 +24,21 @@ DEFAULT_INTENT_LABELS = [
     "informational",
 ]
 
+_FACT_LABELS = {
+    "first_name": "имя",
+    "last_name": "фамилия",
+    "company_name": "компания",
+    "position": "должность",
+    "city": "город",
+    "industry": "сфера",
+    "source_summary": "почему контакт релевантен",
+    "source_message_text": "публичный контекст",
+    "company": "компания",
+    "role": "роль",
+    "pain": "потребность",
+    "budget": "бюджет",
+}
+
 
 def _prompt_config() -> dict[str, Any]:
     """Return the cached prompt configuration."""
@@ -131,7 +146,10 @@ def _build_facts_block(lead_facts: dict[str, Any]) -> str:
         return "(нет данных)"
     lines = []
     for key, value in lead_facts.items():
-        safe_key = sanitize_context_text(str(key), max_chars=80)
+        safe_key = sanitize_context_text(
+            _FACT_LABELS.get(str(key), str(key)),
+            max_chars=80,
+        )
         safe_value = sanitize_context_text(value, max_chars=220)
         if safe_key and safe_value:
             lines.append(f"- {safe_key}: {safe_value}")
@@ -156,6 +174,30 @@ def _build_history_block(conversation_history: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def build_chat_history_messages(
+    conversation_history: list[dict[str, Any]],
+    *,
+    limit: int = 10,
+    max_chars_per_message: int = 800,
+) -> list[dict[str, str]]:
+    """Return recent dialogue as real chat messages for the LLM API."""
+    messages: list[dict[str, str]] = []
+    if not conversation_history:
+        return messages
+
+    for msg in conversation_history[-limit:]:
+        raw_role = msg.get("role", "")
+        content = sanitize_context_text(
+            msg.get("content", ""),
+            max_chars=max_chars_per_message,
+        )
+        if not content:
+            continue
+        role = "assistant" if raw_role in ("agent", "assistant", "outbound") else "user"
+        messages.append({"role": role, "content": content})
+    return messages
+
+
 def build_user_prompt(
     conversation_history: list[dict],
     lead_facts: dict,
@@ -163,20 +205,16 @@ def build_user_prompt(
     lead_message: str,
 ) -> str:
     """Generic user prompt (kept for backward compatibility)."""
-    cfg = _prompt_config()
     history_block = _build_history_block(conversation_history)
     facts_block = _build_facts_block(lead_facts)
-
-    template = cfg.get("user_prompts", {}).get(
-        "reply",
-        (
-            "КОНТЕКСТ ДИАЛОГА:\n{history_block}\n\n"
-            "ФАКТЫ О ЛИДЕ:\n{facts_block}\n\n"
-            "ТВОЯ ПРЕДЫДУЩАЯ РЕПЛИКА:\n{last_agent_message}\n\n"
-            "ОТВЕТ КЛИЕНТА:\n{lead_message}\n\n"
-            "Напиши естественный короткий ответ, обычно одним абзацем."
-        ),
+    template = (
+        "КОНТЕКСТ ДИАЛОГА:\n{history_block}\n\n"
+        "ФАКТЫ О ЛИДЕ:\n{facts_block}\n\n"
+        "ТВОЯ ПРЕДЫДУЩАЯ РЕПЛИКА:\n{last_agent_message}\n\n"
+        "ОТВЕТ КЛИЕНТА:\n{lead_message}\n\n"
+        "Напиши естественный короткий ответ, обычно одним абзацем."
     )
+
     return _format_template(
         template,
         history_block=history_block,
@@ -203,7 +241,15 @@ def build_initial_user_prompt(
 
     facts: dict[str, Any] = {}
     if contact:
-        for attr in ("first_name", "company_name", "position", "city", "industry"):
+        for attr in (
+            "first_name",
+            "company_name",
+            "position",
+            "city",
+            "industry",
+            "source_summary",
+            "source_message_text",
+        ):
             value = getattr(contact, attr, None)
             if value:
                 facts[attr] = value

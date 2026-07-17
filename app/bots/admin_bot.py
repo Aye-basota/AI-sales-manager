@@ -3795,6 +3795,15 @@ def _format_all_preview_text(
     return "\n\n".join(blocks)
 
 
+def _preview_message_for_queue_position(data: dict, queue_position: int) -> str | None:
+    previews = data.get("preview_messages") or []
+    if 0 < queue_position <= len(previews):
+        return previews[queue_position - 1]
+    if queue_position == 1:
+        return data.get("preview_text") or None
+    return None
+
+
 async def _generate_preview_message(script: Script, record: dict) -> str:
     stage = get_first_stage(script)
     contact = SimpleNamespace(**record)
@@ -4124,6 +4133,10 @@ async def campaign_start_later(callback: types.CallbackQuery, state: FSMContext)
                 status="pending",
                 message_count=0,
                 queue_position=queue_position,
+                preview_message=_preview_message_for_queue_position(
+                    data,
+                    queue_position,
+                ),
             )
             session.add(cc)
 
@@ -4180,6 +4193,10 @@ async def campaign_start_now(callback: types.CallbackQuery, state: FSMContext):
                 status="pending",
                 message_count=0,
                 queue_position=queue_position,
+                preview_message=_preview_message_for_queue_position(
+                    data,
+                    queue_position,
+                ),
             )
             session.add(cc)
 

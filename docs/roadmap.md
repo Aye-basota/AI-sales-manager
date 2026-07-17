@@ -58,7 +58,7 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 
 ---
 
-## Current Sprint
+## Completed Sprint
 
 ### Sprint 4 — Trial Release Readiness and Production Stabilization
 
@@ -113,27 +113,26 @@ This scope ensures the platform can support real user trials by providing a stab
 
 ---
 
-## Planned Next Sprint
+## Final Sprint
 
 ### Sprint 5 — Week 7 Follow-Up Maintenance and Final Handover
 
 **Goal:** Use Week 6 trial feedback to remove the main transition blockers, confirm final product access, update handover documentation, and prepare the final course version (`MVP v3`) for customer and TA evaluation.
 
-**Planned dates:** 2026-07-13 – 2026-07-19
+**Dates:** 2026-07-13 – 2026-07-19
 
-**Planned Focus:**
+**Sprint 5 Focus:**
 
-- Create the Sprint 5 GitHub milestone and assign Week 6 follow-up issues to it.
-- Confirm the final product access arrangement.
-- Improve or explicitly scope lead-discovery result quality.
-- Reduce campaign setup friction where feasible.
-- Improve prompt/model behavior where Week 6 trial evidence showed role-breaking risk.
-- Update customer-facing documentation and handover material after the final transition decision.
-- Collect written customer confirmation for the reached handover level.
+- Use Week 6 feedback to improve dialogue quality, follow-up behavior, and role consistency.
+- Reuse approved Admin Bot preview messages during campaign send, reducing confusing preview/send drift.
+- Prevent stale follow-ups after replies, operator intervention, escalations, terminal states, or missing conversation context.
+- Confirm the final product access arrangement through the public Telegram Admin Bot and reproducible Docker setup.
+- Update customer-facing documentation and handover material for the reached `Ready for independent use` level.
+- Keep tests and CI current for the touched scheduler, inbound, prompt, guardrail, and humanizer areas.
 
-**Planned Outcomes:**
+**Outcomes:**
 
-- Final `MVP v3` release candidate ready for SemVer release.
-- Customer-facing documentation matches the actual transition state.
+- Final `MVP v3` release candidate versioned as `0.5.0`.
+- Customer-facing documentation matches the actual transition state: ready for independent use through the team-operated bot and reproducible setup, without claiming customer-side operation.
 - Week 7 public report links the complete Week 6 evidence without duplicating it.
 - Remaining limitations are explicit rather than hidden.
