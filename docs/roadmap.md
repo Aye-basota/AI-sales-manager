@@ -62,77 +62,59 @@ Build an autonomous B2B outbound sales assistant that uses real Telegram account
 
 ### Sprint 4 — Trial Release Readiness and Production Stabilization
 
-**Goal:** Enable a production-ready AI Sales Manager experience for the Week 6 trial release by delivering end-to-end lead management capabilities, including campaign execution, AI-driven conversations, analytics, and operational stability. The sprint aims to ensure the platform is ready for transition into real-world usage through a reliable user experience and stable production environment.
+**Goal:** Deliver a production-ready AI Sales Manager for the Week 6 trial by completing end-to-end lead management capabilities, improving campaign execution, and ensuring stable production operation.
 
 **Dates:** 2026-07-06 – 2026-07-12
 
-**Sprint Focus:**
+**Sprint Achievements:**
 
-- Prepare the platform for the Week 6 trial release
-- Strengthen end-to-end lead management workflows
-- Improve campaign execution and contact handling reliability
-- Enable manager involvement through manual dialog takeover and notifications
-- Enhance analytics and visibility into campaign performance
-- Improve AI automation tracking and prompt maintainability
-- Ensure production deployment stability through infrastructure and monitoring improvements
+- Improved campaign execution workflow and contact management reliability.
+- Implemented manager notifications and manual conversation takeover for warm leads.
+- Enhanced campaign visibility through lead information and notification improvements.
+- Increased AI automation reliability and prompt maintainability.
+- Strengthened CSV contact import with persistence and duplicate handling.
+- Improved production deployment stability and infrastructure monitoring.
+- Refined the admin panel workflow to simplify campaign management and editing.
+- Successfully completed the Week 6 trial and collected customer feedback for the final quality improvements planned in Sprint 5.
+
+---
+
+## Final Current Sprint
+
+### Sprint 5 — Final Quality Improvements and Production Transition
+
+**Goal:** Finalize the quality improvements for lead discovery and AI interactions by delivering production-ready parsing accuracy and resilient prompt behavior, ensuring the system is stable and ready for final transition.
+
+**Dates:** 2026-07-13 – 2026-07-19
 
 **Selected Sprint PBIs:**
 
 **User Stories**
 
-- US-06: Increase Lead Turnover
-- US-07: 24/7 Availability
-- US-09: Manual Dialog Takeover
-- US-015: Campaign Analytics and Conversion Dashboard
-- US-019: Improve Admin Panel Navigation — Allow Editing After Campaign Launch Step
+- US-06: Increase Lead Turnover (5 SP)
+- US-07: 24/7 Availability (5 SP)
+- US-015: Campaign Analytics and Conversion Dashboard (5 SP)
 
 **Technical Tasks**
 
-- TECH-03: Implement Manager Contact-Transfer Notification Flow
-- TECH-06: Track AI-Automation Rate per Dialog Session
-- TECH-08: CSV Contact Import — Persistence and Duplicate Handling
-- TECH-11: Deploy Application to Production VPS
-- TECH-12: Configure Production Infrastructure and Monitoring
-- TECH-13: Prompt Configuration and Versioning
-
-**Week 6 Trial Outcome:**
-
-Sprint 4 reached a trial / handover-candidate state and was reviewed with the customer on 2026-07-12. The live review covered business setup, contact upload, campaign launch, AI conversation behavior, and Telegram lead discovery. The customer asked for stronger lead-search quality, less manual setup before campaign launch, and continued prompt/model quality improvement.
+- TECH-11: Deploy Application to Production VPS (5 SP)
+- TECH-14: Improve Lead Discovery / Parsing Result Quality (3 SP)
+- TECH-15: Improve Overall Prompt / Response Quality — Reduce LLM Role-Breaking (5 SP)
 
 **Sprint Scope Rationale:**
 
-The sprint scope focuses on strengthening the AI Sales Manager core workflow by addressing key product capabilities required for the Week 6 trial release and production readiness. The selected items improve the complete lead management journey — from campaign setup and contact handling to AI-powered conversations, manager involvement, performance analytics, and system reliability.
+This sprint focuses on completing the remaining quality improvements before the final transition. The team will finalize enhancements to lead discovery and parsing accuracy while reducing LLM role-breaking through prompt and response optimization. These activities improve the system's reliability, consistency, and readiness for final delivery without introducing significant new functionality.
 
-This scope ensures the platform can support real user trials by providing a stable production environment, improved operational visibility, and a reliable experience for both sales managers and end users. The sprint establishes the foundation required for a smooth transition from development into real-world usage.
+**Expected Outcomes:**
+
+- Improved lead discovery accuracy through enhanced parsing and filtering.
+- More reliable AI conversations with reduced prompt failures and role-breaking.
+- Stable production deployment supporting continuous 24/7 operation.
+- Campaign notifications provide managers with warm lead information and contact details for timely follow-up.
+- Product reaches a production-ready state suitable for final customer transition.
 
 **Story Point Summary:**
 
-- User stories: 23 SP
-- Technical tasks: 17 SP
-- **Sprint 4 total: 40 SP**
-
----
-
-## Final Sprint
-
-### Sprint 5 — Week 7 Follow-Up Maintenance and Final Handover
-
-**Goal:** Use Week 6 trial feedback to remove the main transition blockers, confirm final product access, update handover documentation, and prepare the final course version (`MVP v3`) for customer and TA evaluation.
-
-**Dates:** 2026-07-13 – 2026-07-19
-
-**Sprint 5 Focus:**
-
-- Use Week 6 feedback to improve dialogue quality, follow-up behavior, and role consistency.
-- Reuse approved Admin Bot preview messages during campaign send, reducing confusing preview/send drift.
-- Prevent stale follow-ups after replies, operator intervention, escalations, terminal states, or missing conversation context.
-- Confirm the final product access arrangement through the public Telegram Admin Bot and reproducible Docker setup.
-- Update customer-facing documentation and handover material for the reached `Ready for independent use` level.
-- Keep tests and CI current for the touched scheduler, inbound, prompt, guardrail, and humanizer areas.
-
-**Outcomes:**
-
-- Final `MVP v3` release candidate versioned as `0.5.0`.
-- Customer-facing documentation matches the actual transition state: ready for independent use through the team-operated bot and reproducible setup, without claiming customer-side operation.
-- Week 7 public report links the complete Week 6 evidence without duplicating it.
-- Remaining limitations are explicit rather than hidden.
+- User stories: 15 SP
+- Technical tasks: 13 SP
+- **Sprint 5 total: 28 SP**
