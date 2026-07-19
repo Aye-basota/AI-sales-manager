@@ -447,7 +447,7 @@ CSV из поиска можно сразу сохранить как конта
 pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-**Текущий полный прогон:** `974 passed, 3 warnings` (Week 6 local audit).
+**Текущий полный прогон:** `991 passed` (Week 7 / Sprint 5 QA audit), ~99% покрытие `app/`.
 
 Ключевые модули с высоким покрытием:
 - `app/core/state_machine.py` — 100%
