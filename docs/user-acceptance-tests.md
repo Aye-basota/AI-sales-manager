@@ -153,4 +153,4 @@
 - **Actual Result:** The end-to-end flow was demonstrated, but the customer asked for less manual configuration and a smoother launch path: after describing the business, the system should find relevant leads and be ready to launch with fewer approval/setup steps.
 - **Status:** Needs Improvement
 - **Resulting PBIs / issues:** [#68](https://github.com/Aye-basota/AI-sales-manager/issues/68) covers back/edit navigation; Sprint 5 should keep a setup-friction follow-up as an explicit transition action or dedicated issue.
-- **Week 7 note (2026-07-19):** Not explicitly re-tested on this call — the session focused on prompt quality, lead search, and analytics. Status remains **Needs Improvement** unless re-verified before final submission.
+- **Week 7 note (2026-07-19):** Not explicitly re-tested on this call — the session focused on prompt quality, lead search, analytics, and final transition confirmation. Status remains **Needs Improvement** and is treated as a visible follow-up item under the Week 7 customer-confirmation status `Accepted with follow-up items`.

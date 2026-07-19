@@ -153,6 +153,7 @@ async def test_full_sales_cycle(client, mock_db, e2e_script, e2e_contacts, e2e_a
                 MockResult([contact]),  # contact
                 MockResult([]),  # conversation not found
                 MockResult([e2e_account]),  # account
+                MockResult([]),  # prior same-account contact history
             ]
         )
     # Extra padding in case additional execute() calls happen

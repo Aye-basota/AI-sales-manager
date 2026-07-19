@@ -2,11 +2,11 @@
 
 This page describes the **current actual** handover state of AI Sales Manager. It is updated during Week 6 and Week 7 of Assignment 6 as the transition progresses — it does not describe an aspirational future state.
 
-**Status as of this update:** Sprint 5 (Week 7) follow-up maintenance has resolved the customer's outstanding Week 6 feedback (lead-discovery quality and prompt/response quality). The final `MVP v5` , the previous trial tag was `v0.4.0` .The final public access arrangement for course evaluation is the Telegram Admin Bot at [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment, plus the reproducible Docker setup in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
+**Status as of this update:** Sprint 5 (Week 7) follow-up maintenance has resolved the customer's highest-priority Week 6 feedback: lead-discovery quality and prompt/response quality. The final course version is `MVP v3` / `v0.5.0`; the previous Week 6 trial tag was `v0.4.0`. The final public access arrangement for course evaluation is the Telegram Admin Bot at [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment, plus the reproducible Docker setup in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
 
 **Reached handover level:** `Independently used by customer`. The customer tested the product independently, on his own time, without the team present — admin panel, his own test contacts, a live conversation with the bot, lead search, and the analytics dashboard.
 
-**Customer-confirmation status:** `Accepted`. On the Week 7 call, the customer confirmed acceptance of the current product and documentation state. His two Week 6 follow-up items — lead-search/parsing quality and overall prompt/response quality — were independently re-tested by him during the Week 7 call and confirmed resolved. No further follow-up items were raised.
+**Customer-confirmation status:** `Accepted with follow-up items`. On the Week 7 call, the customer accepted the product for the reached handover level and confirmed that the two highest-priority Week 6 product issues — lead-search/parsing quality and overall prompt/response quality — were resolved. The remaining follow-up items are documentation clarity for independent setup, the not-retested minimal-setup campaign-launch scenario, and optional customer-owned hosting after the course evaluation period.
 
 ---
 
@@ -33,7 +33,7 @@ For step-by-step setup instructions, use [`LAUNCH_GUIDE.md`](https://github.com/
 | **LLM provider account (OpenRouter / DashScope)** | LLM access is configured through environment variables. The course evaluation instance uses team-managed keys; a customer-run instance can provide customer-owned keys without code changes. |
 | **Admin Telegram Bot** | Registered via BotFather under the course evaluation bot token and used as the main `MVP v3` entry point. A customer-owned bot token can be configured through the same `.env` setup path. |
 
-**Summary:** the customer has independently used final `MVP v3` through the public Telegram bot and reproducible Docker setup. The course evaluation arrangement keeps the live instance team-operated while making the repository, documentation, and configuration path available for customer-side operation when the customer chooses to move to it.
+**Summary:** the customer has independently used final `MVP v3` through the public Telegram bot. The course evaluation arrangement keeps the live instance team-operated while making the repository, documentation, and configuration path available for customer-side operation when the customer chooses to move to it.
 
 ---
 
@@ -63,7 +63,7 @@ Each side that runs the product supplies its own secrets for the environment it 
 - **Temporary public web/API access:** the team can expose a running API/site instance publicly using `docker-compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d`, which opens a [localtunnel](https://theboroer.github.io/localtunnel-www/) HTTPS URL. This URL is **ephemeral** and must be recorded separately for each trial if used.
 - **Persistent production hosting:** the final public handover level uses a team-operated bot/deployment for course evaluation and documented Docker-based self-hosting for reproduction. The customer has indicated he plans to move to his own infrastructure at a later date, outside the scope of this course; customer-owned deployment can use the same Docker and environment-variable setup.
 - **Recovery:** the documented recovery path is to run `alembic upgrade head` against a fresh database and re-add Telegram accounts and scripts. A fuller backup/restore runbook is a follow-up item for customer-owned operation.
-- **Verification after setup:** `GET /health` returns `status`, `db`, and `scheduler` — use it to confirm the API, database, and background scheduler all came up correctly. The maintained test suite covers 459 automated tests with ≥80% coverage on `app/`.
+- **Verification after setup:** `GET /health` returns `status`, `db`, and `scheduler` — use it to confirm the API, database, and background scheduler all came up correctly. The maintained test suite covers more than 1,000 automated tests with coverage above the CI threshold on `app/`.
 
 ---
 
@@ -97,24 +97,25 @@ Each side that runs the product supplies its own secrets for the environment it 
 Using the terminology defined for Assignment 6 Part 8:
 
 - **Reached handover level:** `Independently used by customer`.
-- **Customer-confirmation status:** `Accepted`.
+- **Customer-confirmation status:** `Accepted with follow-up items`.
 - **Final product access artifact:** [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment.
 - **Repository and documentation access:** public GitHub repository plus hosted documentation site.
 - **Customer-side operation path:** supported through the Docker setup and customer-provided Telegram/LLM credentials; the customer has indicated he plans to move to this at a later date.
 
-This means the product has been independently tested and accepted by the customer, with no outstanding follow-up items raised on the Week 7 call.
+This means the product has been independently tested and accepted for the reached handover level. Stronger customer-owned operation remains a documented follow-up path rather than the reached Week 7 transition level.
 
 ---
 
 ## Is the Current Documentation Sufficient?
 
-**Sufficient for the reached handover level (`Independently used by customer`).** The documentation set (`README.md`, `LAUNCH_GUIDE.md`, this page) was enough for the customer to independently test the product end-to-end. On the Week 7 call, the customer noted the handover documentation was not fully clear on first read, without specifying the exact section — this is logged as an open item for the team to follow up on directly with the customer, separate from the overall `Accepted` transition status.
+**Sufficient for the reached handover level (`Independently used by customer`), with follow-up needed for a stronger customer-owned operation model.** The documentation set (`README.md`, `LAUNCH_GUIDE.md`, this page) was enough for the customer to independently test the product end-to-end. On the Week 7 call, the customer noted the handover documentation was not fully clear on first read, without specifying the exact section; this is the main reason the confirmation status is recorded as `Accepted with follow-up items` rather than unconditional `Accepted`.
 
 Remaining optional follow-up items for a stronger customer-owned operation model:
 
 - Provisioning a persistent customer-owned hosting environment.
 - Generating and rotating the Telegram session string (`scripts/generate_session.py` requires an interactive SMS code step).
 - Expanding the backup/restore runbook beyond the current fresh-database recovery path.
+- Re-testing the minimal-setup campaign launch scenario after the owner clarification and lead-search improvements.
 - Identifying and clarifying the specific part of this document the customer found unclear.
 
-These are optional improvements beyond the reached handover level, not blockers to the `Accepted` transition status.
+These are not blockers to the reached `Independently used by customer` handover level, but they remain visible follow-up items after final course delivery.

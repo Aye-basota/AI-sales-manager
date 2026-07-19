@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2026-07-17
 
-Final Assignment 6 release candidate mapped to `MVP v3`.
+Final Assignment 6 release mapped to `MVP v3`.
 
 ### Added
 - Human-like outbound message bursts can now split longer natural replies into short consecutive Telegram messages.
@@ -57,7 +57,7 @@ Final Assignment 6 release candidate mapped to `MVP v3`.
 - Guardrails and deterministic fallbacks now allow verified product conditions such as minimum order volume while still blocking invented prices, files, catalogs, and product-consulting promises.
 
 ### Release
-- Updated API metadata to identify the final Assignment 6 `MVP v3` release candidate as version `0.5.0`.
+- Updated API metadata to identify the final Assignment 6 `MVP v3` release as version `0.5.0`.
 
 ## [0.4.0] - 2026-07-08
 
