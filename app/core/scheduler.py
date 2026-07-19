@@ -10,7 +10,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import case, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.exc import NoInspectionAvailable
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -136,6 +136,80 @@ def _contact_has_chat_id(contact) -> bool:
     return bool(username or getattr(contact, "telegram_user_id", None))
 
 
+def _normalized_contact_username(contact) -> str:
+    username = getattr(contact, "telegram_username", None)
+    if not isinstance(username, str):
+        return ""
+    return username.strip().lstrip("@").lower()
+
+
+def _same_person_contact_filters(contact) -> list:
+    from app.models.contact import Contact
+
+    filters = []
+    telegram_user_id = getattr(contact, "telegram_user_id", None)
+    if telegram_user_id:
+        try:
+            filters.append(Contact.telegram_user_id == int(telegram_user_id))
+        except (TypeError, ValueError):
+            pass
+
+    username = _normalized_contact_username(contact)
+    if username:
+        filters.append(
+            func.lower(Contact.telegram_username).in_([username, f"@{username}"])
+        )
+    return filters
+
+
+CONTACTED_CAMPAIGN_CONTACT_STATUSES = (
+    "initial_sent",
+    "follow_up_sent",
+    "replied",
+    "meeting_booked",
+    "closed",
+)
+
+
+async def _has_prior_same_account_contact(
+    db_session: AsyncSession,
+    contact,
+    account,
+    *,
+    current_campaign_id,
+) -> bool:
+    """Return True if this account already contacted the same Telegram person."""
+    from app.models.campaign import CampaignContact
+    from app.models.contact import Contact
+
+    filters = _same_person_contact_filters(contact)
+    if not filters:
+        return False
+
+    result = await db_session.execute(
+        select(CampaignContact)
+        .join(Contact, Contact.id == CampaignContact.contact_id)
+        .where(CampaignContact.campaign_id != current_campaign_id)
+        .where(CampaignContact.status.in_(CONTACTED_CAMPAIGN_CONTACT_STATUSES))
+        .where(or_(*filters))
+        .where(
+            or_(
+                Contact.id == getattr(contact, "id", None),
+                Contact.assigned_account_id == getattr(account, "id", None),
+                Contact.assigned_account_id.is_(None),
+            )
+        )
+        .order_by(
+            CampaignContact.last_message_at.desc().nullslast(),
+            CampaignContact.follow_up_sent_at.desc().nullslast(),
+            CampaignContact.initial_sent_at.desc().nullslast(),
+            CampaignContact.reply_received_at.desc().nullslast(),
+        )
+        .limit(1)
+    )
+    return result.scalars().first() is not None
+
+
 async def _send_chunks_to_contact(
     client,
     contact,
@@ -200,7 +274,7 @@ def _is_eligible_account(account, now: datetime) -> bool:
         return False
     if not account.session_string:
         return False
-    cooldown = account.cooldown_until
+    cooldown = getattr(account, "cooldown_until", None)
     if cooldown is not None:
         if cooldown.tzinfo is None:
             cooldown = cooldown.replace(tzinfo=timezone.utc)
@@ -581,6 +655,27 @@ async def process_campaigns(db_session: AsyncSession) -> None:
                     )
                     continue
 
+            if cc.status == "pending" and await _has_prior_same_account_contact(
+                db_session,
+                contact,
+                account,
+                current_campaign_id=campaign_id,
+            ):
+                logger.info(
+                    (
+                        "Skipping initial message for contact %s in campaign %s: "
+                        "same Telegram person was already contacted by account %s"
+                    ),
+                    contact.id,
+                    campaign_id,
+                    account.id,
+                )
+                cc.status = "duplicate_skipped"
+                cc.last_message_at = datetime.now(timezone.utc)
+                await _increment_processed_contacts(db_session, campaign_id, campaign)
+                await db_session.commit()
+                continue
+
             # Track whether this is the first message to the contact so that
             # processed_contacts counts unique contacts, not outbound messages.
             was_first_message = cc.status == "pending"
@@ -886,6 +981,7 @@ async def send_initial_message(
     # Update account
     mark_message_sent(account)
     account.last_message_at = datetime.now(timezone.utc)
+    contact.assigned_account_id = account.id
 
     # Update conversation state
     conversation.current_state = transition(
@@ -1119,6 +1215,7 @@ async def send_follow_up_message(
     # Update account
     mark_message_sent(account)
     account.last_message_at = datetime.now(timezone.utc)
+    contact.assigned_account_id = account.id
 
     # Update conversation state
     conversation.current_state = transition(

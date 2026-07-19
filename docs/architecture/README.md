@@ -85,6 +85,25 @@ For replies and follow-ups, the LLM receives the system prompt, recent conversat
 
 The runtime logs include the LLM route, stage, intent, number of history messages, response source (`llm`, approved preview, deterministic fallback, or safety fallback), model, token count, final text length, and Telegram chunk count. These logs are the first place to inspect when diagnosing generic, off-context, or unexpectedly regenerated messages.
 
+### Business Knowledge and Owner Clarifications
+
+Business facts that are not safe to infer from the campaign script are stored on
+`Script.business_details` as owner-verified context. After script creation, the
+Admin Bot asks the LLM to audit the actual business draft and generate concrete
+owner questions for that offer, audience, and sales scenario. The questions are
+saved under `Script.business_details["audit"]` and reused when the owner chooses
+to add facts; a deterministic offer-tied fallback is used if the LLM audit is
+unavailable. Runtime owner clarification can be toggled per business with
+`Script.owner_clarification_enabled`.
+
+During business creation, owners can also add custom communication-style notes
+and custom funnel instructions. Custom style text is stored in
+`Script.business_details["custom_tone"]` and injected into the LLM system prompt;
+custom funnel text is converted into `Script.sales_funnel` stage instructions so
+it becomes part of the runtime dialogue context.
+
+Inbound replies check lead questions and generated LLM text against this verified business knowledge before Telegram dispatch. If the lead asks about an unknown operational fact and owner clarification is enabled, the lead receives a short hold message while the owner gets a separate Admin Bot request. The pending request is stored in `Conversation.owner_clarification`, not in the lead-visible message history. When the owner answers, the fact is merged into `Script.business_details`; if the seller MTProto client is still active, the system can send a concise verified answer back to the lead.
+
 ---
 
 ## Deployment Diagram (Deployment View)

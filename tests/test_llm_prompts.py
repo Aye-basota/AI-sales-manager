@@ -54,6 +54,23 @@ def test_build_system_prompt_defaults():
     assert "professional" in prompt
 
 
+def test_build_system_prompt_includes_custom_owner_tone():
+    script = MagicMock()
+    script.role_prompt = "Поставляем стаканчики для кофеен."
+    script.target_audience = "Кофейни"
+    script.goal = "Назначить созвон."
+    script.success_criteria = None
+    script.tone = "custom"
+    script.business_details = {
+        "custom_tone": "Пиши спокойно, без канцелярита, максимум один вопрос."
+    }
+
+    prompt = build_system_prompt(script)
+
+    assert "свой стиль владельца" in prompt
+    assert "без канцелярита" in prompt
+
+
 def test_build_user_prompt():
     history = [
         {"role": "user", "content": "Привет"},

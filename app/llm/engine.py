@@ -16,9 +16,9 @@ OPENROUTER_MODELS = [
 ]
 
 DASHSCOPE_MODELS = [
-    "qwen-turbo",
-    "qwen-plus",
     "qwen-max",
+    "qwen-plus",
+    "qwen-turbo",
 ]
 
 DEFAULT_MODELS = list(OPENROUTER_MODELS)

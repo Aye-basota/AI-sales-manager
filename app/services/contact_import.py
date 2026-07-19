@@ -24,6 +24,21 @@ _STANDARD_COLUMNS = {
 }
 
 
+def _should_reset_stale_invalid_peer(
+    existing: Contact,
+    record: dict[str, Any],
+    source: str,
+) -> bool:
+    """Return True when a CSV row should retry a previously invalid Telegram peer."""
+    if source != "csv_import":
+        return False
+    if existing.status != "invalid_peer" and existing.is_valid != "invalid":
+        return False
+    if record.get("status") == "invalid_peer" or record.get("is_valid") == "invalid":
+        return False
+    return bool(record.get("telegram_username") or record.get("telegram_user_id"))
+
+
 def _process_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     """Validate and convert a DataFrame into a list of dicts suitable for Contact creation.
 
@@ -257,6 +272,9 @@ async def upsert_contacts(
             existing = existing_by_phone.get(phone)
 
         if existing:
+            reset_stale_invalid_peer = _should_reset_stale_invalid_peer(
+                existing, record, source
+            )
             authoritative_csv_fields = {
                 "telegram_username",
                 "phone",
@@ -283,6 +301,10 @@ async def upsert_contacts(
             existing.last_source = source
             if "is_valid" in record:
                 existing.is_valid = record["is_valid"]
+            elif reset_stale_invalid_peer:
+                existing.is_valid = "unknown"
+            if "status" not in record and reset_stale_invalid_peer:
+                existing.status = "new"
             updated.append(existing)
         else:
             record["source"] = source

@@ -241,6 +241,8 @@ def _is_cta_only(text: str) -> bool:
 
 def build_verified_context_block(script: Any | None) -> str:
     """Build a compact source-grounding block for generation."""
+    from app.core.business_knowledge import business_details_prompt_block
+
     if script is None:
         return "- Оффер: помогаем решить задачу без лишней ручной рутины."
 
@@ -257,6 +259,11 @@ def build_verified_context_block(script: Any | None) -> str:
     criteria = _safe_script_field(getattr(script, "success_criteria", ""), max_chars=180)
     if criteria:
         lines.append(f"- Критерий успеха: {criteria}")
+
+    business_details = business_details_prompt_block(script)
+    if business_details:
+        lines.append("- Проверенные уточнения владельца:")
+        lines.append(business_details)
 
     cta = _safe_script_field(getattr(script, "call_to_action", ""), max_chars=120)
     if cta and not _is_cta_only(extract_offer_summary(script)):

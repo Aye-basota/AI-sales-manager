@@ -176,6 +176,55 @@ class NotificationService:
         except Exception:
             logger.exception("Failed to send meeting booked alert")
 
+    async def send_owner_clarification_request(
+        self,
+        contact: Contact,
+        conversation: Conversation,
+        *,
+        category_label: str,
+        question: str,
+        lead_message_text: str = "",
+    ) -> None:
+        """Ask the business owner for a missing verified fact."""
+        if not self._chat_id:
+            logger.warning(
+                "ADMIN_NOTIFICATION_CHAT_ID is not set, owner clarification not sent."
+            )
+            return
+
+        bot = self._get_bot()
+        if not bot:
+            logger.warning("ADMIN_BOT_TOKEN is not set, cannot send clarification.")
+            return
+
+        text = (
+            "❓ Нужен ответ владельца\n"
+            f"{contact.first_name or ''} {contact.last_name or ''}, {contact.company_name or 'N/A'}\n"
+            f"Тема: {category_label}\n"
+            f"Вопрос: {question}\n"
+            f"Сообщение лида: {lead_message_text or 'N/A'}"
+        )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✍️ Ответить",
+                        callback_data=f"clarify:{conversation.id}",
+                    ),
+                    InlineKeyboardButton(
+                        text="📋 Диалог",
+                        callback_data=f"dialog:{conversation.id}",
+                    ),
+                ]
+            ]
+        )
+        try:
+            await self._send_with_retry(
+                bot, chat_id=self._chat_id, text=text, reply_markup=kb
+            )
+        except Exception:
+            logger.exception("Failed to send owner clarification request")
+
 
 _service = NotificationService()
 

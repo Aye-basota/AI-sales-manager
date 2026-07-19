@@ -39,3 +39,24 @@ def test_verified_context_preserves_discount_address_and_cta():
     assert "скидкой 20%" in block
     assert "Университетская" in block
     assert "Прийти в наш салон" in block
+
+
+def test_verified_context_includes_owner_business_details():
+    script = SimpleNamespace(
+        name="Стаканчики",
+        role_prompt="Поставляем пластиковые стаканчики.",
+        target_audience="Кофейни",
+        goal="Назначить созвон.",
+        success_criteria="Лид согласился обсудить поставку.",
+        call_to_action="Короткий созвон",
+        business_details={
+            "answers": {
+                "delivery": "Доставка по Москве 1-2 дня, регионы через ТК.",
+            },
+        },
+    )
+
+    block = build_verified_context_block(script)
+
+    assert "Проверенные уточнения владельца" in block
+    assert "Доставка по Москве 1-2 дня" in block

@@ -156,7 +156,7 @@ class TestNewScriptFSM:
         mock_state.set_state.assert_awaited_with(ScriptCreateFSM.working_hours)
         mock_callback.answer.assert_awaited_once()
 
-    async def test_timezone_to_confirm(self, mock_message, mock_state):
+    async def test_timezone_to_owner_clarification(self, mock_message, mock_state):
         mock_state.get_data.return_value = {
             "name": "Test",
             "role_prompt": "Role",
@@ -172,8 +172,8 @@ class TestNewScriptFSM:
         mock_message.text = "Europe/Moscow"
         await process_script_timezone(mock_message, mock_state)
         mock_state.update_data.assert_awaited_with(timezone="Europe/Moscow")
-        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.confirm)
-        assert "Проверьте бизнес" in mock_message.answer.call_args[0][0]
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.owner_clarification)
+        assert "уточнения у владельца" in mock_message.answer.call_args[0][0].lower()
 
     async def test_timezone_rejects_unknown_value(self, mock_message, mock_state):
         mock_message.text = "mop"
@@ -207,11 +207,21 @@ class TestNewScriptFSM:
         result_mock.scalar_one_or_none.return_value = None
         context = _make_mock_session(result_mock)
 
-        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+        with (
+            patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
+            patch(
+                "app.bots.admin_bot._generate_business_audit_questions",
+                new=AsyncMock(return_value=(["Какой точный вопрос задать?"], "test")),
+            ),
+            patch(
+                "app.bots.admin_bot._save_business_audit_questions",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
             await confirm_create_script(mock_callback, mock_state)
 
         mock_state.clear.assert_awaited_once()
-        mock_callback.answer.assert_awaited_once_with("✅ Бизнес сохранен!")
+        mock_callback.answer.assert_awaited_once_with("Проверяю черновик")
 
     async def test_cancel_clears_state(self, mock_callback, mock_state):
         await cancel_create_script(mock_callback, mock_state)

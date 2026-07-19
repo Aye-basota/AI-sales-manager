@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 try:
@@ -47,6 +47,15 @@ from app.core.humanizer import (
     calculate_thinking_delay,
     split_message_into_chunks,
 )
+from app.core.business_knowledge import (
+    detect_clarification_need,
+    detect_unsupported_claim,
+    has_verified_detail,
+    lead_hold_message,
+    looks_like_high_commercial_intent,
+    safe_unknown_fact_reply,
+    verified_detail_excerpt,
+)
 from app.core.funnel import next_stage
 from app.core.state_machine import is_terminal, transition
 from app.services.notification_service import NotificationService
@@ -61,6 +70,7 @@ logger = logging.getLogger(__name__)
 
 _inbound_clients: dict[str, SellerClient] = {}
 INBOUND_BATCH_DELAY_SECONDS = 4.0
+RECENT_DUPLICATE_REPLY_WINDOW_SECONDS = 120
 DORMANT_REPLY_MEDIUM_GAP_SECONDS = 30 * 60
 DORMANT_REPLY_MEDIUM_DELAY_SECONDS = 2 * 60
 DORMANT_REPLY_LONG_GAP_SECONDS = 2 * 60 * 60
@@ -162,6 +172,7 @@ PRICING_PATTERNS = (
     r"\bцен(?:а|у|ы|е|ой)?\b",
     r"ценник",
     r"прайс",
+    r"расцен",
     r"цифр",
     r"стоим",
     r"стоит",
@@ -314,7 +325,7 @@ def _meeting_time_is_confirmed(lead_text: str) -> bool:
     )
     has_acceptance = bool(
         re.search(
-            r"\b(?:да|ок|окей|подходит|удобно|согласен|согласна|договорились|подтверждаю|"
+            r"\b(?:да|давайте|ок|окей|подходит|удобно|согласен|согласна|договорились|подтверждаю|"
             r"yes|ok|okay|works|confirmed|confirm)\b",
             lower,
         )
@@ -334,9 +345,169 @@ def _script_offer_context(script: Script | None) -> str:
         return "помогаем решить эту задачу аккуратно и без лишней ручной рутины"
     first_sentence = re.split(r"(?<=[.!?])\s+", offer.strip())[0].strip()
     first_sentence = first_sentence.rstrip(".")
-    first_sentence = re.sub(r"(?i)^предоставляем\s+", "", first_sentence).strip()
-    first_sentence = re.sub(r"(?i)^занимаемся\s+", "", first_sentence).strip()
+    replacements = (
+        (r"(?i)^занимаемся\s+продажей\s+", "продажу "),
+        (r"(?i)^занимаемся\s+продажами\s+", "продажи "),
+        (r"(?i)^занимаемся\s+поставками\s+", "поставки "),
+        (r"(?i)^занимаемся\s+разработкой\s+", "разработку "),
+        (r"(?i)^прода[её]м\s+", "продажу "),
+        (r"(?i)^поставляем\s+", "поставки "),
+        (r"(?i)^предоставляем\s+", ""),
+    )
+    for pattern, replacement in replacements:
+        first_sentence = re.sub(pattern, replacement, first_sentence).strip()
     return first_sentence or offer
+
+
+def _normalize_reply_text(text: str) -> str:
+    """Normalize text for duplicate-reply comparison."""
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _should_skip_duplicate_reply(
+    response_text: str,
+    last_outbound_text: str,
+    last_outbound_at: datetime | None,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return True when an inbound batch would resend the same recent reply."""
+    if not response_text or not last_outbound_text:
+        return False
+    if _normalize_reply_text(response_text) != _normalize_reply_text(last_outbound_text):
+        return False
+    if last_outbound_at is None:
+        return True
+    if last_outbound_at.tzinfo is None:
+        last_outbound_at = last_outbound_at.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return (current - last_outbound_at).total_seconds() <= RECENT_DUPLICATE_REPLY_WINDOW_SECONDS
+
+
+def _sync_contact_identity_from_inbound(contact: Contact, from_user: Any) -> bool:
+    """Refresh visible Telegram identity fields from the actual inbound sender."""
+    changed = False
+    updates = {
+        "telegram_user_id": (getattr(from_user, "id", None), False),
+        "telegram_username": (getattr(from_user, "username", None), False),
+        "first_name": (getattr(from_user, "first_name", None), False),
+        "last_name": (getattr(from_user, "last_name", None), True),
+    }
+    for field, (value, allow_blank) in updates.items():
+        if field == "telegram_user_id":
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                next_value = value
+            elif isinstance(value, str) and value.strip().isdigit():
+                next_value = int(value.strip())
+            else:
+                continue
+            try:
+                next_value = int(next_value)
+            except (TypeError, ValueError):
+                continue
+            if getattr(contact, field, None) != next_value:
+                setattr(contact, field, next_value)
+                changed = True
+            continue
+        if value is None:
+            cleaned = ""
+        elif isinstance(value, str):
+            cleaned = value.strip()
+        else:
+            continue
+        if not cleaned and not allow_blank:
+            continue
+        next_value = cleaned or ""
+        if getattr(contact, field, None) != next_value:
+            setattr(contact, field, next_value)
+            changed = True
+    if changed:
+        contact.last_source = "inbound"
+    return changed
+
+
+def _normalized_username(value: Any) -> str:
+    """Return a comparable Telegram username without leading @."""
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lstrip("@").lower()
+
+
+async def _send_inbound_response_text(
+    db: AsyncSession,
+    client: SellerClient,
+    conversation: Conversation,
+    db_account: TelegramAccount,
+    *,
+    user_id: int,
+    response_text: str,
+    current_daily: int,
+    intent: str,
+    llm_model: str,
+    max_chunks: int = 2,
+) -> int:
+    """Send a deterministic inbound reply and persist it as one message."""
+    chunks = split_message_into_chunks(response_text, max_chunks=max_chunks)
+    base_typing_delay = calculate_typing_delay(response_text)
+    thinking_delay = calculate_thinking_delay()
+    await client.set_online()
+    if thinking_delay > 0:
+        await asyncio.sleep(thinking_delay / 1000.0)
+    for chunk in chunks:
+        await client.send_message(
+            user_id=user_id,
+            text=chunk,
+            typing_delay_ms=base_typing_delay,
+        )
+    await add_message(
+        db,
+        conversation.id,
+        "outbound",
+        response_text,
+        message_type="text",
+        llm_model=llm_model,
+        tokens_used=0,
+        typing_delay_ms=base_typing_delay + thinking_delay,
+        intent_classification=intent,
+    )
+    db_account.daily_messages_sent = current_daily + len(chunks)
+    db_account.last_message_at = datetime.now(timezone.utc)
+    return len(chunks)
+
+
+def _clarification_payload(
+    category: str,
+    question: str,
+    lead_message: str,
+    account_id: Any,
+) -> dict[str, Any]:
+    return {
+        "status": "pending",
+        "category": category,
+        "question": question,
+        "lead_message": lead_message,
+        "account_id": str(account_id),
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _owner_clarification_is_enabled(script: Script | None) -> bool:
+    return getattr(script, "owner_clarification_enabled", True) is not False
+
+
+def _build_verified_pricing_reply(script: Script | None) -> str:
+    detail = verified_detail_excerpt(script, "pricing", max_chars=180)
+    if not detail:
+        return ""
+    detail = detail.rstrip(".")
+    return (
+        f"По расценкам: {detail}. "
+        "Точная оценка зависит от задачи и объема, поэтому лучше коротко сверить вводные."
+    )
 
 
 def _looks_like_short_hesitation(lead_text: str) -> bool:
@@ -580,7 +751,7 @@ def _build_inbound_fallback_text(
         return (
             "По цене честно: актуального прайса в этой переписке у меня нет, поэтому "
             "цифру придумывать не буду. Для нормального расчета нужно сверить конкретную "
-            "услугу или формат, а не назначать встречу ради цены."
+            "услугу или формат."
         )
 
     if _matches_any(INTEGRATION_PATTERNS, lower):
@@ -791,36 +962,39 @@ async def _handle_inbound_message(
         return
 
     async def _flush_batch() -> None:
-        while True:
-            before_count = len(_pending_inbound_batches.get(key, []))
-            await asyncio.sleep(INBOUND_BATCH_DELAY_SECONDS)
-            current_batch = _pending_inbound_batches.get(key, [])
-            if not current_batch:
-                if _pending_inbound_tasks.get(key) is asyncio.current_task():
-                    _pending_inbound_tasks.pop(key, None)
-                return
-            if len(current_batch) == before_count:
-                break
-
-        batch = _pending_inbound_batches.pop(key, [])
         current_task = asyncio.current_task()
-        if _pending_inbound_tasks.get(key) is current_task:
-            _pending_inbound_tasks.pop(key, None)
-        if not batch:
-            return
+        try:
+            while True:
+                while True:
+                    before_count = len(_pending_inbound_batches.get(key, []))
+                    await asyncio.sleep(INBOUND_BATCH_DELAY_SECONDS)
+                    current_batch = _pending_inbound_batches.get(key, [])
+                    if not current_batch:
+                        return
+                    if len(current_batch) == before_count:
+                        break
 
-        latest_message = batch[-1]
-        combined_text = "\n".join(
-            (item.text or "").strip()
-            for item in batch
-            if (item.text or "").strip()
-        )
-        await _process_inbound_message(
-            account,
-            client,
-            latest_message,
-            combined_text=combined_text,
-        )
+                batch = _pending_inbound_batches.pop(key, [])
+                if not batch:
+                    return
+
+                latest_message = batch[-1]
+                combined_text = "\n".join(
+                    (item.text or "").strip()
+                    for item in batch
+                    if (item.text or "").strip()
+                )
+                await _process_inbound_message(
+                    account,
+                    client,
+                    latest_message,
+                    combined_text=combined_text,
+                )
+                if not _pending_inbound_batches.get(key):
+                    return
+        finally:
+            if _pending_inbound_tasks.get(key) is current_task:
+                _pending_inbound_tasks.pop(key, None)
 
     task = asyncio.create_task(_flush_batch())
     _pending_inbound_tasks[key] = task
@@ -846,11 +1020,46 @@ async def _process_inbound_message(
 
     async with AsyncSessionLocal() as db:
         try:
-            # 1. Find contact
+            # 1. Find contact. Telegram often gives us only a username at import time,
+            # then reveals user_id when the person replies. Prefer the duplicate that
+            # belongs to the freshest active campaign, otherwise an old inbound-only
+            # contact can steal the reply from the campaign that just sent a message.
+            username = _normalized_username(getattr(message.from_user, "username", None))
+            contact_filters = [Contact.telegram_user_id == telegram_user_id]
+            if username:
+                contact_filters.append(
+                    func.lower(Contact.telegram_username).in_(
+                        [username, f"@{username}"]
+                    )
+                )
+            active_campaign_activity = (
+                select(
+                    func.max(
+                        func.coalesce(
+                            CampaignContact.last_message_at,
+                            CampaignContact.follow_up_sent_at,
+                            CampaignContact.initial_sent_at,
+                            CampaignContact.reply_received_at,
+                            Campaign.created_at,
+                        )
+                    )
+                )
+                .join(Campaign, Campaign.id == CampaignContact.campaign_id)
+                .where(CampaignContact.contact_id == Contact.id)
+                .where(Campaign.status == "running")
+                .where(
+                    CampaignContact.status.in_(
+                        ["initial_sent", "follow_up_sent", "replied", "meeting_booked"]
+                    )
+                )
+                .correlate(Contact)
+                .scalar_subquery()
+            )
             result = await db.execute(
                 select(Contact)
-                .where(Contact.telegram_user_id == telegram_user_id)
+                .where(or_(*contact_filters))
                 .order_by(
+                    active_campaign_activity.desc().nullslast(),
                     Contact.updated_at.desc().nullslast(),
                     Contact.created_at.desc().nullslast(),
                 )
@@ -873,6 +1082,9 @@ async def _process_inbound_message(
                 db.add(contact)
                 await db.commit()
                 await db.refresh(contact)
+            else:
+                if _sync_contact_identity_from_inbound(contact, message.from_user):
+                    await db.commit()
 
             # 2. Find latest conversation
             result = await db.execute(
@@ -999,7 +1211,12 @@ async def _process_inbound_message(
 
             # 8. Classify intent
             engine = LLMEngine()
-            if _looks_like_technical_support_detour(text):
+            text_lower = text.lower()
+            if _matches_any(PAUSE_PATTERNS, text_lower):
+                intent = "objection"
+            elif _matches_any(WRONG_PERSON_PATTERNS, text_lower):
+                intent = "objection"
+            elif _looks_like_technical_support_detour(text):
                 intent = "question"
             elif _looks_like_offtopic_or_troll(text) or _looks_like_hard_negative(text):
                 intent = "negative"
@@ -1008,6 +1225,7 @@ async def _process_inbound_message(
             meeting_confirmed = intent == "meeting_intent" and _meeting_time_is_confirmed(
                 text
             )
+            high_commercial_intent = looks_like_high_commercial_intent(text)
             effective_intent = (
                 intent if intent != "meeting_intent" or meeting_confirmed else "positive"
             )
@@ -1021,6 +1239,10 @@ async def _process_inbound_message(
             )
             transition_state = "warm" if reopen_closed else previous_state
             new_state = transition(transition_state, event)
+            if intent == "meeting_intent" and not meeting_confirmed:
+                new_state = "hot"
+            if high_commercial_intent and new_state not in ("closed", "meeting_booked"):
+                new_state = "hot"
 
             # 8.5 Update funnel stage based on intent
             conversation.conversation_stage = next_stage(
@@ -1033,6 +1255,8 @@ async def _process_inbound_message(
             current_facts = dict(conversation.facts_extracted or {})
             current_facts["last_intent"] = intent
             current_facts["last_effective_intent"] = effective_intent
+            if high_commercial_intent:
+                current_facts["high_commercial_intent"] = True
             conversation.facts_extracted = current_facts
 
             if campaign_contact and meeting_confirmed:
@@ -1109,6 +1333,115 @@ async def _process_inbound_message(
                 )
                 return
 
+            if _matches_any(PRICING_PATTERNS, text_lower) and has_verified_detail(
+                script,
+                "pricing",
+            ):
+                response_text = _build_verified_pricing_reply(script)
+                if response_text:
+                    await _send_inbound_response_text(
+                        db,
+                        client,
+                        conversation,
+                        db_account,
+                        user_id=user_id,
+                        response_text=response_text,
+                        current_daily=current_daily,
+                        intent=effective_intent,
+                        llm_model="verified_pricing",
+                    )
+                    await db.commit()
+                    became_hot = (
+                        new_state in ("hot", "meeting_booked")
+                        and previous_state not in ("hot", "meeting_booked")
+                    )
+                    if became_hot:
+                        notif = NotificationService()
+                        await notif.send_hot_lead_alert(
+                            contact,
+                            conversation,
+                            last_message_text=text,
+                        )
+                    return
+
+            clarification_need = detect_clarification_need(script, text)
+            if clarification_need:
+                clarification_enabled = _owner_clarification_is_enabled(script)
+                if clarification_enabled:
+                    response_text = lead_hold_message(clarification_need)
+                    pending = conversation.owner_clarification
+                    pending = pending if isinstance(pending, dict) else {}
+                    already_pending = (
+                        pending.get("status") == "pending"
+                        and pending.get("category") == clarification_need.key
+                    )
+                    if already_pending:
+                        response_text = (
+                            f"Я уже уточняю {clarification_need.label_ru}, "
+                            "чтобы не ошибиться с условиями."
+                        )
+                    else:
+                        conversation.owner_clarification = _clarification_payload(
+                            clarification_need.key,
+                            clarification_need.question_ru,
+                            text,
+                            account.id,
+                        )
+                    await _send_inbound_response_text(
+                        db,
+                        client,
+                        conversation,
+                        db_account,
+                        user_id=user_id,
+                        response_text=response_text,
+                        current_daily=current_daily,
+                        intent=effective_intent,
+                        llm_model="owner_clarification",
+                    )
+                    await db.commit()
+                    notif = NotificationService()
+                    if not already_pending:
+                        await notif.send_owner_clarification_request(
+                            contact,
+                            conversation,
+                            category_label=clarification_need.label_ru,
+                            question=clarification_need.question_ru,
+                            lead_message_text=text,
+                        )
+                    became_hot = new_state in ("hot", "meeting_booked") and previous_state not in (
+                        "hot",
+                        "meeting_booked",
+                    )
+                    if became_hot:
+                        await notif.send_hot_lead_alert(
+                            contact, conversation, last_message_text=text
+                        )
+                    return
+
+                response_text = safe_unknown_fact_reply(clarification_need)
+                await _send_inbound_response_text(
+                    db,
+                    client,
+                    conversation,
+                    db_account,
+                    user_id=user_id,
+                    response_text=response_text,
+                    current_daily=current_daily,
+                    intent=effective_intent,
+                    llm_model="unknown_fact_fallback",
+                )
+                await db.commit()
+                became_hot = new_state in ("hot", "meeting_booked") and previous_state not in (
+                    "hot",
+                    "meeting_booked",
+                )
+                if became_hot:
+                    notif = NotificationService()
+                    await notif.send_hot_lead_alert(
+                        contact, conversation, last_message_text=text
+                    )
+                return
+
             # 9. Build context
             context = await get_conversation_context(db, conversation.id, limit=10)
 
@@ -1169,6 +1502,14 @@ async def _process_inbound_message(
                 for msg in context["messages"]
                 if msg.direction == "outbound"
             ]
+            last_outbound_msg = next(
+                (
+                    msg
+                    for msg in reversed(context["messages"])
+                    if msg.direction == "outbound"
+                ),
+                None,
+            )
 
             from app.core.funnel import get_max_length_for_stage
 
@@ -1211,6 +1552,7 @@ async def _process_inbound_message(
                     response = {"text": "", "model": None, "tokens_used": 0}
 
             response_text = response.get("text", "")
+            owner_clarification_to_notify = None
 
             # If guardrails blocked even the retry, use fallback text
             if not response_text or response.get("model") == "fallback":
@@ -1218,6 +1560,50 @@ async def _process_inbound_message(
                     response_source = "guardrail_or_provider_fallback"
                 response_text = _build_inbound_fallback_text(text, script, history=history)
             response_text = _polish_inbound_response(response_text)
+            unsupported_claim = detect_unsupported_claim(script, response_text)
+            if unsupported_claim:
+                logger.info(
+                    "Replacing unsupported business claim conversation=%s category=%s",
+                    conversation.id,
+                    unsupported_claim.key,
+                )
+                if _owner_clarification_is_enabled(script):
+                    pending = conversation.owner_clarification
+                    pending = pending if isinstance(pending, dict) else {}
+                    already_pending = (
+                        pending.get("status") == "pending"
+                        and pending.get("category") == unsupported_claim.key
+                    )
+                    if not already_pending:
+                        conversation.owner_clarification = _clarification_payload(
+                            unsupported_claim.key,
+                            unsupported_claim.question_ru,
+                            text,
+                            account.id,
+                        )
+                        owner_clarification_to_notify = unsupported_claim
+                    response_text = lead_hold_message(unsupported_claim)
+                    response["model"] = "owner_clarification_guard"
+                    response["tokens_used"] = 0
+                    response_source = "owner_clarification_guard"
+                else:
+                    response_text = safe_unknown_fact_reply(unsupported_claim)
+                    response["model"] = "unknown_fact_guard"
+                    response["tokens_used"] = 0
+                    response_source = "unknown_fact_guard"
+
+            if _should_skip_duplicate_reply(
+                response_text,
+                getattr(last_outbound_msg, "content", "") if last_outbound_msg else "",
+                getattr(last_outbound_msg, "sent_at", None) if last_outbound_msg else None,
+            ):
+                logger.info(
+                    "Skipping duplicate inbound reply conversation=%s chars=%d",
+                    conversation.id,
+                    len(response_text),
+                )
+                await db.commit()
+                return
 
             # 11. Humanizer delays and chunking
             chunks = split_message_into_chunks(response_text, burst_rate=0.24)
@@ -1281,6 +1667,15 @@ async def _process_inbound_message(
                 "hot",
                 "meeting_booked",
             )
+            if owner_clarification_to_notify:
+                notif = NotificationService()
+                await notif.send_owner_clarification_request(
+                    contact,
+                    conversation,
+                    category_label=owner_clarification_to_notify.label_ru,
+                    question=owner_clarification_to_notify.question_ru,
+                    lead_message_text=text,
+                )
             if meeting_confirmed or became_hot:
                 notif = NotificationService()
                 await notif.send_hot_lead_alert(
