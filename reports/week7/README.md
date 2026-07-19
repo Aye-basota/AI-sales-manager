@@ -51,7 +51,7 @@ The customer independently tested the product using the admin panel, his own tes
 - Final SemVer release: [`v0.5.0`](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.5.0)
 - Week 6 trial release: [`v0.4.0`](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.4.0)
 - API metadata: `0.5.0`
-- Public sanitized demo video: external upload required before final submission; add the public URL here and to the `v0.5.0` GitHub Release.
+- Public sanitized demo video: [`mvp-v3-public-sanitized-demo.mp4`](https://github.com/Aye-basota/AI-sales-manager/releases/download/v0.5.0/mvp-v3-public-sanitized-demo.mp4)
 
 The `v0.5.0` release must be published from the protected `main` commit after the final fixes PR is merged, and the release body must link the Sprint 5 milestone, current access/run instructions, [`docs/customer-handover.md`](../../docs/customer-handover.md), this Week 7 report, and the public sanitized demo video.
 
@@ -126,8 +126,9 @@ Assignment 6 asks for embedded Week 7 screenshots when public links may not be r
 
 ![Reviewed issue-linked PR #96](images/reviewed-pr-96.png)
 
+![Final product access through the Telegram Admin Bot](images/final-product-access-admin-bot.png)
+
 Before final Moodle submission, add the remaining sanitized screenshots under `reports/week7/images/` after the corresponding external artifacts exist:
 
 - final `v0.5.0` release page
-- final product access or deployment evidence from the live bot/admin path
 - public sanitized demo video page, if the video platform is not reliably inspectable
