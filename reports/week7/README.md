@@ -51,7 +51,7 @@ The customer independently tested the product using the admin panel, his own tes
 - Final SemVer release: [`v0.5.0`](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.5.0)
 - Week 6 trial release: [`v0.4.0`](https://github.com/Aye-basota/AI-sales-manager/releases/tag/v0.4.0)
 - API metadata: `0.5.0`
-- Public sanitized demo video: external upload required before final submission; add the public URL here and to the `v0.5.0` GitHub Release.
+- Public sanitized demo video: [MVP v3 public sanitized demo](https://drive.google.com/drive/folders/1P-1ZxjCKGLRe_pFrLCp9exKYpWw59Zv7?usp=drive_link)
 
 The `v0.5.0` release must be published from the protected `main` commit after the final fixes PR is merged, and the release body must link the Sprint 5 milestone, current access/run instructions, [`docs/customer-handover.md`](../../docs/customer-handover.md), this Week 7 report, and the public sanitized demo video.
 
@@ -120,10 +120,14 @@ The Week 7 rehearsal/presentation preparation is handled through the private Wee
 
 ## Screenshots
 
-Assignment 6 asks for embedded Week 7 screenshots when public links may not be reliably inspectable. Add sanitized screenshots under `reports/week7/images/` before final Moodle submission for:
+Assignment 6 asks for embedded Week 7 screenshots when public links may not be reliably inspectable. Current public Week 7 screenshots:
 
-- Sprint 5 milestone / Sprint Backlog state
-- final `v0.5.0` release
-- final product access or deployment evidence
-- example reviewed issue-linked PR
-- public sanitized demo video page, if the video platform is not reliably inspectable
+![Sprint 5 milestone and Sprint Backlog state](images/sprint-5-milestone.png)
+
+![Reviewed issue-linked PR #96](images/reviewed-pr-96.png)
+
+![Final product access through the Telegram Admin Bot](images/final-product-access-admin-bot.png)
+
+![Final `v0.5.0` release page](images/final-release-v0.5.0.png)
+
+![Public sanitized demo video on Google Drive](images/public-demo-video-drive.png)
