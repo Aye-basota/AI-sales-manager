@@ -1,7 +1,7 @@
 # User Acceptance Tests
 
-**Last updated:** 2026-07-12
-**Sprint:** 4 (Week 6 trial / handover-candidate)
+**Last updated:** 2026-07-19
+**Sprint:** 5 (MVP v3)
 
 ## Table of Contents
 
@@ -37,6 +37,7 @@
 - **Executed with:** customer/stakeholder
 - **Actual Result:** The customer selected a test company ("motor oils") and sent a message to the bot. The bot replied correctly and promptly, referencing the customer's business segment and relevant pain points. The customer then confirmed the local development machine and Docker environment were both fully shut down (approx. 10 PM at the time of the session) and sent a follow-up message asking the bot to elaborate on a product. The bot replied normally, confirming the assistant is served independently of any developer's local machine and remains available outside standard working hours.
 - **Status:** Pass
+- **Week 7 note (2026-07-19):** Not re-executed with the same explicit shutdown check, but the product remained accessible and responsive throughout the customer's independent testing and the Week 7 call. Original Pass result stands.
 
 ---
 
@@ -65,6 +66,7 @@
 - **Executed with:** customer/stakeholder
 - **Actual Result:** The customer asked a pricing-related question about maintenance/oil-change service. Instead of only returning a price, the assistant asked clarifying questions and guided the conversation toward booking, in a noticeably more natural, conversational tone compared to the previous version. The customer also verified that an off-topic message was handled gracefully, with the assistant steering the conversation back on topic.
 - **Status:** Pass
+- **Week 7 note (2026-07-19):** Customer independently exchanged messages with the bot again ahead of the Week 7 call and confirmed response quality was noticeably improved further, with no role-breaking or system-prompt leakage observed. Original Pass result stands, reinforced.
 
 ---
 
@@ -76,6 +78,7 @@
 **Related PBIs / User Stories:**
 - Explicit Sprint 5 transition action: improve Telegram lead-discovery/parsing result quality.
 - Related existing pipeline issue: [TECH-08: CSV contact import persistence/duplicate handling](https://github.com/Aye-basota/AI-sales-manager/issues/28) (#28).
+- TECH-14: Improve lead-discovery/parsing result quality (Sprint 5).
 
 **Description:** Ensures lead discovery via Telegram group/message parsing returns relevant, usable leads for a defined target audience and exports them in a campaign-compatible CSV.
 
@@ -86,12 +89,18 @@
 - AND results should be exportable to a campaign-compatible CSV
 - AND result relevance should be sufficient for the operator to proceed without extensive manual filtering or repeated query attempts
 
-**Execution Result:**
+**Execution Result (Week 6):**
 - **Date executed:** 2026-07-12
 - **Executed with:** customer/stakeholder
 - **Actual Result:** An initial narrow query tied to the demo business context returned no results. After broadening the query, the search found relevant Telegram groups with matching thematic descriptions, and results exported correctly to a campaign-compatible CSV. The customer confirmed the export format and flow work, but flagged result coverage/relevance on the first attempt as a quality gap and named parsing/search quality as a top Sprint 5 priority.
 - **Status:** Needs Improvement
-- **Resulting PBIs / issues:** Explicit Sprint 5 transition action: tune lead-discovery query generation, filtering, and result-quality review; related import/export pipeline issue [#28](https://github.com/Aye-basota/AI-sales-manager/issues/28).
+
+**Execution Result (Week 7 re-run):**
+- **Date executed:** 2026-07-19
+- **Executed with:** customer/stakeholder
+- **Actual Result:** Customer ran lead discovery independently using a real query and found several relevant leads (hairdressers) matching the target audience. Confirmed results were noticeably more relevant than the July 12 attempt, with no repeated/broadened queries needed.
+- **Status:** Pass
+- **Resulting PBIs / issues:** TECH-14 — confirmed resolved by customer.
 
 ---
 
@@ -114,10 +123,10 @@
 - AND numbers should update as new messages/replies occur
 
 **Execution Result:**
-- **Date executed:** Not yet executed with the customer in Week 6
-- **Executed with:** -
-- **Actual Result:** Not demoed live on the July 12 call. The automated and local test evidence remains useful, but customer-executed analytics UAT should be scheduled during Week 7 if analytics is claimed as final transition-critical behavior.
-- **Status:** Not yet executed
+- **Date executed:** 2026-07-19
+- **Executed with:** customer/stakeholder
+- **Actual Result:** Customer opened the analytics dashboard during the Week 7 call and reviewed reply rate, hot-lead count, and automation rate. Confirmed the displayed numbers were understandable.
+- **Status:** Pass
 
 ---
 
@@ -144,3 +153,4 @@
 - **Actual Result:** The end-to-end flow was demonstrated, but the customer asked for less manual configuration and a smoother launch path: after describing the business, the system should find relevant leads and be ready to launch with fewer approval/setup steps.
 - **Status:** Needs Improvement
 - **Resulting PBIs / issues:** [#68](https://github.com/Aye-basota/AI-sales-manager/issues/68) covers back/edit navigation; Sprint 5 should keep a setup-friction follow-up as an explicit transition action or dedicated issue.
+- **Week 7 note (2026-07-19):** Not explicitly re-tested on this call — the session focused on prompt quality, lead search, and analytics. Status remains **Needs Improvement** unless re-verified before final submission.
