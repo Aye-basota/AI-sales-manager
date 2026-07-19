@@ -110,6 +110,10 @@ def _make_result(items=None, single=None):
         def all(self):
             return items or []
 
+        def first(self):
+            records = items or []
+            return records[0] if records else None
+
     class Result:
         def scalars(self, *args, **kwargs):
             return Scalars()
@@ -182,6 +186,7 @@ async def test_process_campaigns_retries_on_flood_wait():
         _make_result(single=contact),
         _make_result(single=None),
         _make_result([account1, account2]),
+        _make_result([]),
         _make_result([account2]),
     ]
     mock_db.execute = AsyncMock(side_effect=calls)
