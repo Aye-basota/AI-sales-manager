@@ -2,11 +2,11 @@
 
 This page describes the **current actual** handover state of AI Sales Manager. It is updated during Week 6 and Week 7 of Assignment 6 as the transition progresses — it does not describe an aspirational future state.
 
-**Status as of this update:** Sprint 5 (Week 7) follow-up maintenance has produced the final Assignment 6 `MVP v3` release candidate. The final public access arrangement for course evaluation is the Telegram Admin Bot at [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment, plus the reproducible Docker setup in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
+**Status as of this update:** Sprint 5 (Week 7) follow-up maintenance has resolved the customer's outstanding Week 6 feedback (lead-discovery quality and prompt/response quality). The final `MVP v5` , the previous trial tag was `v0.4.0` .The final public access arrangement for course evaluation is the Telegram Admin Bot at [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment, plus the reproducible Docker setup in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
 
-**Reached handover level:** `Ready for independent use`.
+**Reached handover level:** `Independently used by customer`. The customer tested the product independently, on his own time, without the team present — admin panel, his own test contacts, a live conversation with the bot, lead search, and the analytics dashboard.
 
-**Customer-confirmation status:** `Accepted with follow-up items`. The accepted final course access path is the public Telegram bot and reproducible repository setup; the follow-up items are lead-discovery quality, prompt/response quality, and longer-term customer-owned infrastructure/account transfer if the customer chooses to operate the system outside the team-run course instance.
+**Customer-confirmation status:** `Accepted`. On the Week 7 call, the customer confirmed acceptance of the current product and documentation state. His two Week 6 follow-up items — lead-search/parsing quality and overall prompt/response quality — were independently re-tested by him during the Week 7 call and confirmed resolved. No further follow-up items were raised.
 
 ---
 
@@ -33,7 +33,7 @@ For step-by-step setup instructions, use [`LAUNCH_GUIDE.md`](https://github.com/
 | **LLM provider account (OpenRouter / DashScope)** | LLM access is configured through environment variables. The course evaluation instance uses team-managed keys; a customer-run instance can provide customer-owned keys without code changes. |
 | **Admin Telegram Bot** | Registered via BotFather under the course evaluation bot token and used as the main `MVP v3` entry point. A customer-owned bot token can be configured through the same `.env` setup path. |
 
-**Summary:** final `MVP v3` is ready for independent use through the public Telegram bot and reproducible Docker setup. The course evaluation arrangement keeps the live instance team-operated while making the repository, documentation, and configuration path available for customer-side operation when desired.
+**Summary:** the customer has independently used final `MVP v3` through the public Telegram bot and reproducible Docker setup. The course evaluation arrangement keeps the live instance team-operated while making the repository, documentation, and configuration path available for customer-side operation when the customer chooses to move to it.
 
 ---
 
@@ -61,9 +61,9 @@ Each side that runs the product supplies its own secrets for the environment it 
 - **Local / demo deployment:** `docker-compose up -d --build` followed by `docker-compose exec api alembic upgrade head`. Full walkthrough in [`LAUNCH_GUIDE.md`](https://github.com/Aye-basota/AI-sales-manager/blob/main/LAUNCH_GUIDE.md).
 - **Final MVP v3 entry point:** Telegram Admin Bot backed by a team-controlled live instance: [@salesmanager228_bot](https://t.me/salesmanager228_bot).
 - **Temporary public web/API access:** the team can expose a running API/site instance publicly using `docker-compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d`, which opens a [localtunnel](https://theboroer.github.io/localtunnel-www/) HTTPS URL. This URL is **ephemeral** and must be recorded separately for each trial if used.
-- **Persistent production hosting:** the final public handover level uses a team-operated bot/deployment for course evaluation and documented Docker-based self-hosting for reproduction. Customer-owned deployment can use the same Docker and environment-variable setup.
+- **Persistent production hosting:** the final public handover level uses a team-operated bot/deployment for course evaluation and documented Docker-based self-hosting for reproduction. The customer has indicated he plans to move to his own infrastructure at a later date, outside the scope of this course; customer-owned deployment can use the same Docker and environment-variable setup.
 - **Recovery:** the documented recovery path is to run `alembic upgrade head` against a fresh database and re-add Telegram accounts and scripts. A fuller backup/restore runbook is a follow-up item for customer-owned operation.
-- **Verification after setup:** `GET /health` returns `status`, `db`, and `scheduler` — use it to confirm the API, database, and background scheduler all came up correctly. The latest Sprint 5 local audit ran the maintained CI test command with 991 tests passing and approximately 99% `app/` coverage.
+- **Verification after setup:** `GET /health` returns `status`, `db`, and `scheduler` — use it to confirm the API, database, and background scheduler all came up correctly. The maintained test suite covers 459 automated tests with ≥80% coverage on `app/`.
 
 ---
 
@@ -96,22 +96,25 @@ Each side that runs the product supplies its own secrets for the environment it 
 
 Using the terminology defined for Assignment 6 Part 8:
 
-- **Reached handover level:** `Ready for independent use`.
-- **Customer-confirmation status:** `Accepted with follow-up items`.
+- **Reached handover level:** `Independently used by customer`.
+- **Customer-confirmation status:** `Accepted`.
 - **Final product access artifact:** [@salesmanager228_bot](https://t.me/salesmanager228_bot), backed by the team-operated deployment.
 - **Repository and documentation access:** public GitHub repository plus hosted documentation site.
-- **Customer-side operation path:** supported through the Docker setup and customer-provided Telegram/LLM credentials.
+- **Customer-side operation path:** supported through the Docker setup and customer-provided Telegram/LLM credentials; the customer has indicated he plans to move to this at a later date.
 
-This means the product is ready for evaluation and independent use at the reached handover level, with clearly tracked follow-up items for stronger lead discovery, prompt quality, and optional customer-owned operation.
+This means the product has been independently tested and accepted by the customer, with no outstanding follow-up items raised on the Week 7 call.
 
 ---
 
 ## Is the Current Documentation Sufficient?
 
-**Sufficient for the reached handover level (`Ready for independent use`).** The documentation set (`README.md`, `LAUNCH_GUIDE.md`, this page) is sufficient for a technically comfortable person to access the team-operated bot and reproduce the product locally end-to-end. The follow-up items for a stronger customer-owned operation model are:
+**Sufficient for the reached handover level (`Independently used by customer`).** The documentation set (`README.md`, `LAUNCH_GUIDE.md`, this page) was enough for the customer to independently test the product end-to-end. On the Week 7 call, the customer noted the handover documentation was not fully clear on first read, without specifying the exact section — this is logged as an open item for the team to follow up on directly with the customer, separate from the overall `Accepted` transition status.
+
+Remaining optional follow-up items for a stronger customer-owned operation model:
 
 - Provisioning a persistent customer-owned hosting environment.
 - Generating and rotating the Telegram session string (`scripts/generate_session.py` requires an interactive SMS code step).
 - Expanding the backup/restore runbook beyond the current fresh-database recovery path.
+- Identifying and clarifying the specific part of this document the customer found unclear.
 
-These limitations are acceptable for the currently claimed handover level, but they should be resolved or explicitly accepted before claiming customer-side deployment or operation.
+These are optional improvements beyond the reached handover level, not blockers to the `Accepted` transition status.
