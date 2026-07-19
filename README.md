@@ -7,7 +7,7 @@
 ## Для заказчика и ревьюера
 
 - **Доступ к продукту:** основной пользовательский вход — Telegram Admin Bot: [@salesmanager228_bot](https://t.me/salesmanager228_bot). Публичный runnable access path: Docker Compose ниже и [`LAUNCH_GUIDE.md`](LAUNCH_GUIDE.md). Актуальный handover/access статус: [`docs/customer-handover.md`](docs/customer-handover.md).
-- **Текущая учебная версия:** `MVP v3` / `v0.5.0` release candidate for Assignment 6 final evaluation.
+- **Текущая учебная версия:** `MVP v3` / `v0.5.0` for Assignment 6 final evaluation.
 - **Документация:** [hosted docs site](https://aye-basota.github.io/AI-sales-manager/)
 - **Handover / статус передачи проекта:** [`docs/customer-handover.md`](docs/customer-handover.md)
 - **Как контрибьютить:** [`CONTRIBUTING.md`](CONTRIBUTING.md)

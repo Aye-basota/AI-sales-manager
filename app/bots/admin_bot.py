@@ -4338,7 +4338,6 @@ async def process_script_owner_clarification(
     callback: types.CallbackQuery,
     state: FSMContext,
 ):
-    lang = _admin_lang(callback)
     value = callback.data.split(":", 1)[1]
     await state.update_data(
         owner_clarification_enabled=value != "off",
@@ -4347,6 +4346,7 @@ async def process_script_owner_clarification(
     )
     await _send_script_confirm_from_state(callback.message, state)
     await callback.answer()
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("sdedit:"))
 async def handle_script_draft_edit(callback: types.CallbackQuery, state: FSMContext):
