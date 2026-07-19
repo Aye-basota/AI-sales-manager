@@ -78,13 +78,13 @@ Key Sprint 5 regression areas:
 
 ## 5. Links Owned by Other Week 7 Parts
 
-These files are required for the full Week 7 submission index and are reserved for the teammates responsible for those Week 7 evidence parts:
+Part 12 (reflection and LLM report) is complete. The remaining files are required for the full Week 7 submission index and are reserved for the teammates responsible for those Week 7 evidence parts:
 
+- Reflection (Part 12): [`reports/week7/reflection.md`](reflection.md)
+- LLM report (Part 12): [`reports/week7/llm-report.md`](llm-report.md)
 - Sprint Review transcript or notes: `reports/week7/sprint-review-transcript.md` or `reports/week7/sprint-review-notes.md`
 - Sprint Review summary: `reports/week7/sprint-review-summary.md`
-- Reflection: `reports/week7/reflection.md`
-- Retrospective: `reports/week7/retrospective.md`
-- LLM report: `reports/week7/llm-report.md`
+- Retrospective (Part 11): `reports/week7/retrospective.md`
 - Public sanitized demo video link
 - Week 7 rehearsal/presentation evidence
 - Week 7 screenshots under `reports/week7/images/`
