@@ -1,8 +1,8 @@
 # Sprint 5 Review & Final Transition Confirmation — Transcript (Week 7)
 
-**Date:** [дата звонка]
+**Date:** 19.07.26
 **Format:** Video call
-**Attendees:** Team (swp_26), customer Mark
+**Attendees:** Team (swp_26), customer Mark Petrov
 **Recording consent:** Mark confirmed the recording can be shared with the instructor, no redactions requested.
 
 ---
