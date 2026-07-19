@@ -34,6 +34,18 @@ from app.core.initial_message_quality import (
     build_safe_initial_fallback,
     needs_initial_message_retry,
 )
+from app.core.business_knowledge import (
+    audit_questions_from_details,
+    area_by_key,
+    build_business_audit_messages,
+    business_audit_has_owner_answer,
+    fallback_business_context_questions,
+    mark_audit_answered,
+    mark_audit_skipped,
+    merge_owner_answer,
+    parse_business_audit_questions,
+    store_audit_questions,
+)
 from app.core.scheduler import normalize_timezone
 from app.db.session import AsyncSessionLocal
 from app.llm.engine import LLMEngine
@@ -387,7 +399,9 @@ class ScriptCreateFSM(StatesGroup):
     goal = State()
     success_criteria = State()
     tone = State()
+    custom_tone = State()
     sales_strategy = State()
+    custom_sales_strategy = State()
     first_message_goal = State()
     call_to_action = State()
     language = State()
@@ -398,6 +412,7 @@ class ScriptCreateFSM(StatesGroup):
     working_hours = State()
     working_hours_end = State()
     timezone = State()
+    owner_clarification = State()
     confirm = State()
 
 
@@ -421,6 +436,10 @@ class CampaignStartFSM(StatesGroup):
     selecting = State()
 
 
+class BusinessKnowledgeFSM(StatesGroup):
+    answer = State()
+
+
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
@@ -439,6 +458,7 @@ SCRIPT_FIELD_KEYS = {
     "follow": "follow_up_delay_hours",
     "hours": "working_hours",
     "tz": "timezone",
+    "owner": "owner_clarification_enabled",
 }
 SCRIPT_FIELD_LABELS = {
     "name": "Название",
@@ -453,6 +473,7 @@ SCRIPT_FIELD_LABELS = {
     "follow_up_delay_hours": "Напоминание, если лид молчит",
     "working_hours": "Рабочие часы",
     "timezone": "Часовой пояс",
+    "owner_clarification_enabled": "Уточнения у владельца",
 }
 SCRIPT_FIELD_LABELS_EN = {
     "name": "Name",
@@ -467,7 +488,9 @@ SCRIPT_FIELD_LABELS_EN = {
     "follow_up_delay_hours": "Follow-up delay",
     "working_hours": "Working hours",
     "timezone": "Timezone",
+    "owner_clarification_enabled": "Owner clarification",
 }
+SCRIPT_CREATE_TOTAL_STEPS = 12
 SCRIPT_STRATEGY_CALLBACK_CODES = {
     "n": "nurture",
     "q": "quick_call",
@@ -524,6 +547,105 @@ def _format_time(value: Any) -> str:
     return text[:5] if text else "—"
 
 
+def _script_step(number: int, title: str, lang: str = LANG_RU) -> str:
+    if lang == LANG_EN:
+        return f"Step {number} of {SCRIPT_CREATE_TOTAL_STEPS}: {title}"
+    return f"Шаг {number} из {SCRIPT_CREATE_TOTAL_STEPS}: {title}"
+
+
+def _draft_business_details(data: dict[str, Any]) -> dict[str, Any]:
+    details = data.get("business_details")
+    return dict(details) if isinstance(details, dict) else {}
+
+
+async def _update_draft_business_details(
+    state: FSMContext,
+    **updates: Any,
+) -> dict[str, Any]:
+    data = await state.get_data()
+    details = _draft_business_details(data)
+    details.update(updates)
+    await state.update_data(business_details=details)
+    return details
+
+
+def _custom_text(details: dict[str, Any], key: str, limit: int = 180) -> str | None:
+    value = details.get(key)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return _compact(value, limit)
+
+
+def _draft_tone_label(data: dict[str, Any], lang: str = LANG_RU) -> str:
+    tone = data.get("tone", "friendly")
+    custom = _custom_text(_draft_business_details(data), "custom_tone")
+    if tone == "custom" and custom:
+        return f"Custom: {custom}" if lang == LANG_EN else f"Свой: {custom}"
+    return str(tone)
+
+
+def _script_tone_display(script: Script, lang: str = LANG_RU) -> str:
+    details = getattr(script, "business_details", None)
+    details = details if isinstance(details, dict) else {}
+    custom = _custom_text(details, "custom_tone")
+    if getattr(script, "tone", None) == "custom" and custom:
+        return f"Custom: {custom}" if lang == LANG_EN else f"Свой: {custom}"
+    return getattr(script, "tone", None) or "professional"
+
+
+def _draft_strategy_label(data: dict[str, Any], lang: str = LANG_RU) -> str:
+    custom = _custom_text(_draft_business_details(data), "custom_sales_strategy")
+    if data.get("sales_strategy") == "custom" and custom:
+        return f"Custom: {custom}" if lang == LANG_EN else f"Своя: {custom}"
+    return sales_strategy_label(data.get("sales_strategy"), lang)
+
+
+def _script_strategy_display(script: Script, lang: str = LANG_RU) -> str:
+    details = getattr(script, "business_details", None)
+    details = details if isinstance(details, dict) else {}
+    custom = _custom_text(details, "custom_sales_strategy")
+    if custom:
+        return f"Custom: {custom}" if lang == LANG_EN else f"Своя: {custom}"
+    return sales_strategy_label(_strategy_from_script(script), lang)
+
+
+def _build_custom_sales_funnel(instructions: str) -> list[dict[str, Any]]:
+    text = _compact(instructions, 800)
+    owner_rule = f"Правила владельца для этой воронки: {text}"
+    return [
+        {
+            "stage": "trust",
+            "goal": "Начать диалог естественно и без давления.",
+            "max_length": 240,
+            "allow_call_to_action": False,
+            "instructions": (
+                f"{owner_rule}. На первом касании не дави и не проси встречу, "
+                "если владелец явно не указал обратное."
+            ),
+        },
+        {
+            "stage": "interest",
+            "goal": "Развить интерес и отвечать по правилам владельца.",
+            "max_length": 360,
+            "allow_call_to_action": True,
+            "instructions": (
+                f"{owner_rule}. Отвечай на последний вопрос лида, не выдумывай "
+                "условия и двигайся к следующему шагу только когда это уместно."
+            ),
+        },
+        {
+            "stage": "cta",
+            "goal": "Согласовать следующий шаг и остановиться.",
+            "max_length": 380,
+            "allow_call_to_action": True,
+            "instructions": (
+                f"{owner_rule}. Если лид готов, предложи следующий шаг из "
+                "карточки бизнеса; после согласования не продолжай продавать."
+            ),
+        },
+    ]
+
+
 def _campaign_status_label(status: str | None, lang: str = LANG_RU) -> str:
     labels = CAMPAIGN_STATUS_LABELS.get(lang, CAMPAIGN_STATUS_LABELS[LANG_RU])
     return labels.get(status or "", (status or "—").replace("_", " "))
@@ -559,7 +681,7 @@ def _format_script_summary(
         if lang == LANG_EN
         else ("✅ активен" if script.is_active else "⏸ выключен")
     )
-    strategy = sales_strategy_label(_strategy_from_script(script), lang)
+    strategy = _script_strategy_display(script, lang)
     if lang == LANG_EN:
         launches = "launch" if campaign_count == 1 else "launches"
         return (
@@ -575,6 +697,204 @@ def _format_script_summary(
         f"Аудитория: {_html(_compact(script.target_audience, 110))}\n"
         f"Воронка: {_html(strategy)}\n"
         f"Запусков с этим бизнесом: {campaign_count}"
+    )
+
+
+def _business_knowledge_status(script: Script, lang: str = LANG_RU) -> str:
+    details = getattr(script, "business_details", None)
+    details = details if isinstance(details, dict) else {}
+    answers = details.get("answers")
+    answer_count = len(answers) if isinstance(answers, dict) else 0
+    enabled = _owner_clarification_is_enabled(script)
+    if lang == LANG_EN:
+        mode = "on" if enabled else "off"
+        return f"Owner clarifications: {mode}; verified fact areas: {answer_count}"
+    mode = "вкл" if enabled else "выкл"
+    return f"Уточнения владельца: {mode}; проверенных блоков: {answer_count}"
+
+
+def _owner_clarification_is_enabled(script: Script | None) -> bool:
+    return getattr(script, "owner_clarification_enabled", True) is not False
+
+
+def _business_audit_questions(script: Script) -> list[str]:
+    details = getattr(script, "business_details", None)
+    details = details if isinstance(details, dict) else {}
+    return audit_questions_from_details(details) or fallback_business_context_questions(script)
+
+
+async def _generate_business_audit_questions(
+    script: Script,
+    lang: str = LANG_RU,
+) -> tuple[list[str], str]:
+    fallback = fallback_business_context_questions(script)
+    engine = LLMEngine()
+    try:
+        result = await engine.generate_with_fallback(
+            build_business_audit_messages(script, lang=lang),
+            max_tokens=700,
+        )
+        if result.get("model") == "fallback":
+            return fallback, "fallback"
+        questions = parse_business_audit_questions(result.get("text", ""))
+        if len(questions) < 2:
+            logger.warning(
+                "Business audit LLM returned too few usable questions for script %s",
+                script.id,
+            )
+            return fallback, "fallback"
+        return questions, str(result.get("model") or "llm")
+    except Exception as exc:
+        logger.warning("Business audit LLM failed for script %s: %s", script.id, exc)
+        return fallback, "fallback"
+    finally:
+        await engine.close()
+
+
+async def _save_business_audit_questions(
+    script_id: UUID,
+    questions: list[str],
+    source: str,
+) -> Script | None:
+    async with AsyncSessionLocal() as session:
+        script = await session.get(Script, script_id)
+        if not script:
+            return None
+        script.business_details = store_audit_questions(
+            getattr(script, "business_details", None),
+            questions,
+            source=source,
+        )
+        await session.commit()
+        await session.refresh(script)
+        return script
+
+
+def _format_business_audit_text(
+    script: Script,
+    lang: str = LANG_RU,
+) -> str:
+    questions = _business_audit_questions(script)
+    if lang == LANG_EN:
+        if not questions:
+            return (
+                "AI analyzed this business draft and did not find critical gaps.\n\n"
+                "You can still add exact facts later from the business card."
+            )
+        lines = [
+            "AI analyzed this business draft before launch.",
+            "",
+            "These are the specific facts that can prevent the manager from guessing:",
+        ]
+        lines.extend(f"- {question}" for question in questions)
+        lines.extend(
+            [
+                "",
+                "You can answer in one message or continue without these details.",
+            ]
+        )
+        return "\n".join(lines)
+
+    if not questions:
+        return (
+            "ИИ разобрал черновик бизнеса. Критичных пробелов не нашел.\n\n"
+            "Точные факты всё равно можно добавить позже из карточки бизнеса."
+        )
+    lines = [
+        "ИИ разобрал черновик этого бизнеса перед запуском.",
+        "",
+        "Вот конкретные вопросы, где без фактов менеджер может начать додумывать:",
+    ]
+    lines.extend(f"- {question}" for question in questions)
+    lines.extend(
+        [
+            "",
+            "Можно ответить одним сообщением или продолжить без уточнений.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _business_audit_keyboard(
+    script_id: UUID,
+    lang: str = LANG_RU,
+) -> types.InlineKeyboardMarkup:
+    if lang == LANG_EN:
+        answer_text = "✍️ Add facts"
+        skip_text = "Continue without"
+        card_text = "Open business"
+    else:
+        answer_text = "✍️ Дополнить факты"
+        skip_text = "Продолжить без уточнений"
+        card_text = "Открыть бизнес"
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text=answer_text, callback_data=f"bizqa:{script_id}")],
+            [types.InlineKeyboardButton(text=skip_text, callback_data=f"bizqskip:{script_id}")],
+            [types.InlineKeyboardButton(text=card_text, callback_data=f"scriptv:{script_id}")],
+        ]
+    )
+
+
+def _business_context_answer_keyboard(
+    script_id: UUID,
+    lang: str = LANG_RU,
+) -> types.InlineKeyboardMarkup:
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text="← Back to business" if lang == LANG_EN else "← К карточке бизнеса",
+                    callback_data=f"bizqcard:{script_id}",
+                )
+            ]
+        ]
+    )
+
+
+def _owner_clarification_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
+    if lang == LANG_EN:
+        on_text = "Ask me when facts are missing"
+        off_text = "Do not ask during lead chats"
+    else:
+        on_text = "Да, пусть уточняет у меня"
+        off_text = "Нет, отвечать осторожно без уточнений"
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text=on_text, callback_data="ownerclarify:on")],
+            [types.InlineKeyboardButton(text=off_text, callback_data="ownerclarify:off")],
+        ]
+    )
+
+
+def _owner_clarification_prompt(lang: str = LANG_RU) -> str:
+    if lang == LANG_EN:
+        return (
+            f"{_script_step(12, 'owner clarifications', lang)}.\n\n"
+            "If a lead asks for a fact that is missing from the business card, "
+            "should the AI pause, ask you in this admin bot, and then continue "
+            "with a verified answer?\n\n"
+            "If disabled, the AI will answer conservatively and avoid promises."
+        )
+    return (
+        f"{_script_step(12, 'уточнения у владельца', lang)}.\n\n"
+        "Если лид спросит факт, которого нет в карточке бизнеса, разрешить AI "
+        "поставить диалог на паузу, спросить вас в этом боте и потом ответить "
+        "лиду уже проверенно?\n\n"
+        "Если выключить, AI будет отвечать осторожно и не будет обещать то, "
+        "чего нет в контексте."
+    )
+
+
+def _business_saved_text(script: Script, lang: str = LANG_RU) -> str:
+    if lang == LANG_EN:
+        return (
+            f"Business <b>{_html(script.name)}</b> is saved. "
+            "Now upload contacts with /upload."
+        )
+    return (
+        f"Бизнес <b>{_html(script.name)}</b> сохранен. "
+        "Теперь можно загрузить контакты через /upload."
     )
 
 
@@ -602,12 +922,13 @@ def _format_script_details(
             f"<b>Manager goal</b>\n{_html(_compact(script.goal, 600))}\n\n"
             f"<b>Success</b>\n{_html(_compact(script.success_criteria, 600))}\n\n"
             f"<b>Style and behavior</b>\n"
-            f"Tone: {_html(script.tone or 'professional')}\n"
+            f"Tone: {_html(_script_tone_display(script, lang))}\n"
             f"Sales funnel: {_html(strategy)}\n"
             f"Next step: {_html(getattr(script, 'call_to_action', None) or 'short 10-minute call')}\n"
             f"Messages per contact: {script.max_messages or 2}\n"
             f"Follow-up: after {script.follow_up_delay_hours or 24} h if no answer\n"
-            f"Working hours: {working_hours}, {_html(script.timezone or 'Europe/Moscow')}"
+            f"Working hours: {working_hours}, {_html(script.timezone or 'Europe/Moscow')}\n"
+            f"{_html(_business_knowledge_status(script, lang))}"
         )
     return (
         f"<b>{_html(script.name)}</b>\n\n"
@@ -618,12 +939,13 @@ def _format_script_details(
         f"<b>Цель менеджера</b>\n{_html(_compact(script.goal, 600))}\n\n"
         f"<b>Успех</b>\n{_html(_compact(script.success_criteria, 600))}\n\n"
         f"<b>Стиль и поведение</b>\n"
-        f"Тон: {_html(script.tone or 'professional')}\n"
+        f"Тон: {_html(_script_tone_display(script, lang))}\n"
         f"Воронка продаж: {_html(strategy)}\n"
         f"Следующий шаг: {_html(getattr(script, 'call_to_action', None) or '15-минутный созвон')}\n"
         f"Сообщений на контакт: {script.max_messages or 2}\n"
         f"Напоминание: через {script.follow_up_delay_hours or 24} ч, если нет ответа\n"
-        f"Рабочее время: {working_hours}, {_html(script.timezone or 'Europe/Moscow')}"
+        f"Рабочее время: {working_hours}, {_html(script.timezone or 'Europe/Moscow')}\n"
+        f"{_html(_business_knowledge_status(script, lang))}"
     )
 
 
@@ -720,7 +1042,10 @@ def _script_field_prompt(field: str, lang: str = LANG_RU) -> str:
             "sales_strategy": "Choose the sales funnel:",
             "call_to_action": "What next step should be offered? Example: a short 10-minute call.",
             "max_messages": "Maximum messages per contact? Usually 2 or 3.",
-            "follow_up_delay_hours": "After how many hours should we follow up if the lead is silent? Example: 24.",
+            "follow_up_delay_hours": (
+                "After how many hours should the bot message the same person again "
+                "if they did not reply to the previous message? Example: 24."
+            ),
             "working_hours": "Enter working hours as HH:MM-HH:MM, for example 09:00-18:00.",
             "timezone": "Enter timezone, for example Europe/Moscow, UTC, or msk.",
         }
@@ -738,7 +1063,10 @@ def _script_field_prompt(field: str, lang: str = LANG_RU) -> str:
         "sales_strategy": "Выберите воронку продаж:",
         "call_to_action": "Какой следующий шаг предлагать лиду? Например: короткий 10-минутный созвон.",
         "max_messages": "Сколько сообщений максимум отправлять одному контакту? Обычно 2 или 3.",
-        "follow_up_delay_hours": "Через сколько часов мягко напомнить, если лид молчит? Например: 24.",
+        "follow_up_delay_hours": (
+            "Через сколько часов бот должен снова написать этому же человеку, "
+            "если он не ответил на предыдущее сообщение? Например: 24."
+        ),
         "working_hours": "Введите рабочие часы в формате HH:MM-HH:MM, например 09:00-18:00.",
         "timezone": "Введите часовой пояс, например Europe/Moscow, UTC или msk.",
     }
@@ -1157,6 +1485,7 @@ SCRIPT_CREATE_STATE_ORDER: list[State] = [
     ScriptCreateFSM.follow_up_delay_hours,
     ScriptCreateFSM.working_hours,
     ScriptCreateFSM.timezone,
+    ScriptCreateFSM.owner_clarification,
     ScriptCreateFSM.confirm,
 ]
 
@@ -1171,6 +1500,14 @@ def _tone_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
         [types.InlineKeyboardButton(text=t, callback_data=f"tone:{t}")]
         for t in options
     ]
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text="✍️ Custom style" if lang == LANG_EN else "✍️ Свой стиль",
+                callback_data="tone:custom",
+            )
+        ]
+    )
     rows.append(
         [
             types.InlineKeyboardButton(
@@ -1200,6 +1537,14 @@ def _strategy_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
                 )
             ]
         )
+    rows.append(
+        [
+            types.InlineKeyboardButton(
+                text="✍️ Custom funnel" if lang == LANG_EN else "✍️ Своя воронка",
+                callback_data="strategy:custom",
+            )
+        ]
+    )
     rows.append(
         [
             types.InlineKeyboardButton(
@@ -1249,6 +1594,7 @@ def _script_confirm_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
             "follow": "✏️ Follow-up",
             "hours": "✏️ Hours",
             "tz": "✏️ Timezone",
+            "owner": "✏️ Owner ask",
             "save": "✅ Save",
             "cancel": "❌ Cancel",
         }
@@ -1265,6 +1611,7 @@ def _script_confirm_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
             "follow": "✏️ Напоминание",
             "hours": "✏️ Часы",
             "tz": "✏️ Timezone",
+            "owner": "✏️ Уточнения",
             "save": "✅ Сохранить",
             "cancel": "❌ Отмена",
         }
@@ -1292,7 +1639,10 @@ def _script_confirm_keyboard(lang: str = LANG_RU) -> types.InlineKeyboardMarkup:
                 types.InlineKeyboardButton(text=labels["follow"], callback_data="sdedit:follow"),
                 types.InlineKeyboardButton(text=labels["hours"], callback_data="sdedit:hours"),
             ],
-            [types.InlineKeyboardButton(text=labels["tz"], callback_data="sdedit:tz")],
+            [
+                types.InlineKeyboardButton(text=labels["tz"], callback_data="sdedit:tz"),
+                types.InlineKeyboardButton(text=labels["owner"], callback_data="sdedit:owner"),
+            ],
             [
                 types.InlineKeyboardButton(text=labels["save"], callback_data="script:create"),
                 types.InlineKeyboardButton(text=labels["cancel"], callback_data="script:cancel"),
@@ -1336,13 +1686,15 @@ def _script_create_summary(data: dict[str, Any], lang: str = LANG_RU) -> str:
             f"Audience: {_compact(data.get('target_audience'), 300)}\n"
             f"Manager goal: {_compact(data.get('goal'), 300)}\n"
             f"Success: {_compact(data.get('success_criteria'), 300)}\n"
-            f"Style: {data.get('tone', 'friendly')}\n"
-            f"Sales funnel: {sales_strategy_label(data.get('sales_strategy'), LANG_EN)}\n"
+            f"Style: {_draft_tone_label(data, LANG_EN)}\n"
+            f"Sales funnel: {_draft_strategy_label(data, LANG_EN)}\n"
             f"Next step: {data.get('call_to_action', 'short 10-minute call')}\n"
             f"Limit: {data.get('max_messages', 3)} messages per contact\n"
             f"Follow-up: after {data.get('follow_up_delay_hours', 24)} h if no answer\n"
             f"Working hours: {_format_time(working_start)}-{_format_time(working_end)}\n"
-            f"Timezone: {data.get('timezone', 'Europe/Moscow')}\n\n"
+            f"Timezone: {data.get('timezone', 'Europe/Moscow')}\n"
+            f"Ask owner for unknown facts: "
+            f"{'on' if data.get('owner_clarification_enabled', True) else 'off'}\n\n"
             "If something is wrong, edit a field with a button below."
         )
     return (
@@ -1352,13 +1704,15 @@ def _script_create_summary(data: dict[str, Any], lang: str = LANG_RU) -> str:
         f"Аудитория: {_compact(data.get('target_audience'), 300)}\n"
         f"Цель менеджера: {_compact(data.get('goal'), 300)}\n"
         f"Успех: {_compact(data.get('success_criteria'), 300)}\n"
-        f"Стиль: {data.get('tone', 'friendly')}\n"
-        f"Воронка продаж: {sales_strategy_label(data.get('sales_strategy'), LANG_RU)}\n"
+        f"Стиль: {_draft_tone_label(data, LANG_RU)}\n"
+        f"Воронка продаж: {_draft_strategy_label(data, LANG_RU)}\n"
         f"Следующий шаг: {data.get('call_to_action', 'короткий 10-минутный созвон')}\n"
         f"Лимит: {data.get('max_messages', 3)} сообщения на контакт\n"
         f"Напоминание: через {data.get('follow_up_delay_hours', 24)} ч, если нет ответа\n"
         f"Рабочее время: {_format_time(working_start)}-{_format_time(working_end)}\n"
-        f"Timezone: {data.get('timezone', 'Europe/Moscow')}\n\n"
+        f"Timezone: {data.get('timezone', 'Europe/Moscow')}\n"
+        f"Уточнять у владельца неизвестные факты: "
+        f"{'да' if data.get('owner_clarification_enabled', True) else 'нет'}\n\n"
         "Если что-то не так, исправьте отдельное поле кнопкой ниже."
     )
 
@@ -1396,49 +1750,103 @@ async def _send_script_state_prompt(
     state_name = state_obj.state
     if state_name == ScriptCreateFSM.name.state:
         await message.answer(
-            "What should we call this business or offer?"
+            f"{_script_step(1, 'name', lang)}. What should we call this business or offer?"
             if lang == LANG_EN
-            else "Как назвать этот бизнес или оффер?"
+            else f"{_script_step(1, 'название', lang)}. Как назвать этот бизнес или оффер?"
         )
     elif state_name == ScriptCreateFSM.role_prompt.state:
-        await message.answer(_script_field_prompt("role_prompt", lang))
-    elif state_name == ScriptCreateFSM.target_audience.state:
-        await message.answer(_script_field_prompt("target_audience", lang))
-    elif state_name == ScriptCreateFSM.goal.state:
-        await message.answer(_script_field_prompt("goal", lang))
-    elif state_name == ScriptCreateFSM.success_criteria.state:
-        await message.answer(_script_field_prompt("success_criteria", lang))
-    elif state_name == ScriptCreateFSM.tone.state:
-        await message.answer(
-            "Choose the communication style:" if lang == LANG_EN else "Выберите стиль общения:",
-            reply_markup=_tone_keyboard(lang),
-        )
-    elif state_name == ScriptCreateFSM.sales_strategy.state:
         await message.answer(
             (
-                "Choose the sales funnel.\n\n"
-                "This controls how quickly the manager moves from interest to the next step."
+                f"{_script_step(2, 'business description', lang)}.\n\n"
+                f"{_script_field_prompt('role_prompt', lang)}"
             )
             if lang == LANG_EN
             else (
-                "Выберите воронку продаж.\n\n"
-                "Она управляет тем, как быстро менеджер переходит от интереса к следующему шагу."
-            ),
-            reply_markup=_strategy_keyboard(lang),
+                f"{_script_step(2, 'описание бизнеса', lang)}.\n\n"
+                f"{_script_field_prompt('role_prompt', lang)}"
+            )
         )
+    elif state_name == ScriptCreateFSM.target_audience.state:
+        await message.answer(
+            (
+                f"{_script_step(3, 'audience', lang)}.\n\n"
+                if lang == LANG_EN
+                else f"{_script_step(3, 'аудитория', lang)}.\n\n"
+            )
+            + f"{_script_field_prompt('target_audience', lang)}"
+        )
+    elif state_name == ScriptCreateFSM.goal.state:
+        await message.answer(
+            (
+                f"{_script_step(4, 'conversation goal', lang)}.\n\n"
+                if lang == LANG_EN
+                else f"{_script_step(4, 'цель переписки', lang)}.\n\n"
+            )
+            + f"{_script_field_prompt('goal', lang)}"
+        )
+    elif state_name == ScriptCreateFSM.success_criteria.state:
+        await message.answer(
+            (
+                f"{_script_step(5, 'success criteria', lang)}.\n\n"
+                if lang == LANG_EN
+                else f"{_script_step(5, 'критерий успеха', lang)}.\n\n"
+            )
+            + f"{_script_field_prompt('success_criteria', lang)}"
+        )
+    elif state_name == ScriptCreateFSM.tone.state:
+        await message.answer(
+            (
+                f"{_script_step(6, 'communication style', lang)}.\n\n"
+                "Choose the communication style:"
+            )
+            if lang == LANG_EN
+            else (
+                f"{_script_step(6, 'стиль общения', lang)}.\n\n"
+                "Выберите стиль общения:"
+            ),
+            reply_markup=_tone_keyboard(lang),
+        )
+    elif state_name == ScriptCreateFSM.sales_strategy.state:
+        await _ask_sales_strategy_step(message, lang)
     elif state_name == ScriptCreateFSM.call_to_action.state:
-        await message.answer(_script_field_prompt("call_to_action", lang))
+        await message.answer(
+            (
+                f"{_script_step(8, 'next step', lang)}.\n\n"
+                if lang == LANG_EN
+                else f"{_script_step(8, 'следующий шаг', lang)}.\n\n"
+            )
+            + f"{_script_field_prompt('call_to_action', lang)}"
+        )
     elif state_name == ScriptCreateFSM.follow_up_delay_hours.state:
-        await message.answer(_script_field_prompt("follow_up_delay_hours", lang))
+        await message.answer(
+            (
+                f"{_script_step(9, 'follow-up delay', lang)}.\n\n"
+                if lang == LANG_EN
+                else f"{_script_step(9, 'напоминание человеку', lang)}.\n\n"
+            )
+            + f"{_script_field_prompt('follow_up_delay_hours', lang)}"
+        )
     elif state_name == ScriptCreateFSM.working_hours.state:
         await message.answer(
-            "When is the manager allowed to send messages?"
+            f"{_script_step(10, 'working hours', lang)}. When is the manager allowed to send messages?"
             if lang == LANG_EN
-            else "Когда менеджеру можно писать?",
+            else f"{_script_step(10, 'рабочее время', lang)}. Когда менеджеру можно писать?",
             reply_markup=_workhours_keyboard(lang),
         )
     elif state_name == ScriptCreateFSM.timezone.state:
-        await message.answer(_script_field_prompt("timezone", lang))
+        await message.answer(
+            (
+                f"{_script_step(11, 'timezone', lang)}.\n\n"
+                if lang == LANG_EN
+                else f"{_script_step(11, 'часовой пояс', lang)}.\n\n"
+            )
+            + f"{_script_field_prompt('timezone', lang)}"
+        )
+    elif state_name == ScriptCreateFSM.owner_clarification.state:
+        await message.answer(
+            _owner_clarification_prompt(lang),
+            reply_markup=_owner_clarification_keyboard(lang),
+        )
     else:
         await _send_script_confirm_from_state(message, state)
 
@@ -1446,6 +1854,12 @@ async def _send_script_state_prompt(
 async def _go_script_create_back(message: types.Message, state: FSMContext) -> bool:
     lang = _admin_lang(message)
     current_state = await state.get_state()
+    if current_state == ScriptCreateFSM.custom_tone.state:
+        await _send_script_state_prompt(message, ScriptCreateFSM.tone, state)
+        return True
+    if current_state == ScriptCreateFSM.custom_sales_strategy.state:
+        await _send_script_state_prompt(message, ScriptCreateFSM.sales_strategy, state)
+        return True
     if current_state not in _state_to_name_map():
         await message.answer(
             "Cannot go back from here. Open /start or use /cancel."
@@ -1604,11 +2018,23 @@ def _script_detail_keyboard(
     if lang == LANG_EN:
         edit_text = "✏️ Edit"
         toggle_text = "⏸ Turn off" if script.is_active else "▶️ Turn on"
+        clarify_mode = (
+            "Owner ask: on"
+            if _owner_clarification_is_enabled(script)
+            else "Owner ask: off"
+        )
+        facts_text = "🧠 Add facts"
         delete_text = "🗑 Delete"
         back_text = "← Back to list"
     else:
         edit_text = "✏️ Редактировать"
         toggle_text = "⏸ Выключить" if script.is_active else "▶️ Включить"
+        clarify_mode = (
+            "Уточнения: вкл"
+            if _owner_clarification_is_enabled(script)
+            else "Уточнения: выкл"
+        )
+        facts_text = "🧠 Доп. факты"
         delete_text = "🗑 Удалить"
         back_text = "← К списку"
     rows = [
@@ -1616,6 +2042,16 @@ def _script_detail_keyboard(
             types.InlineKeyboardButton(
                 text=edit_text, callback_data=f"scripte:{script.id}"
             )
+        ],
+        [
+            types.InlineKeyboardButton(
+                text=clarify_mode,
+                callback_data=f"script_clarify_toggle:{script.id}",
+            ),
+            types.InlineKeyboardButton(
+                text=facts_text,
+                callback_data=f"bizqa:{script.id}",
+            ),
         ],
         [
             types.InlineKeyboardButton(
@@ -1745,6 +2181,366 @@ async def handle_script_view(callback: types.CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("bizqa:"))
+async def handle_business_context_answer_start(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+):
+    lang = _admin_lang(callback)
+    try:
+        script_id = UUID(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Invalid ID" if lang == LANG_EN else "❌ Неверный ID")
+        return
+
+    script, _ = await _load_script_with_campaign_count(script_id)
+    if not script:
+        await callback.answer(
+            "❌ Business not found" if lang == LANG_EN else "❌ Бизнес не найден"
+        )
+        return
+
+    details = getattr(script, "business_details", None)
+    details = details if isinstance(details, dict) else {}
+    audit_answered = business_audit_has_owner_answer(details)
+    questions = [] if audit_answered else _business_audit_questions(script)
+    await state.set_state(BusinessKnowledgeFSM.answer)
+    await state.update_data(
+        business_context_script_id=str(script_id),
+        business_context_questions=questions,
+    )
+    if lang == LANG_EN:
+        if audit_answered:
+            text = (
+                "Verified facts have already been added.\n\n"
+                "Send one more message only if you want to add extra context for the AI. "
+                "Old audit questions do not need to be answered again."
+            )
+        else:
+            question_lines = "\n".join(f"- {question}" for question in questions)
+            text = (
+                "Send verified business facts in one message. You can answer only the parts you know.\n\n"
+                "Questions from the draft audit:\n"
+                f"{question_lines}\n\n"
+                "Add anything the manager must not promise."
+            )
+    else:
+        if audit_answered:
+            text = (
+                "Проверенные факты уже добавлены.\n\n"
+                "Если хотите дополнить карточку, пришлите ещё одно сообщение с новыми "
+                "фактами для ИИ. Старые вопросы аудита повторно отвечать не нужно."
+            )
+        else:
+            question_lines = "\n".join(f"- {question}" for question in questions)
+            text = (
+                "Пришлите проверенные факты о бизнесе одним сообщением. "
+                "Можно ответить только на то, что знаете.\n\n"
+                "Вопросы из аудита черновика:\n"
+                f"{question_lines}\n\n"
+                "Добавьте всё, что менеджеру нельзя обещать от себя."
+            )
+    await _send_or_edit_callback_message(
+        callback,
+        text,
+        reply_markup=_business_context_answer_keyboard(script_id, lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("bizqcard:"))
+async def handle_business_context_back_to_card(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+):
+    lang = _admin_lang(callback)
+    try:
+        script_id = UUID(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Invalid ID" if lang == LANG_EN else "❌ Неверный ID")
+        return
+    await state.clear()
+    script, campaign_count = await _load_script_with_campaign_count(script_id)
+    if not script:
+        await callback.answer(
+            "❌ Business not found" if lang == LANG_EN else "❌ Бизнес не найден"
+        )
+        return
+    await _send_or_edit_callback_message(
+        callback,
+        _format_script_details(script, campaign_count, lang),
+        reply_markup=_script_detail_keyboard(script, campaign_count, lang),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("bizqskip:"))
+async def handle_business_context_skip(callback: types.CallbackQuery):
+    lang = _admin_lang(callback)
+    try:
+        script_id = UUID(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Invalid ID" if lang == LANG_EN else "❌ Неверный ID")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+        if not script:
+            await callback.answer(
+                "❌ Business not found" if lang == LANG_EN else "❌ Бизнес не найден"
+            )
+            return
+        script.business_details = mark_audit_skipped(
+            getattr(script, "business_details", None)
+        )
+        await session.commit()
+
+    await callback.answer("Saved" if lang == LANG_EN else "Сохранено")
+    await _send_or_edit_callback_message(
+        callback,
+        (
+            f"{_business_saved_text(script, lang)}\n\n"
+            "Okay, continuing without extra facts. Unknown details will be handled conservatively."
+            if lang == LANG_EN
+            else (
+                f"{_business_saved_text(script, lang)}\n\n"
+                "Ок, продолжаем без уточнений. Неизвестные детали бот будет обрабатывать осторожно."
+            )
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("script_clarify_toggle:"))
+async def handle_script_clarification_toggle(callback: types.CallbackQuery):
+    lang = _admin_lang(callback)
+    try:
+        script_id = UUID(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Invalid ID" if lang == LANG_EN else "❌ Неверный ID")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Script).where(Script.id == script_id))
+        script = result.scalar_one_or_none()
+        if not script:
+            await callback.answer(
+                "❌ Business not found" if lang == LANG_EN else "❌ Бизнес не найден"
+            )
+            return
+        current = _owner_clarification_is_enabled(script)
+        script.owner_clarification_enabled = not current
+        await session.commit()
+        await session.refresh(script)
+        count_result = await session.execute(
+            select(func.count(Campaign.id)).where(Campaign.script_id == script_id)
+        )
+        campaign_count = count_result.scalar() or 0
+
+    await callback.answer("✅ Updated" if lang == LANG_EN else "✅ Обновлено")
+    await _send_or_edit_callback_message(
+        callback,
+        _format_script_details(script, campaign_count, lang),
+        reply_markup=_script_detail_keyboard(script, campaign_count, lang),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("clarify:"))
+async def handle_owner_clarification_start(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+):
+    lang = _admin_lang(callback)
+    try:
+        conversation_id = UUID(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer(
+            "❌ Invalid conversation ID" if lang == LANG_EN else "❌ Неверный ID диалога"
+        )
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Conversation, Contact, Campaign, Script)
+            .join(Contact, Conversation.contact_id == Contact.id)
+            .join(Campaign, Conversation.campaign_id == Campaign.id)
+            .join(Script, Campaign.script_id == Script.id)
+            .where(Conversation.id == conversation_id)
+        )
+        row = result.first()
+
+    if not row:
+        await callback.answer(
+            "❌ Conversation not found" if lang == LANG_EN else "❌ Диалог не найден"
+        )
+        return
+
+    conversation, contact, _campaign, script = row
+    pending = conversation.owner_clarification
+    pending = pending if isinstance(pending, dict) else {}
+    if pending.get("status") != "pending":
+        await callback.answer(
+            "No pending question" if lang == LANG_EN else "Нет открытого вопроса"
+        )
+        return
+
+    category = pending.get("category") or "general"
+    area = area_by_key(category)
+    category_label = area.label_ru if area else category
+    question = pending.get("question") or ""
+    await state.set_state(BusinessKnowledgeFSM.answer)
+    await state.update_data(
+        clarify_conversation_id=str(conversation.id),
+        clarify_script_id=str(script.id),
+        clarify_category=category,
+        clarify_question=question,
+    )
+    text = (
+        f"Question for {contact.first_name or 'lead'}: {question}\n\n"
+        "Send the verified answer. It will be saved outside the lead chat history."
+        if lang == LANG_EN
+        else (
+            f"Вопрос по лиду {contact.first_name or '—'}: {question}\n"
+            f"Тема: {category_label}\n\n"
+            "Пришлите проверенный ответ. Он сохранится отдельно от истории лида."
+        )
+    )
+    await _send_or_edit_callback_message(callback, text)
+    await callback.answer()
+
+
+@router.message(BusinessKnowledgeFSM.answer)
+async def process_business_knowledge_answer(message: types.Message, state: FSMContext):
+    lang = _admin_lang(message)
+    raw_answer = (message.text or "").strip()
+    if not raw_answer:
+        await message.answer(
+            "Send text with verified facts, or /cancel."
+            if lang == LANG_EN
+            else "Пришлите текст с проверенными фактами или /cancel."
+        )
+        return
+
+    data = await state.get_data()
+    clarify_conversation_id = data.get("clarify_conversation_id")
+    script_id_raw = data.get("clarify_script_id") or data.get("business_context_script_id")
+    if not script_id_raw:
+        await state.clear()
+        await message.answer(
+            "Session expired. Open /scripts again."
+            if lang == LANG_EN
+            else "Сессия устарела. Откройте /scripts заново."
+        )
+        return
+
+    try:
+        script_id = UUID(script_id_raw)
+    except ValueError:
+        await state.clear()
+        await message.answer(
+            "Invalid business ID. Open /scripts again."
+            if lang == LANG_EN
+            else "Неверный ID бизнеса. Откройте /scripts заново."
+        )
+        return
+
+    async with AsyncSessionLocal() as session:
+        script = await session.get(Script, script_id)
+        if not script:
+            await state.clear()
+            await message.answer(
+                "Business not found. Open /scripts again."
+                if lang == LANG_EN
+                else "Бизнес не найден. Откройте /scripts заново."
+            )
+            return
+
+        category = data.get("clarify_category")
+        question = data.get("clarify_question")
+        if not question:
+            questions = data.get("business_context_questions") or []
+            question = "\n".join(str(item) for item in questions)
+        script.business_details = merge_owner_answer(
+            getattr(script, "business_details", None),
+            raw_answer,
+            category=category,
+            question=question,
+        )
+        if not clarify_conversation_id:
+            script.business_details = mark_audit_answered(script.business_details)
+
+        conversation = None
+        contact = None
+        if clarify_conversation_id:
+            try:
+                conversation_uuid = UUID(clarify_conversation_id)
+            except ValueError:
+                conversation_uuid = None
+            if conversation_uuid:
+                conversation = await session.get(Conversation, conversation_uuid)
+                if conversation:
+                    contact = await session.get(Contact, conversation.contact_id)
+                    pending = conversation.owner_clarification
+                    pending = dict(pending) if isinstance(pending, dict) else {}
+                    pending.update(
+                        {
+                            "status": "answered",
+                            "owner_answer": raw_answer,
+                            "answered_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    conversation.owner_clarification = pending
+
+        await session.commit()
+        await session.refresh(script)
+        sent_to_lead = False
+        if conversation and contact:
+            sent_to_lead = await _try_send_owner_answer_to_lead(
+                session,
+                conversation,
+                contact,
+                raw_answer,
+                category,
+            )
+            if sent_to_lead:
+                await session.commit()
+
+    await state.clear()
+    if clarify_conversation_id:
+        if sent_to_lead:
+            text = (
+                "Saved and sent the verified answer to the lead."
+                if lang == LANG_EN
+                else "Сохранил и отправил проверенный ответ лиду."
+            )
+        else:
+            text = (
+                "Saved. The business context is updated for future replies."
+                if lang == LANG_EN
+                else "Сохранил. Контекст бизнеса обновлен для следующих ответов."
+            )
+    else:
+        text = (
+            f"{_business_saved_text(script, lang)}\n\n"
+            "Saved verified business facts.\n\n"
+            if lang == LANG_EN
+            else (
+                f"{_business_saved_text(script, lang)}\n\n"
+                "Сохранил проверенные факты о бизнесе.\n\n"
+            )
+        ) + _format_script_details(script, lang=lang)
+    await message.answer(
+        text,
+        reply_markup=_script_detail_keyboard(script, lang=lang)
+        if not clarify_conversation_id
+        else _main_menu_keyboard(lang),
+        parse_mode="HTML" if not clarify_conversation_id else None,
+    )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("scripte:"))
@@ -2790,6 +3586,63 @@ async def _send_conversation_history(message: types.Message, conversation_id: UU
         )
 
 
+def _owner_answer_to_lead_text(answer: str, category: str | None) -> str:
+    area = area_by_key(category or "")
+    label = area.label_ru if area else "этот вопрос"
+    clean = _compact(answer, 420)
+    lower = clean.lower()
+    if any(marker in lower for marker in ("не знаю", "нет данных", "уточнить", "пока нет")):
+        return (
+            f"Уточнил: по теме «{label}» сейчас нет точных условий, "
+            "поэтому не буду обещать неверно."
+        )
+    return f"Уточнил: {clean}"
+
+
+async def _try_send_owner_answer_to_lead(
+    session,
+    conversation: Conversation,
+    contact: Contact,
+    answer: str,
+    category: str | None,
+) -> bool:
+    pending = conversation.owner_clarification
+    pending = pending if isinstance(pending, dict) else {}
+    account_id = pending.get("account_id")
+    if not account_id or not getattr(contact, "telegram_user_id", None):
+        return False
+
+    from app.bots import inbound_listener
+    from app.core.humanizer import calculate_typing_delay, split_message_into_chunks
+
+    client = inbound_listener._inbound_clients.get(str(account_id))
+    if not client:
+        return False
+
+    response_text = _owner_answer_to_lead_text(answer, category)
+    chunks = split_message_into_chunks(response_text, max_chunks=2)
+    typing_delay = calculate_typing_delay(response_text)
+    for chunk in chunks:
+        await client.send_message(
+            user_id=int(contact.telegram_user_id),
+            text=chunk,
+            typing_delay_ms=typing_delay,
+        )
+    session.add(
+        Message(
+            conversation_id=conversation.id,
+            direction="outbound",
+            content=response_text,
+            message_type="text",
+            llm_model="owner_verified_answer",
+            tokens_used=0,
+            typing_delay_ms=typing_delay,
+        )
+    )
+    conversation.last_message_at = datetime.now(timezone.utc)
+    return True
+
+
 async def _send_recent_conversations(message: types.Message, lang: str = LANG_RU):
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -2850,13 +3703,13 @@ async def cmd_newscript(message: types.Message, state: FSMContext):
     await message.answer(
         (
             "Let's describe the business the manager will represent.\n\n"
-            "Step 1: name. What should we call this business or offer?\n"
+            f"{_script_step(1, 'name', lang)}. What should we call this business or offer?\n"
             "Example: Branded cups for coffee shops."
         )
         if lang == LANG_EN
         else (
             "Опишем бизнес, для которого AI-менеджер будет писать лидам.\n\n"
-            "Шаг 1: название. Как назвать этот бизнес или оффер?\n"
+            f"{_script_step(1, 'название', lang)}. Как назвать этот бизнес или оффер?\n"
             "Например: «Стаканчики для кофеен»."
         )
     )
@@ -2876,13 +3729,13 @@ async def process_script_name(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.role_prompt)
     await message.answer(
         (
-            "Step 2: business description.\n\n"
+            f"{_script_step(2, 'business description', lang)}.\n\n"
             "What do you sell, who do you help, and why is it useful? "
             "This is the main context for the model, so 2-5 concrete sentences work best."
         )
         if lang == LANG_EN
         else (
-            "Шаг 2: описание бизнеса.\n\n"
+            f"{_script_step(2, 'описание бизнеса', lang)}.\n\n"
             "Что продаете, кому помогаете, почему это полезно? "
             "Это главный контекст для модели, поэтому лучше 2-5 живых предложений."
         )
@@ -2907,13 +3760,13 @@ async def process_script_role(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.target_audience)
     await message.answer(
         (
-            "Step 3: audience.\n\n"
+            f"{_script_step(3, 'audience', lang)}.\n\n"
             "Example: coffee shop owners, procurement managers, HoReCa, small chains. "
             "Send '-' if you want to fill this later."
         )
         if lang == LANG_EN
         else (
-            "Шаг 3: аудитория.\n\n"
+            f"{_script_step(3, 'аудитория', lang)}.\n\n"
             "Например: владельцы кофеен, закупщики, HoReCa, небольшие сети. "
             "Можно отправить '-', если аудиторию опишете позже."
         )
@@ -2932,12 +3785,12 @@ async def process_script_audience(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.goal)
     await message.answer(
         (
-            "Step 4: conversation goal.\n\n"
+            f"{_script_step(4, 'conversation goal', lang)}.\n\n"
             "Usually: spark interest, answer questions, and gently offer a short call."
         )
         if lang == LANG_EN
         else (
-            "Шаг 4: цель переписки.\n\n"
+            f"{_script_step(4, 'цель переписки', lang)}.\n\n"
             "Обычно: заинтересовать, ответить на вопросы и мягко предложить короткий созвон."
         )
     )
@@ -2957,13 +3810,13 @@ async def process_script_goal(message: types.Message, state: FSMContext):
     await state.set_state(ScriptCreateFSM.success_criteria)
     await message.answer(
         (
-            "Step 5: success criteria.\n\n"
+            f"{_script_step(5, 'success criteria', lang)}.\n\n"
             "Example: the lead agreed to a 10-minute call, asked for a proposal, or shared a decision-maker contact. "
             "Send '-' to leave empty."
         )
         if lang == LANG_EN
         else (
-            "Шаг 5: критерий успеха.\n\n"
+            f"{_script_step(5, 'критерий успеха', lang)}.\n\n"
             "Например: лид согласился на 10-минутный созвон, попросил КП или дал контакт ЛПР. "
             "Можно отправить '-'."
         )
@@ -2981,10 +3834,51 @@ async def process_script_criteria(message: types.Message, state: FSMContext):
         return
     await state.set_state(ScriptCreateFSM.tone)
     await message.answer(
-        "Step 6: communication style."
+        (
+            f"{_script_step(6, 'communication style', lang)}.\n\n"
+            "Choose a preset or create your own style. A custom style will be added "
+            "to the AI context for future messages."
+        )
         if lang == LANG_EN
-        else "Шаг 6: стиль общения.",
+        else (
+            f"{_script_step(6, 'стиль общения', lang)}.\n\n"
+            "Выберите готовый стиль или создайте свой. Свой стиль попадёт "
+            "в контекст ИИ для будущих сообщений."
+        ),
         reply_markup=_tone_keyboard(lang),
+    )
+
+
+async def _ask_sales_strategy_step(message: types.Message, lang: str) -> None:
+    await message.answer(
+        (
+            f"{_script_step(7, 'sales funnel', lang)}.\n\n"
+            "Choose how the manager should sell, or create your own funnel. "
+            "A custom funnel will be added to the AI context for future messages."
+        )
+        if lang == LANG_EN
+        else (
+            f"{_script_step(7, 'воронка продаж', lang)}.\n\n"
+            "Выберите, как менеджер должен продавать, или создайте свою воронку. "
+            "Своя воронка попадёт в контекст ИИ для будущих сообщений."
+        ),
+        reply_markup=_strategy_keyboard(lang),
+    )
+
+
+async def _ask_call_to_action_step(message: types.Message, lang: str) -> None:
+    await message.answer(
+        (
+            f"{_script_step(8, 'next step', lang)}.\n\n"
+            "What should the manager offer when the lead is ready? "
+            "Example: a short 10-minute call to understand the task and answer questions."
+        )
+        if lang == LANG_EN
+        else (
+            f"{_script_step(8, 'следующий шаг', lang)}.\n\n"
+            "Что менеджер должен предложить, когда лид готов? "
+            "Например: «короткий 10-минутный созвон, чтобы понять задачу и ответить на вопросы»."
+        )
     )
 
 
@@ -2992,6 +3886,25 @@ async def process_script_criteria(message: types.Message, state: FSMContext):
 async def process_script_tone(callback: types.CallbackQuery, state: FSMContext):
     lang = _admin_lang(callback)
     tone_label = callback.data.split(":", 1)[1]
+    if tone_label == "custom":
+        await state.set_state(ScriptCreateFSM.custom_tone)
+        await callback.message.answer(
+            (
+                "Describe the style in one message.\n\n"
+                "Write how the AI should sound: formal or casual, brief or detailed, "
+                "what words to avoid, how direct it may be. This text will go into "
+                "the AI context for messages."
+            )
+            if lang == LANG_EN
+            else (
+                "Опишите стиль одним сообщением.\n\n"
+                "Напишите, как должен звучать ИИ: формально или живо, кратко или подробно, "
+                "каких слов избегать, насколько прямо можно продавать. Этот текст попадёт "
+                "в контекст ИИ для сообщений."
+            )
+        )
+        await callback.answer()
+        return
     tone_value = TONE_MAP.get(tone_label, "professional")
     await state.update_data(
         tone=tone_value,
@@ -3005,28 +3918,62 @@ async def process_script_tone(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     await state.set_state(ScriptCreateFSM.sales_strategy)
-    await callback.message.answer(
-        (
-            "Step 7: sales funnel.\n\n"
-            "Choose how the manager should sell: slow nurture, quick call, "
-            "consultative, or decision-maker qualification."
-        )
-        if lang == LANG_EN
-        else (
-            "Шаг 7: воронка продаж.\n\n"
-            "Выберите, как менеджер должен продавать: бережно прогревать, "
-            "быстро вести к созвону, консультировать или квалифицировать ЛПР."
-        )
-        ,
-        reply_markup=_strategy_keyboard(lang),
-    )
+    await _ask_sales_strategy_step(callback.message, lang)
     await callback.answer()
+
+
+@router.message(ScriptCreateFSM.custom_tone)
+async def process_script_custom_tone(message: types.Message, state: FSMContext):
+    lang = _admin_lang(message)
+    if await _maybe_handle_back_text(message, state):
+        return
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer(
+            "Describe the custom style in text."
+            if lang == LANG_EN
+            else "Опишите свой стиль текстом."
+        )
+        return
+    await _update_draft_business_details(state, custom_tone=text)
+    await state.update_data(
+        tone="custom",
+        first_message_goal="trust",
+        language=lang,
+        emoji_policy="forbidden",
+        max_first_message_length=240,
+        max_messages=3,
+    )
+    if await _maybe_return_to_script_confirm(message, state):
+        return
+    await state.set_state(ScriptCreateFSM.sales_strategy)
+    await _ask_sales_strategy_step(message, lang)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("strategy:"))
 async def process_script_strategy(callback: types.CallbackQuery, state: FSMContext):
     lang = _admin_lang(callback)
-    strategy_key = normalize_sales_strategy(callback.data.split(":", 1)[1])
+    strategy_raw = callback.data.split(":", 1)[1]
+    if strategy_raw == "custom":
+        await state.set_state(ScriptCreateFSM.custom_sales_strategy)
+        await callback.message.answer(
+            (
+                "Describe your sales funnel in one message.\n\n"
+                "Write how the AI should move through the dialogue: when to warm up, "
+                "when to ask questions, when to offer the next step, and what it must "
+                "not do. This text will go into the AI context for messages."
+            )
+            if lang == LANG_EN
+            else (
+                "Опишите свою воронку одним сообщением.\n\n"
+                "Напишите, как ИИ должен вести диалог: когда прогревать, когда задавать "
+                "вопрос, когда предлагать следующий шаг и чего делать нельзя. Этот текст "
+                "попадёт в контекст ИИ для сообщений."
+            )
+        )
+        await callback.answer()
+        return
+    strategy_key = normalize_sales_strategy(strategy_raw)
     await state.update_data(
         sales_strategy=strategy_key,
         sales_funnel=build_sales_funnel(strategy_key),
@@ -3035,20 +3982,32 @@ async def process_script_strategy(callback: types.CallbackQuery, state: FSMConte
         await callback.answer()
         return
     await state.set_state(ScriptCreateFSM.call_to_action)
-    await callback.message.answer(
-        (
-            "Step 8: next step.\n\n"
-            "What should the manager offer when the lead is ready? "
-            "Example: a short 10-minute call to understand the task and answer questions."
-        )
-        if lang == LANG_EN
-        else (
-            "Шаг 8: следующий шаг.\n\n"
-            "Что менеджер должен предложить, когда лид готов? "
-            "Например: «короткий 10-минутный созвон, чтобы понять задачу и ответить на вопросы»."
-        )
-    )
+    await _ask_call_to_action_step(callback.message, lang)
     await callback.answer()
+
+
+@router.message(ScriptCreateFSM.custom_sales_strategy)
+async def process_script_custom_strategy(message: types.Message, state: FSMContext):
+    lang = _admin_lang(message)
+    if await _maybe_handle_back_text(message, state):
+        return
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer(
+            "Describe the custom funnel in text."
+            if lang == LANG_EN
+            else "Опишите свою воронку текстом."
+        )
+        return
+    await _update_draft_business_details(state, custom_sales_strategy=text)
+    await state.update_data(
+        sales_strategy="custom",
+        sales_funnel=_build_custom_sales_funnel(text),
+    )
+    if await _maybe_return_to_script_confirm(message, state):
+        return
+    await state.set_state(ScriptCreateFSM.call_to_action)
+    await _ask_call_to_action_step(message, lang)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("fmg:"))
@@ -3059,7 +4018,15 @@ async def process_script_first_message_goal(
     await state.update_data(first_message_goal=goal)
     await state.set_state(ScriptCreateFSM.call_to_action)
     await callback.message.answer(
-        "Введите призыв к действию (call_to_action), например:\n'15-минутный созвон'"
+        (
+            f"{_script_step(8, 'next step', LANG_EN)}.\n\n"
+            "Enter the call to action, for example: short 10-minute call."
+        )
+        if _admin_lang(callback) == LANG_EN
+        else (
+            f"{_script_step(8, 'следующий шаг', LANG_RU)}.\n\n"
+            "Введите призыв к действию, например: «15-минутный созвон»."
+        )
     )
     await callback.answer()
 
@@ -3080,13 +4047,15 @@ async def process_script_call_to_action(message: types.Message, state: FSMContex
     await state.set_state(ScriptCreateFSM.follow_up_delay_hours)
     await message.answer(
         (
-            "Step 9: follow-up delay.\n\n"
-            "Usually 24. The follow-up will be soft, without pressure."
+            f"{_script_step(9, 'follow-up delay', lang)}.\n\n"
+            "After how many hours should the bot message the same person again "
+            "if they did not reply to the previous message? Usually 24."
         )
         if lang == LANG_EN
         else (
-            "Шаг 9: напоминание.\n\n"
-            "Обычно 24. Напоминание будет мягким, без давления."
+            f"{_script_step(9, 'напоминание человеку', lang)}.\n\n"
+            "Через сколько часов бот должен снова написать этому же человеку, "
+            "если он не ответил на предыдущее сообщение? Обычно 24."
         )
     )
 
@@ -3194,9 +4163,15 @@ async def process_script_delay(message: types.Message, state: FSMContext):
         return
     await state.set_state(ScriptCreateFSM.working_hours)
     await message.answer(
-        "Step 10: working hours. When is the manager allowed to send messages? Default is 09:00-18:00."
+        (
+            f"{_script_step(10, 'working hours', lang)}. "
+            "When is the manager allowed to send messages? Default is 09:00-18:00."
+        )
         if lang == LANG_EN
-        else "Шаг 10: рабочее время. Когда менеджеру можно писать? По умолчанию 09:00-18:00.",
+        else (
+            f"{_script_step(10, 'рабочее время', lang)}. "
+            "Когда менеджеру можно писать? По умолчанию 09:00-18:00."
+        ),
         reply_markup=_workhours_keyboard(lang),
     )
 
@@ -3212,12 +4187,12 @@ async def process_work_hours_default(callback: types.CallbackQuery, state: FSMCo
     await state.set_state(ScriptCreateFSM.timezone)
     await callback.message.answer(
         (
-            "Enter timezone.\n\n"
+            f"{_script_step(11, 'timezone', lang)}.\n\n"
             "Examples: Europe/Moscow, UTC, msk. If the value is unclear, I will ask you to fix it."
         )
         if lang == LANG_EN
         else (
-            "Введите часовой пояс.\n\n"
+            f"{_script_step(11, 'часовой пояс', lang)}.\n\n"
             "Примеры: Europe/Moscow, UTC, msk. Если напишете непонятное значение, я попрошу исправить."
         )
     )
@@ -3229,9 +4204,15 @@ async def process_work_hours_manual(callback: types.CallbackQuery, state: FSMCon
     lang = _admin_lang(callback)
     await state.set_state(ScriptCreateFSM.working_hours)
     await callback.message.answer(
-        "Enter working hours as HH:MM-HH:MM, for example 09:00-18:00:"
+        (
+            f"{_script_step(10, 'working hours', lang)}.\n\n"
+            "Enter working hours as HH:MM-HH:MM, for example 09:00-18:00:"
+        )
         if lang == LANG_EN
-        else "Введите рабочие часы в формате HH:MM-HH:MM, например 09:00-18:00:"
+        else (
+            f"{_script_step(10, 'рабочее время', lang)}.\n\n"
+            "Введите рабочие часы в формате HH:MM-HH:MM, например 09:00-18:00:"
+        )
     )
     await callback.answer()
 
@@ -3254,12 +4235,12 @@ async def process_script_work_start(message: types.Message, state: FSMContext):
             await state.set_state(ScriptCreateFSM.timezone)
             await message.answer(
                 (
-                    "Enter timezone.\n\n"
+                    f"{_script_step(11, 'timezone', lang)}.\n\n"
                     "Examples: Europe/Moscow, UTC, msk. I will not save an unclear value."
                 )
                 if lang == LANG_EN
                 else (
-                    "Введите часовой пояс.\n\n"
+                    f"{_script_step(11, 'часовой пояс', lang)}.\n\n"
                     "Примеры: Europe/Moscow, UTC, msk. Непонятное значение не сохраню."
                 )
             )
@@ -3270,9 +4251,15 @@ async def process_script_work_start(message: types.Message, state: FSMContext):
             await state.update_data(_start_tmp=start_str)
             await state.set_state(ScriptCreateFSM.working_hours_end)
             await message.answer(
-                "Enter end of working hours (HH:MM, for example 18:00):"
+                (
+                    f"{_script_step(10, 'working hours', lang)}.\n\n"
+                    "Enter end of working hours (HH:MM, for example 18:00):"
+                )
                 if lang == LANG_EN
-                else "Введите конец рабочих часов (HH:MM, например 18:00):"
+                else (
+                    f"{_script_step(10, 'рабочее время', lang)}.\n\n"
+                    "Введите конец рабочих часов (HH:MM, например 18:00):"
+                )
             )
     except ValueError:
         await message.answer(
@@ -3299,9 +4286,15 @@ async def process_script_work_end(message: types.Message, state: FSMContext):
             return
         await state.set_state(ScriptCreateFSM.timezone)
         await message.answer(
-            "Enter timezone, for example Europe/Moscow, UTC, or msk:"
+            (
+                f"{_script_step(11, 'timezone', lang)}.\n\n"
+                "Enter timezone, for example Europe/Moscow, UTC, or msk:"
+            )
             if lang == LANG_EN
-            else "Введите часовой пояс, например Europe/Moscow, UTC или msk:"
+            else (
+                f"{_script_step(11, 'часовой пояс', lang)}.\n\n"
+                "Введите часовой пояс, например Europe/Moscow, UTC или msk:"
+            )
         )
     except ValueError:
         await message.answer(
@@ -3331,8 +4324,29 @@ async def process_script_timezone(message: types.Message, state: FSMContext):
         )
         return
     await state.update_data(timezone=tz)
-    await _send_script_confirm_from_state(message, state)
+    if await _maybe_return_to_script_confirm(message, state):
+        return
+    await state.set_state(ScriptCreateFSM.owner_clarification)
+    await message.answer(
+        _owner_clarification_prompt(lang),
+        reply_markup=_owner_clarification_keyboard(lang),
+    )
 
+
+@router.callback_query(lambda c: c.data and c.data.startswith("ownerclarify:"))
+async def process_script_owner_clarification(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+):
+    lang = _admin_lang(callback)
+    value = callback.data.split(":", 1)[1]
+    await state.update_data(
+        owner_clarification_enabled=value != "off",
+        _return_to_confirm=False,
+        _draft_edit_field=None,
+    )
+    await _send_script_confirm_from_state(callback.message, state)
+    await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("sdedit:"))
 async def handle_script_draft_edit(callback: types.CallbackQuery, state: FSMContext):
@@ -3349,6 +4363,8 @@ async def handle_script_draft_edit(callback: types.CallbackQuery, state: FSMCont
         await state.set_state(ScriptCreateFSM.working_hours)
     elif field == "sales_strategy":
         await state.set_state(ScriptCreateFSM.sales_strategy)
+    elif field == "owner_clarification_enabled":
+        await state.set_state(ScriptCreateFSM.owner_clarification)
     else:
         state_by_field = {
             "name": ScriptCreateFSM.name,
@@ -3383,6 +4399,12 @@ async def handle_script_draft_edit(callback: types.CallbackQuery, state: FSMCont
         await _send_or_edit_callback_message(
             callback,
             _script_field_prompt(field, lang),
+        )
+    elif field == "owner_clarification_enabled":
+        await _send_or_edit_callback_message(
+            callback,
+            _owner_clarification_prompt(lang),
+            reply_markup=_owner_clarification_keyboard(lang),
         )
     else:
         await _send_or_edit_callback_message(
@@ -3420,20 +4442,28 @@ async def confirm_create_script(callback: types.CallbackQuery, state: FSMContext
             working_hours_start=data.get("working_hours_start", dt_time(9, 0)),
             working_hours_end=data.get("working_hours_end", dt_time(18, 0)),
             timezone=data.get("timezone", "Europe/Moscow"),
+            business_details=data.get("business_details") or {},
+            owner_clarification_enabled=data.get("owner_clarification_enabled", True),
             is_active=True,
         )
         session.add(script)
         await session.commit()
         await session.refresh(script)
     await state.clear()
-    await callback.answer("✅ Business saved!" if lang == LANG_EN else "✅ Бизнес сохранен!")
+    await callback.answer(
+        "Checking the draft" if lang == LANG_EN else "Проверяю черновик"
+    )
+    questions, audit_source = await _generate_business_audit_questions(script, lang)
+    audited_script = await _save_business_audit_questions(
+        script.id,
+        questions,
+        audit_source,
+    )
+    if audited_script is not None:
+        script = audited_script
     await callback.message.answer(
-        (
-            f"Business <b>{_html(script.name)}</b> is saved. Now upload contacts with /upload."
-            if lang == LANG_EN
-            else f"Бизнес <b>{_html(script.name)}</b> сохранен. Теперь можно загрузить контакты через /upload."
-        ),
-        parse_mode="HTML",
+        _format_business_audit_text(script, lang),
+        reply_markup=_business_audit_keyboard(script.id, lang),
     )
 
 
@@ -5010,6 +6040,7 @@ CALLBACK_STATE_REQUIREMENTS: list[tuple[Callable[[str], bool], str]] = [
     (lambda data: data.startswith("fmg:"), _state_name(ScriptCreateFSM.first_message_goal)),
     (lambda data: data.startswith("emoji:"), _state_name(ScriptCreateFSM.emoji_policy)),
     (lambda data: data.startswith("workhours:"), _state_name(ScriptCreateFSM.working_hours)),
+    (lambda data: data.startswith("ownerclarify:"), _state_name(ScriptCreateFSM.owner_clarification)),
     (lambda data: data.startswith("script:"), _state_name(ScriptCreateFSM.confirm)),
     (lambda data: data.startswith("sdedit:"), _state_name(ScriptCreateFSM.confirm)),
     (lambda data: data.startswith("csv:"), _state_name(CSVImportFSM.preview)),

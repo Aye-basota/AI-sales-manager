@@ -186,6 +186,38 @@ async def test_csv_upsert_can_refresh_stale_invalid_contact():
 
 
 @pytest.mark.asyncio
+async def test_csv_upsert_retries_stale_invalid_contact_without_status_columns():
+    existing = Contact(
+        id=uuid4(),
+        telegram_user_id=1081458735,
+        telegram_username="old_username",
+        status="invalid_peer",
+        is_valid="invalid",
+        source="csv_import",
+        last_source="csv_import",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    session = _build_mock_session_with_results([existing])
+
+    records = [
+        {
+            "telegram_user_id": 1081458735,
+            "telegram_username": "fresh_username",
+            "first_name": "Марсель",
+        }
+    ]
+
+    created, updated = await upsert_contacts(session, records, source="csv_import")
+
+    assert len(created) == 0
+    assert len(updated) == 1
+    assert updated[0].telegram_username == "fresh_username"
+    assert updated[0].status == "new"
+    assert updated[0].is_valid == "unknown"
+
+
+@pytest.mark.asyncio
 async def test_upsert_preserves_telegram_search_source_context_on_create(mock_db):
     records = [
         {

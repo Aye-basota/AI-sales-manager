@@ -600,6 +600,9 @@ class TestAdminPureHelpers:
         assert "What we sell" in admin_bot_module._format_script_details(
             script, campaign_count=1, lang=LANG_EN
         )
+        assert "Owner clarifications: on" in admin_bot_module._format_script_details(
+            script, campaign_count=1, lang=LANG_EN
+        )
         summary = admin_bot_module._script_create_summary(
             {
                 "name": "Cups",
@@ -625,6 +628,121 @@ class TestAdminPureHelpers:
         keyboard = _build_script_buttons([script], LANG_EN)
         callbacks = _inline_callback_data(keyboard)
         assert f"scriptv:{script.id}" in callbacks
+
+    def test_business_audit_text_and_keyboard_show_clarification_flow(self):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Cups",
+            role_prompt="Поставляем пластиковые стаканчики для кофеен.",
+            target_audience="Кофейни",
+            goal="Назначить созвон со скидкой 20%.",
+            success_criteria="Лид согласился обсудить поставку.",
+            business_details={
+                "audit": {
+                    "questions": [
+                        "Какой минимальный тираж для стаканчиков с логотипом можно обещать кофейням?"
+                    ],
+                },
+            },
+            is_active=True,
+        )
+
+        text = admin_bot_module._format_business_audit_text(script)
+        callbacks = _inline_callback_data(
+            admin_bot_module._business_audit_keyboard(script.id)
+        )
+        detail_callbacks = _inline_callback_data(_script_detail_keyboard(script))
+
+        assert "ИИ разобрал черновик этого бизнеса" in text
+        assert "минимальный тираж для стаканчиков" in text
+        assert "Какие цены" not in text
+        assert f"bizqa:{script.id}" in callbacks
+        assert f"bizqskip:{script.id}" in callbacks
+        assert f"script_clarify_toggle:{script.id}" in detail_callbacks
+        assert f"bizqa:{script.id}" in detail_callbacks
+
+    async def test_generate_business_audit_questions_uses_llm_json(self):
+        script = Script(
+            id=uuid.uuid4(),
+            name="Cups",
+            role_prompt="Поставляем стаканчики с логотипом для кофеен.",
+            target_audience="Кофейни",
+            goal="Назначить созвон по поставке.",
+            is_active=True,
+        )
+        mock_engine = MagicMock()
+        mock_engine.generate_with_fallback = AsyncMock(
+            return_value={
+                "text": (
+                    '{"questions":["Какой минимальный тираж для стаканчиков '
+                    'с логотипом можно обещать кофейням?",'
+                    '"Какие сроки печати логотипа на стаканчиках обычно называем?",'
+                    '"Какие размеры стаканчиков доступны для первой поставки?"]}'
+                ),
+                "model": "audit-model",
+            }
+        )
+        mock_engine.close = AsyncMock()
+
+        with patch("app.bots.admin_bot.LLMEngine", return_value=mock_engine):
+            questions, source = await admin_bot_module._generate_business_audit_questions(
+                script
+            )
+
+        assert source == "audit-model"
+        assert questions[0].startswith("Какой минимальный тираж")
+        mock_engine.generate_with_fallback.assert_awaited_once()
+        mock_engine.close.assert_awaited_once()
+
+    async def test_add_facts_after_answer_does_not_repeat_old_audit_questions(
+        self,
+        mock_callback,
+        mock_state,
+    ):
+        script_id = uuid.uuid4()
+        script = Script(
+            id=script_id,
+            name="Cups",
+            role_prompt="Поставляем стаканчики для кофеен.",
+            goal="Назначить созвон.",
+            business_details={
+                "audit": {
+                    "questions": ["Какой старый вопрос из аудита?"],
+                    "answered_at": "2026-07-19T10:00:00+00:00",
+                },
+                "owner_notes": [{"text": "Минимальный заказ 5000 штук."}],
+            },
+            is_active=True,
+        )
+        mock_callback.data = f"bizqa:{script_id}"
+
+        with (
+            patch(
+                "app.bots.admin_bot._load_script_with_campaign_count",
+                new=AsyncMock(return_value=(script, 0)),
+            ),
+            patch(
+                "app.bots.admin_bot._send_or_edit_callback_message",
+                new=AsyncMock(),
+            ) as send_mock,
+        ):
+            await admin_bot_module.handle_business_context_answer_start(
+                mock_callback,
+                mock_state,
+            )
+
+        text = send_mock.await_args.args[1]
+        assert "Проверенные факты уже добавлены" in text
+        assert "старый вопрос" not in text.lower()
+        assert send_mock.await_args.kwargs["reply_markup"] is not None
+
+    def test_owner_answer_to_lead_text_keeps_unknowns_conservative(self):
+        text = admin_bot_module._owner_answer_to_lead_text(
+            "Пока нет данных, нужно уточнить у производства.",
+            "delivery",
+        )
+
+        assert "не буду обещать неверно" in text
 
     def test_contact_display_name_includes_phone_with_full_name(self):
         contact = Contact(
@@ -2638,6 +2756,26 @@ class TestProcessScriptFSM:
         )
         mock_state.set_state.assert_awaited_with(ScriptCreateFSM.sales_strategy)
 
+    async def test_custom_tone_is_saved_as_ai_context(self, mock_message, mock_state):
+        mock_message.text = "Пиши спокойно, без канцелярита, максимум один вопрос."
+
+        await admin_bot_module.process_script_custom_tone(mock_message, mock_state)
+
+        mock_state.update_data.assert_any_await(
+            business_details={
+                "custom_tone": "Пиши спокойно, без канцелярита, максимум один вопрос."
+            }
+        )
+        mock_state.update_data.assert_any_await(
+            tone="custom",
+            first_message_goal="trust",
+            language="ru",
+            emoji_policy="forbidden",
+            max_first_message_length=240,
+            max_messages=3,
+        )
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.sales_strategy)
+
     async def test_strategy_callback_sets_real_sales_funnel(self, mock_callback, mock_state):
         mock_callback.data = "strategy:quick_call"
         await process_script_strategy(mock_callback, mock_state)
@@ -2651,6 +2789,32 @@ class TestProcessScriptFSM:
         ]
         mock_state.set_state.assert_awaited_with(ScriptCreateFSM.call_to_action)
 
+    async def test_custom_strategy_builds_context_funnel(self, mock_message, mock_state):
+        mock_message.text = "Сначала польза, потом один вопрос, созвон только после интереса."
+
+        await admin_bot_module.process_script_custom_strategy(mock_message, mock_state)
+
+        update_kwargs = mock_state.update_data.await_args_list[-1].kwargs
+        assert update_kwargs["sales_strategy"] == "custom"
+        assert update_kwargs["sales_funnel"][0]["stage"] == "trust"
+        assert "Сначала польза" in update_kwargs["sales_funnel"][0]["instructions"]
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.call_to_action)
+
+    async def test_owner_clarification_choice_moves_to_confirm(self, mock_callback, mock_state):
+        mock_callback.data = "ownerclarify:off"
+
+        await admin_bot_module.process_script_owner_clarification(
+            mock_callback,
+            mock_state,
+        )
+
+        mock_state.update_data.assert_awaited_with(
+            owner_clarification_enabled=False,
+            _return_to_confirm=False,
+            _draft_edit_field=None,
+        )
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.confirm)
+
     async def test_first_message_goal_legacy_callback_moves_to_cta(
         self, mock_callback, mock_state
     ):
@@ -2662,7 +2826,7 @@ class TestProcessScriptFSM:
 
         mock_state.update_data.assert_awaited_once_with(first_message_goal="trust")
         mock_state.set_state.assert_awaited_once_with(ScriptCreateFSM.call_to_action)
-        assert "call_to_action" in mock_callback.message.answer.call_args[0][0]
+        assert "следующий шаг" in mock_callback.message.answer.call_args[0][0].lower()
         mock_callback.answer.assert_awaited_once()
 
     async def test_call_to_action_valid(self, mock_message, mock_state):
@@ -2797,7 +2961,7 @@ class TestProcessScriptFSM:
         await admin_bot_module.process_script_work_end(mock_message, mock_state)
         assert "Неверный формат" in mock_message.answer.call_args[0][0]
 
-    async def test_timezone_to_confirm(self, mock_message, mock_state):
+    async def test_timezone_to_owner_clarification(self, mock_message, mock_state):
         mock_state.get_data.return_value = {
             "name": "Test",
             "role_prompt": "Role",
@@ -2813,9 +2977,9 @@ class TestProcessScriptFSM:
         mock_message.text = "Europe/Moscow"
         await process_script_timezone(mock_message, mock_state)
         mock_state.update_data.assert_awaited_with(timezone="Europe/Moscow")
-        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.confirm)
+        mock_state.set_state.assert_awaited_with(ScriptCreateFSM.owner_clarification)
         mock_message.answer.assert_called_once()
-        assert "Проверьте бизнес" in mock_message.answer.call_args[0][0]
+        assert "уточнения у владельца" in mock_message.answer.call_args[0][0].lower()
 
     async def test_timezone_rejects_unknown_value(self, mock_message, mock_state):
         mock_message.text = "mop"
@@ -2961,11 +3125,21 @@ class TestConfirmCreateScript:
         result_mock.scalar_one_or_none.return_value = None
         context = _make_mock_session(result_mock)
 
-        with patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context):
+        with (
+            patch("app.bots.admin_bot.AsyncSessionLocal", return_value=context),
+            patch(
+                "app.bots.admin_bot._generate_business_audit_questions",
+                new=AsyncMock(return_value=(["Какой точный вопрос задать?"], "test")),
+            ),
+            patch(
+                "app.bots.admin_bot._save_business_audit_questions",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
             await confirm_create_script(mock_callback, mock_state)
 
         mock_state.clear.assert_awaited_once()
-        mock_callback.answer.assert_awaited_once_with("✅ Бизнес сохранен!")
+        mock_callback.answer.assert_awaited_once_with("Проверяю черновик")
 
 
 class TestCancelCreateScript:

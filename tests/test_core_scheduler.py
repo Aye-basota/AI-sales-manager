@@ -497,6 +497,7 @@ class TestProcessCampaigns:
             _SimpleMockResult([sample_contact]),  # contact
             _SimpleMockResult([]),  # conversation (not found)
             _SimpleMockResult([account]),  # accounts
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         with patch(
@@ -533,6 +534,7 @@ class TestProcessCampaigns:
             _SimpleMockResult([sample_contact]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         with patch(
@@ -739,6 +741,7 @@ class TestProcessCampaigns:
             _SimpleMockResult([sample_contact]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         with patch(
@@ -747,6 +750,53 @@ class TestProcessCampaigns:
             await process_campaigns(mock_db)
             mock_send.assert_awaited_once()
             assert mock_send.call_args.kwargs["contact"].telegram_username == "username_only"
+
+    async def test_pending_duplicate_same_account_contact_is_skipped(
+        self, mock_db, sample_campaign, sample_script, sample_contact
+    ):
+        from app.models.campaign import CampaignContact
+
+        sample_campaign.status = "running"
+        sample_campaign.processed_contacts = 0
+        sample_script.working_hours_start = time(0, 0)
+        sample_script.working_hours_end = time(23, 59)
+        sample_contact.telegram_user_id = 123456
+        sample_contact.telegram_username = "leaduser"
+
+        cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=sample_campaign.id,
+            contact_id=sample_contact.id,
+            status="pending",
+            message_count=0,
+        )
+        prior_cc = CampaignContact(
+            id=uuid.uuid4(),
+            campaign_id=uuid.uuid4(),
+            contact_id=sample_contact.id,
+            status="initial_sent",
+            message_count=1,
+            initial_sent_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        account = MockTelegramAccount()
+        sample_contact.assigned_account_id = account.id
+
+        mock_db.execute.side_effect = [
+            _SimpleMockResult([sample_campaign]),
+            _SimpleMockResult([sample_script]),
+            _SimpleMockResult([cc]),
+            _SimpleMockResult([sample_contact]),
+            _SimpleMockResult([]),
+            _SimpleMockResult([account]),
+            _SimpleMockResult([prior_cc]),
+        ]
+
+        with patch("app.core.scheduler.send_initial_message", new_callable=AsyncMock) as mock_send:
+            await process_campaigns(mock_db)
+
+        mock_send.assert_not_awaited()
+        assert cc.status == "duplicate_skipped"
+        assert sample_campaign.processed_contacts == 1
 
     async def test_invalid_contact_peer_is_not_retried(
         self, mock_db, sample_campaign, sample_script, sample_contact
@@ -858,6 +908,7 @@ class TestProcessCampaigns:
             _SimpleMockResult([]),
             _SimpleMockResult([assigned_account]),  # assigned account lookup
             _SimpleMockResult([fallback_account]),  # fallback pool
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         with patch(
@@ -920,11 +971,13 @@ class TestProcessCampaigns:
             _SimpleMockResult([contact1]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
             _SimpleMockResult([sample_script]),
             _SimpleMockResult([cc2]),
             _SimpleMockResult([contact2]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         send_calls = []
@@ -1033,11 +1086,13 @@ class TestProcessCampaigns:
             _SimpleMockResult([contact1]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
             _SimpleMockResult([sample_script]),
             _SimpleMockResult([cc2]),
             _SimpleMockResult([contact2]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         send_calls = []
@@ -1154,6 +1209,7 @@ class TestProcessCampaigns:
             _SimpleMockResult([sample_contact]),
             _SimpleMockResult([]),
             _SimpleMockResult([assigned_account]),
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         with patch("app.core.scheduler.send_initial_message", new_callable=AsyncMock) as mock_send:
@@ -1187,6 +1243,7 @@ class TestProcessCampaigns:
             _SimpleMockResult([sample_contact]),
             _SimpleMockResult([]),
             _SimpleMockResult([account]),
+            _SimpleMockResult([]),  # prior same-account contact history
         ]
 
         with (
@@ -1226,6 +1283,7 @@ class TestProcessCampaigns:
                 _SimpleMockResult([sample_contact]),
                 _SimpleMockResult([]),
                 _SimpleMockResult([first_account]),
+                _SimpleMockResult([]),  # prior same-account contact history
                 _SimpleMockResult(retry_results),
             ]
             with patch(
@@ -1288,6 +1346,7 @@ class TestProcessCampaigns:
                 _SimpleMockResult([sample_contact]),
                 _SimpleMockResult([]),
                 _SimpleMockResult([first_account]),
+                _SimpleMockResult([]),  # prior same-account contact history
                 _SimpleMockResult(retry_results),
             ]
             with patch(

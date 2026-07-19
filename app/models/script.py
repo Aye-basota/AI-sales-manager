@@ -29,5 +29,7 @@ class Script(Base):
     language = Column(String(10), default="ru")
     emoji_policy = Column(String(20), default="forbidden")
     max_first_message_length = Column(Integer, default=200)
+    business_details = Column(JSON, default=dict)
+    owner_clarification_enabled = Column(Boolean, default=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

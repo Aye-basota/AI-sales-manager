@@ -18,6 +18,7 @@ class Conversation(Base):
     operator_status = Column(String(20))
     operator_notes = Column(Text)
     was_escalated = Column(Boolean, default=False)
+    owner_clarification = Column(JSON, default=dict)
     last_message_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

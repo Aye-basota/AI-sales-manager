@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Admin Bot now uses an LLM draft audit after business creation to generate
+  business-specific owner clarification questions, with a deterministic fallback
+  if the audit is unavailable.
+- Business creation now lets owners choose custom communication style, custom
+  sales-funnel instructions, and whether the AI may ask the owner for missing
+  facts during live lead chats.
+- Inbound replies can request a business-owner clarification at runtime when a lead asks about unknown prices, delivery, documents, payment terms, samples, address, branding, or assortment.
+
+### Changed
+- LLM reply context now includes verified owner-provided business facts and treats unknown operational details conservatively.
+- The Admin Bot business wizard now shows "step X of N" labels and explains that
+  the follow-up delay controls when the bot writes again if a lead is silent.
+
+### Fixed
+- Inbound Telegram replies now resolve duplicate contacts by `telegram_user_id`
+  and username, preferring the freshest active campaign so replies do not land in
+  stale conversations.
+- New campaign launches now skip a cold first message when the same seller
+  account has already contacted the same Telegram person in another campaign.
+- Re-importing a Telegram contact from CSV now resets stale `invalid_peer` validation state so corrected usernames or ids can be retried in new campaigns.
+- Inbound Telegram replies are now serialized per sender to avoid duplicate AI answers when a lead sends quick consecutive messages.
+- Short positive replies such as "yes" or "tell me more" now keep the lead warm instead of immediately creating a hot-lead alert.
+- First outreach messages now avoid vague offer wording and grammar mistakes around sales/supply scripts.
+- Inbound replies now refresh visible Telegram profile names from the sender before hot-lead notifications are composed.
+- Pricing, pause, and wrong-recipient replies now use deterministic safe fallbacks instead of premature meeting pushes.
+- Unsupported generated claims about business terms are now replaced with an owner-clarification hold message or a safe unknown-fact fallback before Telegram dispatch.
+- Urgent or high-volume commercial replies are now treated as hot leads even when the lead has not explicitly asked for a meeting.
+
 ## [0.5.0] - 2026-07-17
 
 Final Assignment 6 release candidate mapped to `MVP v3`.

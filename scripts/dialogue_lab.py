@@ -457,6 +457,7 @@ def _analyze_result(
     chunks: list[CapturedSend],
     intent: str | None,
     state: str | None,
+    notifications: int = 0,
 ) -> list[str]:
     issues: list[str] = []
     expected = scenario["expected"]
@@ -490,7 +491,21 @@ def _analyze_result(
         "meeting_booked",
         "closed",
     }:
-        if any(marker in lower for marker in ("15-минут", "созвон", "встречу")):
+        has_cta_marker = any(
+            marker in lower for marker in ("15-минут", "созвон", "встречу")
+        )
+        has_anti_cta_context = any(
+            marker in lower
+            for marker in (
+                "не назнач",
+                "не предлаг",
+                "не зову",
+                "ради цены",
+                "встреча не нужна",
+                "созвон не нужен",
+            )
+        )
+        if has_cta_marker and not has_anti_cta_context:
             issues.append("premature meeting CTA")
     if scenario["name"] == "bot_check" and any(
         phrase in lower for phrase in ("я бот", "я ии", "искусственный интеллект")
@@ -503,6 +518,10 @@ def _analyze_result(
         issues.append("risk concern was not addressed")
     if scenario["name"] in MEETING_SCENARIOS and state not in {"hot", "meeting_booked"}:
         issues.append(f"meeting intent did not become hot/meeting_booked: {state}")
+    if scenario["name"] not in MEETING_SCENARIOS and state == "hot":
+        issues.append("premature hot lead state")
+    if scenario["name"] not in MEETING_SCENARIOS and notifications:
+        issues.append("premature hot lead notification")
     if state == "meeting_booked" and "?" in response_text:
         issues.append("meeting response asked a follow-up question")
     if scenario["name"] in HARD_STOP_SCENARIOS:
@@ -562,6 +581,7 @@ async def run_lab(args: argparse.Namespace) -> list[ScenarioResult]:
             chunks=client.sends,
             intent=intent,
             state=conversation.current_state if conversation else None,
+            notifications=len(notifications.hot_leads),
         )
         return ScenarioResult(
             name=scenario["name"],

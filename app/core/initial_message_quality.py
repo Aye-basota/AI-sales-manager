@@ -30,6 +30,12 @@ BAD_INITIAL_MESSAGE_MARKERS = (
     "выводить криптовалют",
     "криптовалюту в фиат",
     "обнал",
+    "надеюсь, у вас все хорошо",
+    "особый опыт",
+    "особенное предложение",
+    "уникальное предложение",
+    "хотел бы предложить",
+    "хотела бы предложить",
 )
 
 
@@ -57,10 +63,29 @@ def build_initial_message_retry_prompt(previous_text: str) -> str:
 
 
 def _offer_context(script: Any | None = None) -> str:
-    return extract_offer_summary(script, max_chars=180).replace(
+    offer = extract_offer_summary(script, max_chars=180).replace(
         "помогаем решить задачу",
-        "помогаем с вашей задачей",
+        "помогаем с этой задачей",
     )
+    return offer.rstrip(".")
+
+
+def _offer_sentence(script: Any | None = None) -> str:
+    offer = _offer_context(script)
+    lower = offer.lower()
+    if lower.startswith(
+        (
+            "занимаемся ",
+            "помогаем ",
+            "поставляем ",
+            "продаем ",
+            "продаём ",
+            "предоставляем ",
+            "разрабатываем ",
+        )
+    ):
+        return f"мы {offer}"
+    return f"я пишу по теме: {offer}"
 
 
 def build_safe_initial_fallback(
@@ -70,8 +95,8 @@ def build_safe_initial_fallback(
     """Return a conservative first message if generation stays weak."""
     name = getattr(contact, "first_name", None) if contact else None
     greeting = f"Привет, {name}." if name else "Привет."
-    offer = _offer_context(script)
+    offer = _offer_sentence(script)
     return (
         f"{greeting} Пишу коротко: {offer}. "
-        "Если актуально, могу в двух словах рассказать, как это обычно организуем."
+        "Если актуально, расскажу в двух словах, чем можем быть полезны."
     )

@@ -102,6 +102,32 @@ class TestNotificationService:
         assert "📅 Meeting Booked\n" in call_kwargs["text"]
         assert call_kwargs["reply_markup"] is not None
 
+    async def test_send_owner_clarification_request_sends_action_buttons(
+        self, dummy_contact, dummy_conversation
+    ):
+        mock_bot = AsyncMock()
+        service = NotificationService(bot=mock_bot, chat_id="12345")
+
+        await service.send_owner_clarification_request(
+            dummy_contact,
+            dummy_conversation,
+            category_label="цены",
+            question="Какие цены можно называть?",
+            lead_message_text="Сколько стоит 10000 штук?",
+        )
+
+        mock_bot.send_message.assert_awaited_once()
+        call_kwargs = mock_bot.send_message.call_args.kwargs
+        callbacks = [
+            button.callback_data
+            for row in call_kwargs["reply_markup"].inline_keyboard
+            for button in row
+        ]
+        assert "❓ Нужен ответ владельца" in call_kwargs["text"]
+        assert "Сколько стоит 10000 штук?" in call_kwargs["text"]
+        assert f"clarify:{dummy_conversation.id}" in callbacks
+        assert f"dialog:{dummy_conversation.id}" in callbacks
+
     async def test_send_meeting_booked_alert_without_chat_id_logs_warning(
         self, dummy_contact, dummy_conversation, caplog
     ):

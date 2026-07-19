@@ -90,7 +90,12 @@ def build_system_prompt(
         sanitize_context_text(getattr(script, "success_criteria", "") or "")
         or "Клиент явно согласился на следующий шаг или задал предметный вопрос."
     )
+    details = getattr(script, "business_details", None)
+    details = details if isinstance(details, dict) else {}
+    custom_tone = sanitize_context_text(details.get("custom_tone", ""), max_chars=300)
     tone = sanitize_context_text(getattr(script, "tone", "") or "") or "professional"
+    if tone == "custom" and custom_tone:
+        tone = f"свой стиль владельца: {custom_tone}"
     language = getattr(script, "language", None) or "ru"
     emoji_policy = getattr(script, "emoji_policy", None) or "forbidden"
 

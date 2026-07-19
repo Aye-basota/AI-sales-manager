@@ -1,7 +1,7 @@
 from datetime import time, datetime
 from typing import Optional, List, Any
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ScriptBase(BaseModel):
@@ -25,6 +25,8 @@ class ScriptBase(BaseModel):
     language: str = "ru"
     emoji_policy: str = "forbidden"
     max_first_message_length: int = 200
+    business_details: dict[str, Any] = Field(default_factory=dict)
+    owner_clarification_enabled: bool = True
 
     @field_validator("sales_funnel", mode="before")
     @classmethod
@@ -58,6 +60,16 @@ class ScriptBase(BaseModel):
     def default_max_first_message_length(cls, value):
         return value or 200
 
+    @field_validator("business_details", mode="before")
+    @classmethod
+    def default_business_details(cls, value):
+        return value if isinstance(value, dict) else {}
+
+    @field_validator("owner_clarification_enabled", mode="before")
+    @classmethod
+    def default_owner_clarification_enabled(cls, value):
+        return value is not False
+
 
 class ScriptCreate(ScriptBase):
     pass
@@ -83,6 +95,8 @@ class ScriptUpdate(BaseModel):
     language: Optional[str] = None
     emoji_policy: Optional[str] = None
     max_first_message_length: Optional[int] = None
+    business_details: Optional[dict[str, Any]] = None
+    owner_clarification_enabled: Optional[bool] = None
 
 
 class ScriptResponse(ScriptBase):

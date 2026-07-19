@@ -26,7 +26,7 @@ Event = Literal[
 _TRANSITIONS: dict[State, dict[Event, State]] = {
     "cold": {
         "initial_message": "warm",
-        "positive_reply": "hot",
+        "positive_reply": "warm",
         "negative_reply": "closed",
         "no_reply_24h": "follow_up",
         "no_reply_48h": "closed",
@@ -35,7 +35,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "informational": "cold",
     },
     "warm": {
-        "positive_reply": "hot",
+        "positive_reply": "warm",
         "negative_reply": "closed",
         "no_reply_24h": "follow_up",
         "no_reply_48h": "closed",
@@ -53,7 +53,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "informational": "hot",
     },
     "follow_up": {
-        "positive_reply": "hot",
+        "positive_reply": "warm",
         "negative_reply": "closed",
         "no_reply_24h": "follow_up",
         "no_reply_48h": "closed",
@@ -62,7 +62,7 @@ _TRANSITIONS: dict[State, dict[Event, State]] = {
         "informational": "follow_up",
     },
     "objection_handler": {
-        "positive_reply": "hot",
+        "positive_reply": "warm",
         "negative_reply": "closed",
         "no_reply_24h": "follow_up",
         "no_reply_48h": "closed",

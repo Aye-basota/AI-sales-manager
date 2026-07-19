@@ -5,8 +5,8 @@ class TestTransition:
     def test_cold_to_warm_on_initial_message(self):
         assert transition("cold", "initial_message") == "warm"
 
-    def test_cold_to_hot_on_positive_reply(self):
-        assert transition("cold", "positive_reply") == "hot"
+    def test_cold_stays_warm_on_positive_reply(self):
+        assert transition("cold", "positive_reply") == "warm"
 
     def test_cold_to_closed_on_negative_reply(self):
         assert transition("cold", "negative_reply") == "closed"
@@ -23,8 +23,8 @@ class TestTransition:
     def test_cold_to_objection_handler_on_objection(self):
         assert transition("cold", "objection") == "objection_handler"
 
-    def test_warm_to_hot_on_positive_reply(self):
-        assert transition("warm", "positive_reply") == "hot"
+    def test_warm_stays_warm_on_positive_reply(self):
+        assert transition("warm", "positive_reply") == "warm"
 
     def test_warm_to_follow_up_on_no_reply_24h(self):
         assert transition("warm", "no_reply_24h") == "follow_up"
@@ -41,14 +41,14 @@ class TestTransition:
     def test_hot_to_objection_handler_on_objection(self):
         assert transition("hot", "objection") == "objection_handler"
 
-    def test_follow_up_to_hot_on_positive_reply(self):
-        assert transition("follow_up", "positive_reply") == "hot"
+    def test_follow_up_to_warm_on_positive_reply(self):
+        assert transition("follow_up", "positive_reply") == "warm"
 
     def test_follow_up_to_closed_on_no_reply_48h(self):
         assert transition("follow_up", "no_reply_48h") == "closed"
 
-    def test_objection_handler_to_hot_on_positive_reply(self):
-        assert transition("objection_handler", "positive_reply") == "hot"
+    def test_objection_handler_to_warm_on_positive_reply(self):
+        assert transition("objection_handler", "positive_reply") == "warm"
 
     def test_objection_handler_to_closed_on_negative_reply(self):
         assert transition("objection_handler", "negative_reply") == "closed"
