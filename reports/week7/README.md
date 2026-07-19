@@ -76,15 +76,18 @@ Key Sprint 5 regression areas:
 - context-aware inbound reply prompts and deterministic fallbacks
 - humanized chunked message sending
 
-## 5. Links Owned by Other Week 7 Parts
+## 5. Sprint Review, Retrospective, Reflection, and Remaining Week 7 Parts
 
-These files are required for the full Week 7 submission index and are reserved for the teammates responsible for those Week 7 evidence parts:
+Completed Assignment 6 Parts 11–12 artefacts:
+
+- Retrospective (Part 11): [`retrospective.md`](retrospective.md)
+- Reflection (Part 12): [`reflection.md`](reflection.md)
+- LLM report (Part 12): [`llm-report.md`](llm-report.md)
+
+Still owned by other Week 7 evidence parts / teammates:
 
 - Sprint Review transcript or notes: `reports/week7/sprint-review-transcript.md` or `reports/week7/sprint-review-notes.md`
 - Sprint Review summary: `reports/week7/sprint-review-summary.md`
-- Reflection (Part 12): `reports/week7/reflection.md`
-- Retrospective (Part 11): `reports/week7/retrospective.md`
-- LLM report (Part 12): `reports/week7/llm-report.md`
 - Public sanitized demo video link
 - Week 7 rehearsal/presentation evidence
 - Week 7 screenshots under `reports/week7/images/`
@@ -98,4 +101,5 @@ These files are required for the full Week 7 submission index and are reserved f
 | Contributor / scope | Evidence |
 |---|---|
 | Sprint 5 follow-up fixes, tests, release/handover prep | PR [#96](https://github.com/Aye-basota/AI-sales-manager/pull/96), closing prompt/response-quality follow-up [#92](https://github.com/Aye-basota/AI-sales-manager/issues/92), referencing lead-discovery follow-up [#90](https://github.com/Aye-basota/AI-sales-manager/issues/90), and preserving the Week 6 prompt-versioning trace to [#55](https://github.com/Aye-basota/AI-sales-manager/issues/55). |
+| Week 7 Parts 11–12 report artefacts | [`retrospective.md`](retrospective.md), [`reflection.md`](reflection.md), [`llm-report.md`](llm-report.md) — issues [#102](https://github.com/Aye-basota/AI-sales-manager/issues/102), [#103](https://github.com/Aye-basota/AI-sales-manager/issues/103) |
 | Week 6 evidence baseline | [`reports/week6/README.md`](../week6/README.md) and PR [#95](https://github.com/Aye-basota/AI-sales-manager/pull/95) |
